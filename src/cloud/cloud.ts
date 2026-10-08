@@ -199,7 +199,10 @@ export function errorCode(e: unknown): string {
 export function describeError(e: unknown): string {
   const code = errorCode(e);
   const msg = e instanceof Error ? e.message : String(e);
-  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return 'Sign-in cancelled';
+  // Also what browsers built into other apps report: Google's sign-in window can't hand back to them.
+  if (code === 'auth/popup-closed-by-user')
+    return "Sign-in didn't finish. If World Builder is open inside another app (say, from a link in a chat), open it in Safari or your usual browser and sign in there.";
+  if (code === 'auth/cancelled-popup-request') return 'Sign-in cancelled';
   if (code === 'auth/admin-restricted-operation') return 'Guest sign-in is not switched on (Firebase console → Authentication → Sign-in method → Anonymous).';
   if (code === 'auth/operation-not-allowed' || code === 'auth/configuration-not-found')
     return 'Google sign-in is not switched on yet (Firebase console → Authentication → Sign-in method → Google).';

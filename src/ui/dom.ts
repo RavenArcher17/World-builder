@@ -30,7 +30,8 @@ export function toast(msg: string): void {
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el.classList.remove('show'), 2600);
+  // Long messages stay up long enough to read.
+  toastTimer = window.setTimeout(() => el.classList.remove('show'), Math.max(2600, msg.length * 60));
 }
 
 export interface DialogButton {
