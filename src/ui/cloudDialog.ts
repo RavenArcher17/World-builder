@@ -93,7 +93,14 @@ export function openCloudDialog(app: App): void {
   const body = h(
     'div',
     {},
-    h('p', { class: 'hint' }, `Signed in as ${user.name}${user.email && user.email !== user.name ? ` (${user.email})` : ''}.`),
+    user.guest
+      ? h(
+          'div',
+          {},
+          h('p', { class: 'hint' }, 'You are signed in as a guest. Guest projects belong to this browser only — link a Google account to keep them and open them on other devices.'),
+          h('div', { class: 'btn-row' }, h('button', { onclick: () => void app.upgradeGuest().then(() => refresh()) }, 'Link Google account')),
+        )
+      : h('p', { class: 'hint' }, `Signed in as ${user.name}${user.email && user.email !== user.name ? ` (${user.email})` : ''}.`),
     h('h3', {}, `Open project: ${app.project.name}`),
     h(
       'p',
@@ -110,6 +117,7 @@ export function openCloudDialog(app: App): void {
     {
       label: 'Sign out',
       action: async () => {
+        if (app.user?.guest && !confirm('Signing out of a guest account loses access to its cloud projects for good (link a Google account first to keep them). Sign out anyway?')) return false;
         await cloud.signOutUser();
         toast('Signed out — your work stays in this browser');
       },
@@ -117,4 +125,28 @@ export function openCloudDialog(app: App): void {
     { label: 'Close', primary: true },
   ]);
   void refresh();
+}
+
+/** Choose Google or guest sign-in. */
+export function openSignInDialog(app: App): void {
+  const cloud = app.cloud;
+  if (!cloud) return;
+  // Sign-in must start inside the click handler (before any await) or browsers block the popup.
+  const run = (start: () => Promise<void>) => () => {
+    start().catch((e) => toast(cloud.describeError(e)));
+  };
+  showDialog(
+    'Save your worlds to the cloud',
+    h(
+      'div',
+      {},
+      h('p', {}, h('b', {}, 'Google account'), ' — your projects follow you to any device.'),
+      h('p', {}, h('b', {}, 'Guest'), ' — no account needed; projects are kept for this browser. You can link a Google account later without losing anything.'),
+    ),
+    [
+      { label: 'Cancel' },
+      { label: 'Continue as guest', action: run(() => cloud.signInAsGuest()) },
+      { label: 'Sign in with Google', primary: true, action: run(() => cloud.signIn()) },
+    ],
+  );
 }

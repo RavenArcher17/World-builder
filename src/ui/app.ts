@@ -13,7 +13,7 @@ import { T, TILES, tile } from '../core/tiles';
 import { Feature, MapSpec, Project, SEA_LEVEL, Settings, WorldMap, newId } from '../core/types';
 import { guideForMap } from '../core/zoom';
 import type * as CloudModule from '../cloud/cloud';
-import { openCloudDialog } from './cloudDialog';
+import { openCloudDialog, openSignInDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
 import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
@@ -229,7 +229,7 @@ export class App {
       btn.title = 'Sign in with Google to save projects to the cloud';
       return;
     }
-    const first = this.user.name.split(' ')[0];
+    const first = this.user.guest ? 'Guest' : this.user.name.split(' ')[0];
     const status = this.isCloudLinked()
       ? { idle: ' · synced', pending: ' · unsaved', saving: ' · saving…', saved: ' · saved', error: ' · not saved' }[this.cloudState]
       : '';
@@ -242,14 +242,23 @@ export class App {
       toast('Connecting to the cloud…');
       return;
     }
-    if (this.user) {
-      openCloudDialog(this);
-      return;
-    }
+    if (this.user) openCloudDialog(this);
+    else openSignInDialog(this);
+  }
+
+  /** Upgrade a guest to a Google account, keeping its cloud projects. */
+  async upgradeGuest(): Promise<void> {
+    const cloud = this.cloud;
+    if (!cloud) return;
+    const wasLinked = this.isCloudLinked();
     try {
-      await this.cloud.signIn();
+      const copied = await cloud.upgradeGuest();
+      this.user = cloud.currentUser();
+      if (wasLinked && this.user) this.setCloudLink(`${this.user.uid}:${this.project.id}`);
+      this.updateCloudButton();
+      toast(copied ? `Signed in — copied ${copied} guest project(s) to your Google account` : 'Guest account linked to Google');
     } catch (e) {
-      toast(this.cloud.describeError(e));
+      toast(cloud.describeError(e));
     }
   }
 

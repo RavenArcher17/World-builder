@@ -27,12 +27,13 @@ account key saved as the repository secret `FIREBASE_SERVICE_ACCOUNT` (roles: Fi
 Admin, API Keys Viewer). Manual deploy instead: `npm install -g firebase-tools`,
 `firebase login`, `npm run build`, `firebase deploy`.
 
-**Cloud saves.** "☁ Sign in" signs in with Google; the open project can then be saved to
+**Cloud saves.** "☁ Sign in" offers Google sign-in or guest (anonymous) sign-in; a guest can
+later link a Google account and keep their projects. The open project can then be saved to
 Cloud Firestore and keeps syncing a few seconds after each change. Projects are gzipped and
 split across documents (`users/{uid}/projects/{id}` + `chunks/`), so large atlases fit within
 Firestore's 1 MiB document limit. One-time console setup:
 
-1. Authentication → Get started → Sign-in method → enable **Google**.
+1. Authentication → Get started → Sign-in method → enable **Google** and **Anonymous**.
 2. Firestore Database → Create database (production mode, any location).
 3. Firestore → Rules → paste `firestore.rules` → Publish (or `firebase deploy --only firestore:rules`).
 

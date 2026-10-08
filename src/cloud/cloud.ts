@@ -9,7 +9,18 @@
  * This module is loaded lazily so the editor starts without waiting for the Firebase SDK.
  */
 import { initializeApp } from 'firebase/app';
-import { GoogleAuthProvider, getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  type User,
+  getAuth,
+  linkWithPopup,
+  onAuthStateChanged,
+  signInAnonymously,
+  signInWithCredential,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+} from 'firebase/auth';
 import { Bytes, Timestamp, collection, doc, getDoc, getDocs, getFirestore, orderBy, query, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { parseProject, serializeProject } from '../core/project';
 import type { Project } from '../core/types';
@@ -27,6 +38,8 @@ export interface CloudUser {
   uid: string;
   name: string;
   email: string;
+  /** Anonymous account: tied to this browser until linked to Google. */
+  guest: boolean;
 }
 
 export interface CloudProject {
@@ -37,8 +50,44 @@ export interface CloudProject {
   updatedAt: number;
 }
 
+function toUser(u: User | null): CloudUser | null {
+  if (!u) return null;
+  return { uid: u.uid, name: u.isAnonymous ? 'Guest' : u.displayName || u.email || 'You', email: u.email ?? '', guest: u.isAnonymous };
+}
+
 export function onUserChanged(cb: (user: CloudUser | null) => void): void {
-  onAuthStateChanged(auth, (u) => cb(u ? { uid: u.uid, name: u.displayName || u.email || 'You', email: u.email ?? '' } : null));
+  onAuthStateChanged(auth, (u) => cb(toUser(u)));
+}
+
+export function currentUser(): CloudUser | null {
+  return toUser(auth.currentUser);
+}
+
+export async function signInAsGuest(): Promise<void> {
+  await signInAnonymously(auth);
+}
+
+/**
+ * Turn the guest account into a Google account, keeping its projects. If that Google account
+ * already exists, sign into it and copy the guest's projects across instead.
+ * Returns the number of projects copied (0 when the account was simply upgraded).
+ */
+export async function upgradeGuest(): Promise<number> {
+  const guest = auth.currentUser;
+  if (!guest?.isAnonymous) return 0;
+  try {
+    await linkWithPopup(guest, new GoogleAuthProvider());
+    await guest.reload();
+    return 0;
+  } catch (e) {
+    if (errorCode(e) !== 'auth/credential-already-in-use') throw e;
+    const credential = GoogleAuthProvider.credentialFromError(e as Parameters<typeof GoogleAuthProvider.credentialFromError>[0]);
+    if (!credential) throw e;
+    const projects = await Promise.all((await listProjects()).map((p) => loadProject(p.id)));
+    await signInWithCredential(auth, credential);
+    for (const p of projects) await saveProject(p);
+    return projects.length;
+  }
 }
 
 export async function signIn(): Promise<void> {
@@ -150,12 +199,14 @@ export function describeError(e: unknown): string {
   const code = errorCode(e);
   const msg = e instanceof Error ? e.message : String(e);
   if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return 'Sign-in cancelled';
+  if (code === 'auth/admin-restricted-operation') return 'Guest sign-in is not switched on (Firebase console → Authentication → Sign-in method → Anonymous).';
   if (code === 'auth/operation-not-allowed' || code === 'auth/configuration-not-found')
     return 'Google sign-in is not switched on yet (Firebase console → Authentication → Sign-in method → Google).';
   if (code === 'auth/unauthorized-domain')
     return `Sign-in is not allowed from ${location.hostname} (Firebase console → Authentication → Settings → Authorised domains).`;
   if (code === 'permission-denied') return 'The cloud database refused access — publish the security rules from firestore.rules.';
-  if (code === 'not-found' || /database .* does not exist/i.test(msg)) return 'Create the Firestore database in the Firebase console first.';
+  if (code === 'not-found' || /database .* does not exist|firestore api has not been used|service_disabled/i.test(msg))
+    return 'Create the Firestore database in the Firebase console first.';
   if (code === 'unavailable') return 'Cannot reach the cloud right now — check your connection.';
   return msg;
 }
