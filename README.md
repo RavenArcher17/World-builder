@@ -14,6 +14,20 @@ npm test           # generator test suite
 npm run build      # static site in dist/ (works from any folder or static host)
 ```
 
+## Hosting on Firebase
+
+`firebase.json` serves the built `dist/` folder. `.github/workflows/firebase-hosting.yml` builds
+and deploys automatically: pushes to `main` go live, pull requests get a preview link.
+
+One-time setup:
+
+1. Put your Firebase project ID in `.firebaserc` (`"default": "<project-id>"`).
+2. Create a service account key that can deploy, and save it as the repository secret
+   `FIREBASE_SERVICE_ACCOUNT` (GitHub → Settings → Secrets and variables → Actions).
+
+Manual deploy from your own machine instead: `npm install -g firebase-tools`, `firebase login`,
+`npm run build`, `firebase deploy --only hosting`.
+
 ## What it does
 
 | Step | How |
