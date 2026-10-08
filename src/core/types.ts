@@ -78,6 +78,8 @@ export interface WorldMap extends MapSpec {
 export interface Project {
   format: 'world-builder-project';
   version: 1;
+  /** Stable id; also the document id when the project is saved to the cloud. */
+  id: string;
   name: string;
   maps: Record<string, WorldMap>;
 }

@@ -1,7 +1,7 @@
-import { emptyLayers, MapLayers, Project, WorldMap } from './types';
+import { emptyLayers, MapLayers, Project, WorldMap, newId } from './types';
 
 export function createProject(name = 'My World'): Project {
-  return { format: 'world-builder-project', version: 1, name, maps: {} };
+  return { format: 'world-builder-project', version: 1, id: newId('proj'), name, maps: {} };
 }
 
 export function addMap(project: Project, map: WorldMap): void {
@@ -46,6 +46,7 @@ export function parseProject(text: string): Project {
     throw new Error('Not a World Builder project file');
   }
   const project = data as Project;
+  if (typeof project.id !== 'string' || !/^[\w-]{1,100}$/.test(project.id)) project.id = newId('proj');
   for (const m of Object.values(project.maps)) {
     const size = m.width * m.height;
     const blank = emptyLayers(size);

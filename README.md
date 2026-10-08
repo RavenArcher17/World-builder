@@ -14,19 +14,30 @@ npm test           # generator test suite
 npm run build      # static site in dist/ (works from any folder or static host)
 ```
 
-## Hosting on Firebase
+## Firebase: hosting and cloud saves
 
-`firebase.json` serves the built `dist/` folder. `.github/workflows/firebase-hosting.yml` builds
-and deploys automatically: pushes to `main` go live, pull requests get a preview link.
+The app is set up for the Firebase project `world-builder-fc2cf` (`.firebaserc`,
+`src/cloud/config.ts`). The web config values are public by design; data is protected by the
+Firestore security rules in `firestore.rules`.
 
-One-time setup:
+**Hosting.** `firebase.json` serves the built `dist/` folder, and
+`.github/workflows/firebase-hosting.yml` deploys automatically: pushes to `main` go live at
+<https://world-builder-fc2cf.web.app>, pull requests get a preview link. It needs a service
+account key saved as the repository secret `FIREBASE_SERVICE_ACCOUNT` (roles: Firebase Hosting
+Admin, API Keys Viewer). Manual deploy instead: `npm install -g firebase-tools`,
+`firebase login`, `npm run build`, `firebase deploy`.
 
-1. Put your Firebase project ID in `.firebaserc` (`"default": "<project-id>"`).
-2. Create a service account key that can deploy, and save it as the repository secret
-   `FIREBASE_SERVICE_ACCOUNT` (GitHub → Settings → Secrets and variables → Actions).
+**Cloud saves.** "☁ Sign in" signs in with Google; the open project can then be saved to
+Cloud Firestore and keeps syncing a few seconds after each change. Projects are gzipped and
+split across documents (`users/{uid}/projects/{id}` + `chunks/`), so large atlases fit within
+Firestore's 1 MiB document limit. One-time console setup:
 
-Manual deploy from your own machine instead: `npm install -g firebase-tools`, `firebase login`,
-`npm run build`, `firebase deploy --only hosting`.
+1. Authentication → Get started → Sign-in method → enable **Google**.
+2. Firestore Database → Create database (production mode, any location).
+3. Firestore → Rules → paste `firestore.rules` → Publish (or `firebase deploy --only firestore:rules`).
+
+Sign-in works on `localhost`, `*.web.app` and `*.firebaseapp.com`. Other domains (including PR
+preview links) must be added under Authentication → Settings → Authorised domains.
 
 ## What it does
 
@@ -81,6 +92,7 @@ src/core/            pure TypeScript, no DOM — usable from Node scripts too
   compose.ts         combine maps on a larger board
   resample.ts        convert between grid types / sizes
   export/formats.ts  game JSON, Tiled, CSV
+src/cloud/           Firebase config, Google sign-in, Firestore project storage (lazy-loaded)
   tiles.ts           shared tile registry (ids are stable — append only)
   features.ts        place types and icons
   scales.ts          scale presets

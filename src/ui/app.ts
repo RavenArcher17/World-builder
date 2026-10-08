@@ -12,6 +12,8 @@ import { defaultSettings } from '../core/settings';
 import { T, TILES, tile } from '../core/tiles';
 import { Feature, MapSpec, Project, SEA_LEVEL, Settings, WorldMap, newId } from '../core/types';
 import { guideForMap } from '../core/zoom';
+import type * as CloudModule from '../cloud/cloud';
+import { openCloudDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
 import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
@@ -20,6 +22,9 @@ type Tool = 'select' | 'pan' | 'paint' | 'feature';
 type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines';
 
 const STORAGE_KEY = 'world-builder:project';
+/** `${uid}:${projectId}` of the project that auto-syncs to the cloud. */
+const CLOUD_LINK_KEY = 'world-builder:cloud-link';
+const CLOUD_SAVE_DELAY = 8000;
 const KIND_ICON: Record<string, string> = { overland: '🌍', settlement: '🏘️', dungeon: '💀' };
 
 /** Typical elevation for painted overland tiles so hill shading still makes sense. */
@@ -65,6 +70,13 @@ export class App {
     | null = null;
   private spaceDown = false;
   private needsFit = false;
+  cloud: typeof CloudModule | null = null;
+  user: CloudModule.CloudUser | null = null;
+  private cloudLink: string | null = null;
+  private cloudTimer = 0;
+  private cloudState: 'idle' | 'pending' | 'saving' | 'saved' | 'error' = 'idle';
+  private cloudBusy = false;
+  private cloudAgain = false;
 
   constructor() {
     this.project = this.loadSaved() ?? createProject('My World');
@@ -80,6 +92,7 @@ export class App {
       this.generateNew();
     }
     this.refreshPanels();
+    this.initCloud();
   }
 
   get map(): WorldMap | null {
@@ -98,6 +111,7 @@ export class App {
   }
 
   private scheduleSave(): void {
+    this.scheduleCloudSave();
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       try {
@@ -106,6 +120,137 @@ export class App {
         toast('Autosave skipped (project too large for browser storage) — use Save.');
       }
     }, 600);
+  }
+
+  /** Swap in a whole project (opened from a file or the cloud, or a new one). */
+  replaceProject(project: Project, opts: { cloud?: boolean } = {}): void {
+    this.pushUndo();
+    this.project = project;
+    byId<HTMLInputElement>('project-name').value = project.name;
+    this.currentId = null;
+    const first = rootMaps(project)[0];
+    if (first) this.openMap(first.id);
+    this.changed();
+    // Link after changed() so opening a cloud copy does not immediately write it back.
+    if (opts.cloud && this.user) {
+      this.cloudState = 'saved';
+      this.setCloudLink(`${this.user.uid}:${project.id}`);
+    }
+  }
+
+  // ---- cloud ------------------------------------------------------------------------------
+
+  private initCloud(): void {
+    try {
+      this.cloudLink = localStorage.getItem(CLOUD_LINK_KEY);
+    } catch {
+      this.cloudLink = null;
+    }
+    this.updateCloudButton();
+    import('../cloud/cloud')
+      .then((m) => {
+        this.cloud = m;
+        m.onUserChanged((u) => {
+          this.user = u;
+          this.cloudState = 'idle';
+          this.updateCloudButton();
+        });
+      })
+      .catch(() => {
+        const btn = byId<HTMLButtonElement>('btn-cloud');
+        btn.textContent = '☁ Offline';
+        btn.title = 'Cloud saving could not be loaded';
+      });
+  }
+
+  isCloudLinked(): boolean {
+    return !!this.user && this.cloudLink === `${this.user.uid}:${this.project.id}`;
+  }
+
+  unlinkCloud(): void {
+    this.setCloudLink(null);
+  }
+
+  private setCloudLink(link: string | null): void {
+    this.cloudLink = link;
+    try {
+      if (link) localStorage.setItem(CLOUD_LINK_KEY, link);
+      else localStorage.removeItem(CLOUD_LINK_KEY);
+    } catch {
+      // Not critical: syncing just has to be re-enabled after a reload.
+    }
+    this.updateCloudButton();
+  }
+
+  private scheduleCloudSave(): void {
+    if (!this.isCloudLinked()) return;
+    clearTimeout(this.cloudTimer);
+    this.cloudState = 'pending';
+    this.updateCloudButton();
+    this.cloudTimer = window.setTimeout(() => void this.saveToCloud(), CLOUD_SAVE_DELAY);
+  }
+
+  /** Save the open project to the cloud and keep it synced from now on. */
+  async saveToCloud(): Promise<boolean> {
+    const cloud = this.cloud;
+    const user = this.user;
+    if (!cloud || !user) return false;
+    clearTimeout(this.cloudTimer);
+    if (this.cloudBusy) {
+      this.cloudAgain = true;
+      return true;
+    }
+    this.cloudBusy = true;
+    this.cloudState = 'saving';
+    this.updateCloudButton();
+    try {
+      await cloud.saveProject(this.project);
+      this.setCloudLink(`${user.uid}:${this.project.id}`);
+      this.cloudState = 'saved';
+      return true;
+    } catch (e) {
+      this.cloudState = 'error';
+      toast(`Cloud save failed: ${cloud.describeError(e)}`);
+      return false;
+    } finally {
+      this.cloudBusy = false;
+      this.updateCloudButton();
+      if (this.cloudAgain) {
+        this.cloudAgain = false;
+        void this.saveToCloud();
+      }
+    }
+  }
+
+  private updateCloudButton(): void {
+    const btn = byId<HTMLButtonElement>('btn-cloud');
+    if (!this.user) {
+      btn.textContent = '☁ Sign in';
+      btn.title = 'Sign in with Google to save projects to the cloud';
+      return;
+    }
+    const first = this.user.name.split(' ')[0];
+    const status = this.isCloudLinked()
+      ? { idle: ' · synced', pending: ' · unsaved', saving: ' · saving…', saved: ' · saved', error: ' · not saved' }[this.cloudState]
+      : '';
+    btn.textContent = `☁ ${first}${status}`;
+    btn.title = this.isCloudLinked() ? 'This project syncs to the cloud — click for cloud saves' : 'Signed in — click to save this project to the cloud';
+  }
+
+  private async onCloudClick(): Promise<void> {
+    if (!this.cloud) {
+      toast('Connecting to the cloud…');
+      return;
+    }
+    if (this.user) {
+      openCloudDialog(this);
+      return;
+    }
+    try {
+      await this.cloud.signIn();
+    } catch (e) {
+      toast(this.cloud.describeError(e));
+    }
   }
 
   /** Snapshot the project before a change. */
@@ -119,6 +264,7 @@ export class App {
   private restore(snapshot: string): void {
     const { p, c } = JSON.parse(snapshot) as { p: Project; c: string | null };
     this.project = p;
+    byId<HTMLInputElement>('project-name').value = p.name;
     this.currentId = c && p.maps[c] ? c : rootMaps(p)[0]?.id ?? null;
     this.selectedFeature = null;
     this.changed();
@@ -255,11 +401,7 @@ export class App {
     };
     byId('btn-new-project').onclick = () => {
       if (!confirm('Start a new empty project? Unsaved maps in this browser will be replaced (use Save first to keep them).')) return;
-      this.pushUndo();
-      this.project = createProject('My World');
-      byId<HTMLInputElement>('project-name').value = this.project.name;
-      this.currentId = null;
-      this.changed();
+      this.replaceProject(createProject('My World'));
     };
     byId('btn-save').onclick = () => downloadText(`${slug(this.project.name)}.world.json`, serializeProject(this.project));
     const fileInput = byId<HTMLInputElement>('file-open');
@@ -270,18 +412,13 @@ export class App {
       if (!file) return;
       try {
         const p = parseProject(await file.text());
-        this.pushUndo();
-        this.project = p;
-        byId<HTMLInputElement>('project-name').value = p.name;
-        const first = rootMaps(p)[0];
-        this.currentId = null;
-        if (first) this.openMap(first.id);
-        this.changed();
+        this.replaceProject(p);
         toast(`Opened ${p.name}`);
       } catch (e) {
         toast(`Could not open: ${(e as Error).message}`);
       }
     };
+    byId('btn-cloud').onclick = () => void this.onCloudClick();
     byId('btn-undo').onclick = () => this.undo();
     byId('btn-redo').onclick = () => this.redo();
     byId('btn-export').onclick = () => this.map && openExportDialog(this, this.map);
