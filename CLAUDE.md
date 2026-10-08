@@ -8,7 +8,9 @@ Actions → Firebase Hosting). Other projects can build on it, so it stays gener
 
 - The owner uses it on an iPhone: everything must work by touch in Safari at 390 px wide, with
   buttons at least 44 px.
-- End every message that reports a pushed update with the live link on its own line at the bottom:
+- End every message with the live links of RPG-DC (the owner's game) and World Builder, each on
+  its own line at the bottom:
+  https://rpg-dc.onrender.com
   https://world-builder-fc2cf.web.app
 
 ## Checks before pushing
