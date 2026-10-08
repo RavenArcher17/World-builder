@@ -69,6 +69,10 @@ Maps whose settings carry `rpgdcMapId` (made by [RPG-DC](https://github.com/Rave
 - **Export → RPG-DC maps:** one `rpg-dc.maps.json` with every RPG-DC map, documented in
   [`docs/rpgdc-export.md`](docs/rpgdc-export.md).
 
+- **Game art preview:** "Draw with the game's art" in the Map panel draws the map with the game's
+  own sprites (Flare, CC BY-SA 3.0), loaded from `https://rpg-dc.onrender.com/art/`; the game
+  server must allow cross-origin requests for it.
+
 Projects from the game's exporter are converted to this form when opened. Everything works by
 touch on a phone: one finger paints or places, two fingers pinch and pan.
 

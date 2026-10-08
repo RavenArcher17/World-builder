@@ -19,6 +19,7 @@ import type * as CloudModule from '../cloud/cloud';
 import { openCloudDialog, openSignInDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
+import { artBase, gameArtReady, loadGameArt } from './gameArt';
 import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectLegendEntries } from './gameUi';
 import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
 
@@ -692,6 +693,24 @@ export class App {
     this.setTool('feature');
   }
 
+  /** Draw game maps with the game's own art, loading it from the game server the first time. */
+  setGameArt(on: boolean): void {
+    if (!on) return this.setView('gameArt', false);
+    this.setView('gameArt', true);
+    if (gameArtReady()) return;
+    toast("Loading the game's art…");
+    loadGameArt()
+      .then(() => {
+        this.cache = null;
+        this.draw();
+        toast("Showing the game's art");
+      })
+      .catch((e: Error) => {
+        this.setView('gameArt', false);
+        toast(`Couldn't load the game's art from ${artBase()} (${e.message}). The game server has to allow cross-origin requests.`);
+      });
+  }
+
   setView(key: keyof ViewOptions, value: boolean): void {
     this.view[key] = value;
     const input = this.viewInputs[key];
@@ -1045,7 +1064,7 @@ export class App {
 
   private ensureCache(map: WorldMap): void {
     const v = this.view;
-    const key = `${map.id}:${this.version}:${v.grid}:${v.hillshade}:${v.rivers}:${v.roads}:${v.objects}:${v.zones}`;
+    const key = `${map.id}:${this.version}:${v.grid}:${v.hillshade}:${v.rivers}:${v.roads}:${v.objects}:${v.zones}:${v.gameArt && gameArtReady()}`;
     const wanted = safeScale(map, Math.min(48, Math.max(baseUnitPx(map.grid), this.scale)));
     if (this.cache && this.cache.key === key) {
       if (wanted > this.cache.s * 1.4 || wanted < this.cache.s / 3) {

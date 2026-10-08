@@ -6,6 +6,7 @@ import { T, TILES, tile } from '../core/tiles';
 import { SEA_LEVEL, WorldMap } from '../core/types';
 import { TILESET_COLUMNS, tilePixels } from '../core/export/formats';
 import { cellMetrics, drawObject, drawPattern, paintOrder } from './drawObjects';
+import { drawGameArt } from './gameArt';
 
 export interface ViewOptions {
   grid: boolean;
@@ -17,9 +18,11 @@ export interface ViewOptions {
   objects: boolean;
   /** Tint cells by their rules zone (game maps). */
   zones: boolean;
+  /** Draw game maps with the game's own art when it is loaded (see gameArt.ts). */
+  gameArt: boolean;
 }
 
-export const DEFAULT_VIEW: ViewOptions = { grid: false, hillshade: true, rivers: true, roads: true, features: true, labels: true, objects: true, zones: false };
+export const DEFAULT_VIEW: ViewOptions = { grid: false, hillshade: true, rivers: true, roads: true, features: true, labels: true, objects: true, zones: false, gameArt: false };
 
 /** Zone tint colours by zone layer value (1 = safe … 4 = deep). */
 export const ZONE_TINT = ['', 'rgba(63,191,111,0.32)', 'rgba(224,192,64,0.32)', 'rgba(224,122,48,0.34)', 'rgba(192,58,74,0.36)'];
@@ -101,6 +104,11 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   const { inner, flat } = cellMetrics(g, s);
+  if (view.gameArt && drawGameArt(ctx, map, s)) {
+    drawZoneTint(ctx, g, map, s, view);
+    if (view.grid) drawGridLines(ctx, g, s);
+    return;
+  }
   for (let i = 0; i < g.size; i++) {
     const c = cellColor(map, g, i, view.hillshade);
     polygon(ctx, g.corners(i), s);
@@ -115,14 +123,7 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
       drawPattern(ctx, pattern, x * s, y * s, inner, flat, i);
     }
   }
-  if (view.zones && L.zone.some(Boolean)) {
-    for (let i = 0; i < g.size; i++) {
-      if (!L.zone[i]) continue;
-      polygon(ctx, g.corners(i), s);
-      ctx.fillStyle = ZONE_TINT[L.zone[i]] ?? 'transparent';
-      ctx.fill();
-    }
-  }
+  drawZoneTint(ctx, g, map, s, view);
 
   // Outlines between different buildings / walls so each structure reads as one shape.
   ctx.strokeStyle = 'rgba(40,24,16,0.85)';
@@ -202,13 +203,26 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
     }
   }
 
-  if (view.grid) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < g.size; i++) {
-      polygon(ctx, g.corners(i), s);
-      ctx.stroke();
-    }
+  if (view.grid) drawGridLines(ctx, g, s);
+}
+
+function drawZoneTint(ctx: CanvasRenderingContext2D, g: Grid, map: WorldMap, s: number, view: ViewOptions): void {
+  const L = map.layers;
+  if (!view.zones || !L.zone.some(Boolean)) return;
+  for (let i = 0; i < g.size; i++) {
+    if (!L.zone[i]) continue;
+    polygon(ctx, g.corners(i), s);
+    ctx.fillStyle = ZONE_TINT[L.zone[i]] ?? 'transparent';
+    ctx.fill();
+  }
+}
+
+function drawGridLines(ctx: CanvasRenderingContext2D, g: Grid, s: number): void {
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < g.size; i++) {
+    polygon(ctx, g.corners(i), s);
+    ctx.stroke();
   }
 }
 

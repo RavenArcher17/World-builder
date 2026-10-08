@@ -35,6 +35,10 @@ textarea {
   color: inherit;
 }
 
+a {
+  color: var(--accent);
+}
+
 button {
   background: var(--panel-2);
   border: 1px solid var(--border);

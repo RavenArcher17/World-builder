@@ -26,6 +26,7 @@ import { tile } from '../core/tiles';
 import type { Feature, WorldMap } from '../core/types';
 import type { App } from './app';
 import { byId, downloadText, h, showDialog, toast } from './dom';
+import { ART_CREDITS_URL, artBase } from './gameArt';
 
 export type GamePaintMode = 'tile' | 'object' | 'grove' | 'ore' | 'zone';
 
@@ -170,6 +171,14 @@ export function gameMapPanel(app: App, map: WorldMap): HTMLElement {
       legend.append(h('div', {}, h('span', { class: 'swatch', style: `background:${z.color}` }), h('b', {}, z.name), h('span', {}, z.rules)));
     }
     box.append(h('label', { class: 'check' }, toggle, 'Show zones on the map'), legend, h('p', { class: 'hint' }, 'Paint zones with Paint → Zones.'));
+  }
+  if (map.grid === 'iso') {
+    const art = h('input', { type: 'checkbox', checked: app.view.gameArt });
+    art.onchange = () => app.setGameArt(art.checked);
+    box.append(
+      h('label', { class: 'check', title: `Loads the art from ${artBase()}` }, art, "Draw with the game's art"),
+      app.view.gameArt ? h('p', { class: 'hint' }, 'Art from Flare (flarerpg.org), CC BY-SA 3.0 — ', h('a', { href: ART_CREDITS_URL, target: '_blank', rel: 'noopener' }, 'credits')) : '',
+    );
   }
   box.append(
     h(
