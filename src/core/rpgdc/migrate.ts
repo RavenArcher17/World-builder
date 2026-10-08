@@ -2,12 +2,13 @@
  * Converts RPG-DC maps exported by the game's `tools/world-builder/export-map.ts` (stand-in
  * terrain plus the game's own tile id per cell in `layers.rpgdcTile`) to ground + object + zone
  * layers and typed places. Runs when a project is opened; it removes `rpgdcTile`, so a converted
- * project is never converted twice.
+ * project is never converted twice. Also brings older RPG-DC maps' places up to date (see
+ * PLACES_VERSION).
  */
 import { O } from '../objects';
 import { T, tile } from '../tiles';
 import type { Feature, Project, WorldMap } from '../types';
-import { besideTile, gameMapId, isRpgdc, isWalkableAt, zoneByDistance, zoneByKey } from './game';
+import { besideTile, gameMapId, isRpgdc, isWalkableAt, normalRange, zoneByDistance, zoneByKey } from './game';
 
 /** The game's tile ids (shared/src/map.ts in RPG-DC). */
 const G = {
@@ -75,13 +76,31 @@ export function needsMigration(map: WorldMap): boolean {
   return isRpgdc(map) && Array.isArray(raw) && raw.length === map.width * map.height;
 }
 
-/** Migrate every RPG-DC map that still has an `rpgdcTile` layer. Returns the migrated map ids. */
+/**
+ * How RPG-DC places are stored, kept in each map's `settings.rpgdcPlaces`.
+ * 2: a monster spawn's radius 0 means its monsters stay on their tile. Before that, 0 meant the
+ * monster's normal range, so older maps get that range written out when opened.
+ */
+export const PLACES_VERSION = 2;
+
+/** Migrate every RPG-DC map that still has an `rpgdcTile` layer, and bring older places up to date. Returns the changed map ids. */
 export function migrateRpgdcProject(project: Project): string[] {
   const todo = Object.values(project.maps).filter(needsMigration);
   for (const map of todo) migrateCells(map);
   for (const map of todo) migratePlaces(project, map, todo);
   for (const map of todo) delete (map.layers as unknown as Record<string, unknown>).rpgdcTile;
-  return todo.map((m) => m.id);
+  const upgraded = Object.values(project.maps).filter((m) => isRpgdc(m) && upgradePlaces(m));
+  return [...new Set([...todo, ...upgraded].map((m) => m.id))];
+}
+
+/** Writes out the normal range for monster spawns saved when radius 0 meant it. True if the map changed. */
+function upgradePlaces(map: WorldMap): boolean {
+  if (Number(map.settings.rpgdcPlaces) >= PLACES_VERSION) return false;
+  for (const f of map.features) {
+    if (f.type === 'monster_spawn' && !(Number(f.props?.radius) > 0)) f.props = { ...f.props, radius: normalRange(f.props?.kind) };
+  }
+  map.settings.rpgdcPlaces = PLACES_VERSION;
+  return true;
 }
 
 const cheb = (a: { c: number; r: number }, c: number, r: number) => Math.max(Math.abs(a.c - c), Math.abs(a.r - r));
@@ -238,7 +257,8 @@ function migratePlaces(project: Project, map: WorldMap, batch: WorldMap[]): void
   for (const f of map.features) {
     if (DROPPED_MARKERS.has(f.type)) continue;
     if (f.type === 'monster') {
-      keep.push(asPlace(f, 'monster_spawn', { kind: f.tags?.[0] ?? 'rat', count: 1, radius: 0 }));
+      const kind = f.tags?.[0] ?? 'rat';
+      keep.push(asPlace(f, 'monster_spawn', { kind, count: 1, radius: normalRange(kind) }));
     } else if (f.type === 'boss') {
       keep.push(asPlace(f, 'boss', { kind: f.tags?.[0] ?? 'bone_king' }));
     } else {

@@ -20,6 +20,7 @@ import {
   isWalkableAt,
   mapZone,
   placeProps,
+  withProp,
   zoneByKey,
 } from '../core/rpgdc/game';
 import { tile } from '../core/tiles';
@@ -99,7 +100,7 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
   const props = placeProps(f);
   const set = (key: string, value: string | number) => {
     app.pushUndo();
-    f.props = { ...placeProps(f), [key]: value };
+    f.props = withProp(f, key, value);
     app.changed();
   };
   for (const field of fields) {

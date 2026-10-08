@@ -55,7 +55,7 @@ export function openCloudDialog(app: App): void {
                       app.replaceProject(project, { cloud: true });
                       // Store a converted project back in its new form.
                       if (migrated.length) void app.saveToCloud();
-                      toast(migrated.length ? `Opened “${project.name}” and converted ${migrated.length} RPG-DC map(s)` : `Opened “${project.name}” from the cloud`);
+                      toast(migrated.length ? `Opened “${project.name}” and updated ${migrated.length} RPG-DC map(s) for the game` : `Opened “${project.name}” from the cloud`);
                       (document.getElementById('dialog') as HTMLDialogElement).close();
                     } catch (e) {
                       toast(cloud.describeError(e));

@@ -4,7 +4,8 @@ import { O, OBJECTS } from '../src/core/objects';
 import { createProject, parseProject, parseProjectReport, serializeProject } from '../src/core/project';
 import { checkGameMaps } from '../src/core/rpgdc/checks';
 import { toRpgdcMaps } from '../src/core/rpgdc/export';
-import { NEIGHBOURS, isWalkableAt, zoneByDistance } from '../src/core/rpgdc/game';
+import { NEIGHBOURS, defaultProps, isWalkableAt, normalRange, withProp, zoneByDistance } from '../src/core/rpgdc/game';
+import { PLACES_VERSION } from '../src/core/rpgdc/migrate';
 import { T, TILES } from '../src/core/tiles';
 import { Feature, Project, WorldMap, emptyLayers } from '../src/core/types';
 import { make } from './helpers';
@@ -109,7 +110,7 @@ describe('RPG-DC migration of the attached project', () => {
       const monsters = s.features.filter((f) => f.type === 'monster');
       const spawns = m.features.filter((f) => f.type === 'monster_spawn');
       expect(spawns.map((f) => [f.c, f.r, f.props?.kind, f.props?.count, f.props?.radius])).toEqual(
-        monsters.map((f) => [f.c, f.r, f.tags![0], 1, 0]),
+        monsters.map((f) => [f.c, f.r, f.tags![0], 1, normalRange(f.tags![0])]),
       );
       expect(count(m.features, (f) => f.type === 'brazier')).toBe(count(s.features, (f) => f.type === 'brazier'));
       for (const gone of ['bank', 'shop', 'furnace', 'anvil', 'cooking_fire', 'fishing_spot', 'mine', 'monster', 'dungeon', 'stairs_down', 'entrance']) {
@@ -216,7 +217,9 @@ describe('RPG-DC export', () => {
     expect(ow.objectLegend[ow.objects[src.indexOf(9)]]).toBe('bank');
     expect(ow.places[0]).toEqual({ type: 'spawn_point', x: 64, y: 65 });
     expect(ow.places).toContainEqual({ type: 'link', x: 36, y: 44, toMap: 'crypt1', toX: 19, toY: 7 });
-    expect(ow.places.find((pl) => pl.type === 'monster_spawn')).toEqual({ type: 'monster_spawn', x: expect.any(Number), y: expect.any(Number), kind: expect.any(String), count: 1, radius: 0 });
+    const spawn = ow.places.find((pl) => pl.type === 'monster_spawn')!;
+    expect(spawn).toEqual({ type: 'monster_spawn', x: expect.any(Number), y: expect.any(Number), kind: expect.any(String), count: 1, radius: expect.any(Number) });
+    expect(spawn.type === 'monster_spawn' && spawn.radius).toBe(normalRange(spawn.type === 'monster_spawn' && spawn.kind));
     expect(c3.places).toContainEqual({ type: 'boss', x: 31, y: 39, kind: 'bone_king' });
     expect(c1.places.filter((pl) => pl.type === 'brazier')[0]).toEqual({ type: 'brazier', x: expect.any(Number), y: expect.any(Number) });
     expect(JSON.parse(JSON.stringify(out))).toEqual(out);
@@ -227,6 +230,44 @@ describe('RPG-DC export', () => {
     const other = make('village', 'square', 1);
     p.maps[other.id] = other;
     expect(toRpgdcMaps(p).maps).toHaveLength(4);
+  });
+});
+
+describe('monster spawn radius', () => {
+  /** A project as saved before radius 0 meant "stays put": migrated, but without the places version. */
+  const savedEarlier = () => {
+    const p = migrated();
+    for (const m of Object.values(p.maps)) {
+      delete m.settings.rpgdcPlaces;
+      for (const f of m.features) if (f.type === 'monster_spawn') f.props = { ...f.props, radius: 0 };
+    }
+    return serializeProject(p);
+  };
+
+  it('writes out the normal range for spawns saved when radius 0 meant it, once', () => {
+    const { project, migrated: ids } = parseProjectReport(savedEarlier());
+    expect(ids).toHaveLength(4);
+    for (const m of Object.values(project.maps)) {
+      expect(m.settings.rpgdcPlaces).toBe(PLACES_VERSION);
+      for (const f of m.features.filter((x) => x.type === 'monster_spawn')) expect(f.props?.radius).toBe(normalRange(f.props?.kind));
+    }
+    // From now on 0 means "stays put" and is kept.
+    const spawn = Object.values(project.maps).flatMap((m) => m.features).find((f) => f.type === 'monster_spawn')!;
+    spawn.props = { ...spawn.props, radius: 0 };
+    const again = parseProjectReport(serializeProject(project));
+    expect(again.migrated).toEqual([]);
+    expect(Object.values(again.project.maps).flatMap((m) => m.features).find((f) => f.id === spawn.id)?.props?.radius).toBe(0);
+  });
+
+  it('starts new spawns at the monster’s normal range and follows the monster picked', () => {
+    expect(defaultProps('monster_spawn')).toEqual({ kind: 'rat', count: 1, radius: 6 });
+    const f: Feature = { id: 'f', type: 'monster_spawn', c: 0, r: 0, name: 'Spawn', props: { kind: 'rat', count: 1, radius: 6 } };
+    expect(withProp(f, 'kind', 'wolf')).toEqual({ kind: 'wolf', count: 1, radius: 8 });
+    // A radius chosen by hand, including 0, stays when the monster changes.
+    for (const radius of [0, 3]) {
+      f.props = { kind: 'rat', count: 1, radius };
+      expect(withProp(f, 'kind', 'wolf').radius).toBe(radius);
+    }
   });
 });
 

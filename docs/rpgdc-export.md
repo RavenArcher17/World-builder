@@ -46,7 +46,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zones": [0, 1, 1, ...],
   "places": [
     { "type": "spawn_point", "x": 64, "y": 65 },
-    { "type": "monster_spawn", "x": 70, "y": 52, "kind": "goblin", "count": 1, "radius": 0 },
+    { "type": "monster_spawn", "x": 70, "y": 52, "kind": "goblin", "count": 1, "radius": 7 },
     { "type": "link", "x": 36, "y": 44, "toMap": "crypt1", "toX": 19, "toY": 7 }
   ]
 }
@@ -115,13 +115,17 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `type` | Fields | Meaning |
 |---|---|---|
 | `spawn_point` | `x`, `y` | Where new players start. Exactly one, on the overworld, walkable, in the Safe zone. |
-| `monster_spawn` | `x`, `y`, `kind`, `count` (≥ 1), `radius` (tiles, ≥ 0) | `count` monsters of `kind` live here and wander within `radius`. |
+| `monster_spawn` | `x`, `y`, `kind`, `count` (≥ 1), `radius` (tiles, ≥ 0) | `count` monsters of `kind` live here. They roam up to `radius` tiles from home (chasing that far, idling within half of it). `radius` 0: they stay on their tile, and only fight players who come next to them. A new spawn starts at its monster's normal range (below). |
 | `boss` | `x`, `y`, `kind` | A boss. |
 | `brazier` | `x`, `y` | A light (crypt floors). |
 | `link` | `x`, `y`, `toMap`, `toX`, `toY` | On a `crypt_entrance`, `stairs_down` or `stairs_up` tile. Using it moves the player to tile (`toX`, `toY`) of map `toMap`, which is walkable. |
 
-Monster kinds: `rat`, `goblin`, `wolf`, `bandit`, `troll`, `skeleton`, `giant_spider`, `ghoul`,
-`bone_king`.
+Monster kinds, with their normal range in tiles: `rat` 6, `goblin` 7, `wolf` 8, `bandit` 8,
+`troll` 7, `skeleton` 8, `giant_spider` 8, `ghoul` 8, `bone_king` 7. The game uses the normal range
+for a `monster_spawn` that has no `radius`.
+
+Maps saved before radius 0 meant "stays put" (settings without `rpgdcPlaces: 2`) used 0 for the
+normal range; World Builder writes the normal range into those spawns when the project is opened.
 
 Links come in pairs: going down from map A to B (a link on A's entrance or stairs down) is
 matched by a link on one of B's stairs up back to A. Going down, the arrival tile is normally

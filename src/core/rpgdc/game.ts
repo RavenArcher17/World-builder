@@ -158,17 +158,23 @@ export function zoneByDistance(d: number): number {
 
 // ---- places ------------------------------------------------------------------------------
 
-export const MONSTER_KINDS: { key: string; name: string }[] = [
-  { key: 'rat', name: 'Rat' },
-  { key: 'goblin', name: 'Goblin' },
-  { key: 'wolf', name: 'Wolf' },
-  { key: 'bandit', name: 'Bandit' },
-  { key: 'troll', name: 'Troll' },
-  { key: 'skeleton', name: 'Skeleton' },
-  { key: 'giant_spider', name: 'Giant spider' },
-  { key: 'ghoul', name: 'Ghoul' },
-  { key: 'bone_king', name: 'Bone King' },
+/** The game's monsters, with how far each normally roams from its spawn (its leash in RPG-DC). */
+export const MONSTER_KINDS: { key: string; name: string; range: number }[] = [
+  { key: 'rat', name: 'Rat', range: 6 },
+  { key: 'goblin', name: 'Goblin', range: 7 },
+  { key: 'wolf', name: 'Wolf', range: 8 },
+  { key: 'bandit', name: 'Bandit', range: 8 },
+  { key: 'troll', name: 'Troll', range: 7 },
+  { key: 'skeleton', name: 'Skeleton', range: 8 },
+  { key: 'giant_spider', name: 'Giant spider', range: 8 },
+  { key: 'ghoul', name: 'Ghoul', range: 8 },
+  { key: 'bone_king', name: 'Bone King', range: 7 },
 ];
+
+/** A monster's normal roaming range in tiles: the radius a new spawn of it starts with. */
+export function normalRange(kind: unknown): number {
+  return MONSTER_KINDS.find((k) => k.key === kind)?.range ?? 8;
+}
 
 export interface PlaceField {
   key: string;
@@ -195,7 +201,7 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
   monster_spawn: [
     kindField('rat'),
     { key: 'count', label: 'Count', type: 'number', min: 1, max: 50, default: 1 },
-    { key: 'radius', label: 'Radius (tiles)', type: 'number', min: 0, max: 30, default: 0 },
+    { key: 'radius', label: 'Radius (tiles, 0 = stays put)', type: 'number', min: 0, max: 30, default: normalRange('rat') },
   ],
   boss: [kindField('bone_king')],
   brazier: [],
@@ -208,7 +214,8 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
 
 export const PLACE_HELP: Record<string, string> = {
   spawn_point: 'Where new players start. Exactly one, on the overworld, in the Safe zone.',
-  monster_spawn: 'Monsters of one kind live here and wander within the radius.',
+  monster_spawn:
+    'Monsters of one kind live here. Radius: how far they roam from here (they chase you that far). 0: they stay on their tile and only fight what comes next to them. Picking a monster sets its normal range.',
   boss: 'A boss fight.',
   brazier: 'A light in the crypt.',
   link: 'Put it on a crypt entrance or stairs. Players taking them arrive on the chosen tile of the target map.',
@@ -219,6 +226,17 @@ export function placeProps(f: Feature): Record<string, string | number | boolean
   const out: Record<string, string | number | boolean> = {};
   for (const field of PLACE_FIELDS[f.type] ?? []) out[field.key] = f.props?.[field.key] ?? field.default;
   return out;
+}
+
+/**
+ * A place's props after setting one field. Picking another monster moves a radius that was at the
+ * old monster's normal range to the new one's; a radius chosen by hand stays.
+ */
+export function withProp(f: Feature, key: string, value: string | number): Record<string, string | number | boolean> {
+  const before = placeProps(f);
+  const props = { ...before, [key]: value };
+  if (f.type === 'monster_spawn' && key === 'kind' && Number(before.radius) === normalRange(before.kind)) props.radius = normalRange(value);
+  return props;
 }
 
 export function defaultProps(type: string): Record<string, string | number> | undefined {

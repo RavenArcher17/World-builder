@@ -7,7 +7,7 @@ import { featureName } from '../core/names';
 import { paintCluster, paintGrove } from '../core/brushes';
 import { O, OBJECTS, objectDef } from '../core/objects';
 import { createProject, deleteMap, parseProjectReport, rootMaps, serializeProject } from '../core/project';
-import { PLACE_TYPES, defaultProps, gameMapId, isRpgdc, isWalkableAt, zoneAt } from '../core/rpgdc/game';
+import { PLACE_TYPES, defaultProps, gameMapId, isRpgdc, isWalkableAt, placeProps, zoneAt } from '../core/rpgdc/game';
 import { cloneMap, regenerateRegion } from '../core/region';
 import { Rng, parseSeed, randomSeed } from '../core/rng';
 import { SCALES, getScale } from '../core/scales';
@@ -541,7 +541,7 @@ export class App {
         this.replaceProject(p);
         toast(
           migrated.length
-            ? `Opened ${p.name} — converted ${migrated.length} RPG-DC map(s) to ground, objects and zones (saved in this browser; use Save to download)`
+            ? `Opened ${p.name} — updated ${migrated.length} RPG-DC map(s) for the game (saved in this browser; use Save to download)`
             : `Opened ${p.name}`,
         );
       } catch (e) {
@@ -1137,7 +1137,7 @@ export class App {
     // Game overlays: a selected monster spawn's wander area, a selected link's arrival tile.
     const sel = map.features.find((f) => f.id === this.selectedFeature);
     if (sel && isRpgdc(map)) {
-      const radius = Number(sel.props?.radius ?? 0);
+      const radius = Number(placeProps(sel).radius ?? 0);
       if (sel.type === 'monster_spawn' && radius > 0) {
         const r = clampRect({ c0: sel.c - radius, r0: sel.r - radius, c1: sel.c + radius, r1: sel.r + radius }, map);
         this.pathScreen(rectOutline(g, r));
