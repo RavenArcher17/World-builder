@@ -22,7 +22,7 @@ import {
   signOut,
 } from 'firebase/auth';
 import { Bytes, Timestamp, collection, doc, getDoc, getDocs, getFirestore, orderBy, query, serverTimestamp, writeBatch } from 'firebase/firestore';
-import { parseProject, serializeProject } from '../core/project';
+import { parseProjectReport, serializeProject } from '../core/project';
 import type { Project } from '../core/types';
 import { compress, decompress, joinChunks, splitChunks } from './codec';
 import { firebaseConfig } from './config';
@@ -83,7 +83,7 @@ export async function upgradeGuest(): Promise<number> {
     if (errorCode(e) !== 'auth/credential-already-in-use') throw e;
     const credential = GoogleAuthProvider.credentialFromError(e as Parameters<typeof GoogleAuthProvider.credentialFromError>[0]);
     if (!credential) throw e;
-    const projects = await Promise.all((await listProjects()).map((p) => loadProject(p.id)));
+    const projects = await Promise.all((await listProjects()).map(async (p) => (await loadProject(p.id)).project));
     await signInWithCredential(auth, credential);
     for (const p of projects) await saveProject(p);
     return projects.length;
@@ -158,7 +158,8 @@ export async function saveProject(project: Project): Promise<void> {
   if (old?.rev && old.rev !== rev) await deleteChunks(project.id, String(old.rev), Number(old.chunks ?? 0));
 }
 
-export async function loadProject(id: string): Promise<Project> {
+/** Load a project; `migrated` lists maps converted from an older format on the way. */
+export async function loadProject(id: string): Promise<{ project: Project; migrated: string[] }> {
   const meta = await getDoc(metaRef(id));
   const v = meta.data();
   if (!v) throw new Error('That project is no longer in the cloud');
@@ -170,9 +171,9 @@ export async function loadProject(id: string): Promise<Project> {
       return bytes.toUint8Array();
     }),
   );
-  const project = parseProject(await decompress(joinChunks(parts)));
-  project.id = id;
-  return project;
+  const report = parseProjectReport(await decompress(joinChunks(parts)));
+  report.project.id = id;
+  return report;
 }
 
 export async function deleteProject(id: string): Promise<void> {

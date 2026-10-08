@@ -4,22 +4,31 @@ import { generateMap } from '../core/generate';
 import { CellRect, GRID_TYPES, Grid, GridType, inRect, normalizeRect } from '../core/grid';
 import { link, linkPath, traceLine, unlinkCell } from '../core/links';
 import { featureName } from '../core/names';
-import { createProject, deleteMap, parseProject, rootMaps, serializeProject } from '../core/project';
+import { paintCluster, paintGrove } from '../core/brushes';
+import { O, OBJECTS, objectDef } from '../core/objects';
+import { createProject, deleteMap, parseProjectReport, rootMaps, serializeProject } from '../core/project';
+import { PLACE_TYPES, defaultProps, gameMapId, isRpgdc, isWalkableAt, zoneAt } from '../core/rpgdc/game';
 import { cloneMap, regenerateRegion } from '../core/region';
 import { Rng, parseSeed, randomSeed } from '../core/rng';
 import { SCALES, getScale } from '../core/scales';
 import { defaultSettings } from '../core/settings';
 import { T, TILES, tile } from '../core/tiles';
-import { Feature, MapSpec, Project, SEA_LEVEL, Settings, WorldMap, newId } from '../core/types';
+import { Feature, MapSpec, Project, SEA_LEVEL, Settings, WorldMap, layerMax, newId } from '../core/types';
 import { guideForMap } from '../core/zoom';
 import type * as CloudModule from '../cloud/cloud';
 import { openCloudDialog, openSignInDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
+import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectLegendEntries } from './gameUi';
 import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
 
 type Tool = 'select' | 'pan' | 'paint' | 'feature';
-type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines';
+type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines' | 'object' | 'grove' | 'ore' | 'zone';
+const GAME_PAINT_MODES: PaintMode[] = ['tile', 'object', 'grove', 'ore', 'zone'];
+const GENERIC_PAINT_MODES: PaintMode[] = ['tile', 'road', 'river', 'erase-lines', 'object'];
+/** Objects that clear away when a path, floor or water is painted over them. */
+const NATURE_GROUPS = new Set(['tree', 'rock', 'ore', 'wall']);
+const OBJECTS_LIST = OBJECTS.slice(1);
 
 const STORAGE_KEY = 'world-builder:project';
 /** `${uid}:${projectId}` of the project that auto-syncs to the cloud. */
@@ -53,6 +62,24 @@ export class App {
   brush = 0;
   roadLevel = 2;
   featureType = 'village';
+  paintObject: number = O.TREE;
+  groveObject: number = O.TREE;
+  oreObject: number = O.COPPER_ROCK;
+  paintZone = 1;
+  /** Choosing the arrival tile of a stairs link: the link lives on `sourceId`, the tile on `targetId`. */
+  private pick: { sourceId: string; featureId: string; targetId: string } | null = null;
+  /** A tile to highlight after jumping to a problem from the checks. */
+  private flash: { mapId: string; cell: number } | null = null;
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinch: { d0: number; mx: number; my: number; scale0: number; ox0: number; oy0: number } | null = null;
+  /** A finger left on the screen after a pinch: ignored until lifted. */
+  private ignored = new Set<number>();
+  private tapStart: { x: number; y: number; t: number; cell: number } | null = null;
+  private lastTap: { t: number; cell: number } | null = null;
+  private viewInputs: Partial<Record<keyof ViewOptions, HTMLInputElement>> = {};
+  private lastPointerType = 'mouse';
+  private refreshing = false;
+  private refreshAgain = false;
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private version = 0;
@@ -65,8 +92,8 @@ export class App {
   private drag:
     | { kind: 'pan'; x: number; y: number; ox: number; oy: number }
     | { kind: 'select'; start: number }
-    | { kind: 'paint'; last: number; buildingId: number }
-    | { kind: 'move-feature'; id: string }
+    | { kind: 'paint'; last: number; buildingId: number; cells: number; stamp: number }
+    | { kind: 'move-feature'; id: string; created: boolean }
     | null = null;
   private spaceDown = false;
   private needsFit = false;
@@ -104,7 +131,7 @@ export class App {
   private loadSaved(): Project | null {
     try {
       const text = localStorage.getItem(STORAGE_KEY);
-      return text ? parseProject(text) : null;
+      return text ? parseProjectReport(text).project : null;
     } catch {
       return null;
     }
@@ -278,6 +305,7 @@ export class App {
     this.selectedFeature = null;
     this.changed();
     if (this.map) this.loadSpecIntoPanel(this.map);
+    this.setTool(this.tool);
   }
 
   undo(): void {
@@ -312,14 +340,98 @@ export class App {
 
   openMap(id: string, fit = true): void {
     if (!this.project.maps[id]) return;
+    if (this.pick && id !== this.pick.targetId) this.cancelPick();
     this.currentId = id;
     this.selection = null;
     this.selectedFeature = null;
     this.cache = null;
+    if (this.flash && this.flash.mapId !== id) this.flash = null;
     this.loadSpecIntoPanel(this.map);
     if (fit) this.fit();
+    this.setTool(this.tool);
     this.refreshPanels();
     this.draw();
+  }
+
+  /** Open a map and centre on one of its tiles, highlighting it (used by the game checks). */
+  focusCell(mapId: string, c: number, r: number): void {
+    const map = this.project.maps[mapId];
+    if (!map) return;
+    if (mapId !== this.currentId) this.openMap(mapId);
+    const g = new Grid(map.grid, map.width, map.height);
+    const cell = g.idx(Math.max(0, Math.min(map.width - 1, c)), Math.max(0, Math.min(map.height - 1, r)));
+    const dpr = window.devicePixelRatio || 1;
+    // About 36 CSS pixels per cell, unless already zoomed in further.
+    const unit = g.isHex ? Math.sqrt(3) : g.type === 'iso' ? 1.4 : 1;
+    this.scale = Math.max(this.scale, (36 * dpr) / unit);
+    const [x, y] = g.center(cell);
+    this.ox = this.canvas.width / 2 - x * this.scale;
+    this.oy = this.canvas.height / 2 - y * this.scale;
+    this.flash = { mapId, cell };
+    const f = featureAt(map, g, cell);
+    this.selectedFeature = f?.id ?? null;
+    this.cache = null;
+    this.refreshPanels();
+    this.draw();
+    if (window.matchMedia('(max-width: 900px)').matches) byId('canvas-wrap').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  // ---- link targets -------------------------------------------------------------------------
+
+  /** Open the target map so the arrival tile of a stairs link can be tapped. */
+  startPick(source: WorldMap, f: Feature, target: WorldMap): void {
+    this.pick = { sourceId: source.id, featureId: f.id, targetId: target.id };
+    this.openMap(target.id);
+    const props = f.props ?? {};
+    if (props.toMap === gameMapId(target)) {
+      const g = new Grid(target.grid, target.width, target.height);
+      const x = Number(props.toX);
+      const y = Number(props.toY);
+      if (g.inBounds(x, y)) this.focusCell(target.id, x, y);
+    }
+    this.showPickBanner();
+  }
+
+  private showPickBanner(): void {
+    const banner = byId('pick-banner');
+    const target = this.pick ? this.project.maps[this.pick.targetId] : null;
+    if (!this.pick || !target) {
+      banner.hidden = true;
+      return;
+    }
+    banner.hidden = false;
+    banner.replaceChildren(
+      h('span', {}, `🎯 Tap the tile players arrive on in ${target.name}. Drag or pinch to move around.`),
+      h('button', { onclick: () => this.cancelPick(true) }, 'Cancel'),
+    );
+  }
+
+  private cancelPick(goBack = false): void {
+    const pick = this.pick;
+    this.pick = null;
+    this.showPickBanner();
+    if (goBack && pick) {
+      this.openMap(pick.sourceId);
+      this.selectFeature(pick.featureId);
+    }
+  }
+
+  private completePick(cell: number): void {
+    const pick = this.pick;
+    const target = this.map;
+    const source = pick ? this.project.maps[pick.sourceId] : undefined;
+    const f = source?.features.find((x) => x.id === pick!.featureId);
+    if (!pick || !target || !source || !f) return this.cancelPick();
+    const x = cell % target.width;
+    const y = Math.floor(cell / target.width);
+    this.pushUndo();
+    f.props = { ...(f.props ?? {}), toMap: gameMapId(target), toX: x, toY: y };
+    this.pick = null;
+    this.showPickBanner();
+    this.openMap(source.id);
+    this.focusCell(source.id, f.c, f.r);
+    this.changed();
+    toast(isWalkableAt(target, x, y) ? `Link now arrives at (${x}, ${y}) on ${gameMapId(target)}` : `⚠ (${x}, ${y}) on ${gameMapId(target)} can't be walked on — pick another tile`);
   }
 
   addMap(map: WorldMap, open = true): void {
@@ -354,6 +466,10 @@ export class App {
   regenerateCurrent(): void {
     const old = this.map;
     if (!old) return this.generateNew();
+    if (isRpgdc(old)) {
+      toast('RPG-DC maps are hand-made: regenerating would replace the game map. Generate a new map instead.');
+      return;
+    }
     const spec = this.specFromPanel();
     this.pushUndo();
     const fresh = generateMap({ ...spec, kind: getScale(spec.scaleId).kind }, guideForMap(this.project, { ...old, ...spec }));
@@ -367,7 +483,7 @@ export class App {
 
   rerollSelection(): void {
     const map = this.map;
-    if (!map || !this.selection) return;
+    if (!map || !this.selection || isRpgdc(map)) return;
     this.pushUndo();
     this.project.maps[map.id] = regenerateRegion(this.project, map, this.selection, randomSeed());
     this.changed();
@@ -420,14 +536,22 @@ export class App {
       fileInput.value = '';
       if (!file) return;
       try {
-        const p = parseProject(await file.text());
+        const { project: p, migrated } = parseProjectReport(await file.text());
         this.replaceProject(p);
-        toast(`Opened ${p.name}`);
+        toast(
+          migrated.length
+            ? `Opened ${p.name} — converted ${migrated.length} RPG-DC map(s) to ground, objects and zones (saved in this browser; use Save to download)`
+            : `Opened ${p.name}`,
+        );
       } catch (e) {
         toast(`Could not open: ${(e as Error).message}`);
       }
     };
     byId('btn-cloud').onclick = () => void this.onCloudClick();
+    byId('btn-menu').onclick = () => {
+      const open = document.querySelector('.topbar')!.classList.toggle('menu-open');
+      byId('btn-menu').setAttribute('aria-expanded', String(open));
+    };
     byId('btn-undo').onclick = () => this.undo();
     byId('btn-redo').onclick = () => this.redo();
     byId('btn-export').onclick = () => this.map && openExportDialog(this, this.map);
@@ -454,19 +578,24 @@ export class App {
       ['hillshade', 'Relief'],
       ['rivers', 'Rivers'],
       ['roads', 'Roads'],
+      ['objects', 'Objects'],
+      ['zones', 'Zones'],
       ['features', 'Places'],
       ['labels', 'Labels'],
     ];
-    const vt = byId('view-toggles');
+    const menu = h('div', { class: 'view-menu' });
     for (const [k, label] of toggles) {
       const cb = h('input', { type: 'checkbox', checked: this.view[k] });
-      cb.addEventListener('change', () => {
-        this.view[k] = cb.checked;
-        if (k !== 'features' && k !== 'labels') this.cache = null;
-        this.draw();
-      });
-      vt.append(h('label', {}, cb, label));
+      cb.addEventListener('change', () => this.setView(k, cb.checked));
+      this.viewInputs[k] = cb;
+      menu.append(h('label', { class: 'check' }, cb, label));
     }
+    const viewMenu = h('details', { class: 'view-details' }, h('summary', {}, '👁 View'), menu);
+    byId('view-toggles').append(viewMenu);
+    // Close the menu when tapping anywhere else.
+    document.addEventListener('pointerdown', (e) => {
+      if (viewMenu.open && !viewMenu.contains(e.target as Node)) viewMenu.open = false;
+    });
     this.setTool('select');
   }
 
@@ -475,32 +604,48 @@ export class App {
     document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
     const opts = byId('tool-options');
     opts.replaceChildren();
-    if (tool === 'paint') {
-      const mode = h('select');
+    const map = this.map;
+    const game = isRpgdc(map);
+    // Keep the paint mode, tile and place type valid for the kind of map that is open.
+    if (game && map) {
+      if (!GAME_PAINT_MODES.includes(this.paintMode) || (this.paintMode === 'zone' && map.kind === 'dungeon')) this.paintMode = 'tile';
+      if (this.paintTile < T.GRASS) this.paintTile = T.GRASS;
+      if (!(PLACE_TYPES as readonly string[]).includes(this.featureType)) this.featureType = 'monster_spawn';
+    } else {
+      if (!GENERIC_PAINT_MODES.includes(this.paintMode)) this.paintMode = 'tile';
+      if (featureDef(this.featureType).scope === 'game') this.featureType = 'village';
+    }
+    if (tool === 'paint' && game && map) {
+      opts.append(...gamePaintOptions(this, map));
+    } else if (tool === 'paint') {
+      const mode = h('select', { 'aria-label': 'Paint mode' });
       for (const [v, l] of [
         ['tile', 'Terrain'],
+        ['object', 'Objects'],
         ['road', 'Road'],
         ['river', 'River'],
         ['erase-lines', 'Erase roads/rivers'],
       ]) mode.append(h('option', { value: v }, l));
       mode.value = this.paintMode;
-      mode.onchange = () => {
-        this.paintMode = mode.value as PaintMode;
-        this.setTool('paint');
-      };
+      mode.onchange = () => this.setPaint({ paintMode: mode.value as PaintMode });
       opts.append(mode);
       if (this.paintMode === 'tile') {
-        const tsel = h('select');
+        const tsel = h('select', { 'aria-label': 'Terrain' });
         for (const t of TILES) tsel.append(h('option', { value: t.id }, t.name));
         tsel.value = String(this.paintTile);
-        tsel.onchange = () => {
-          this.paintTile = Number(tsel.value);
-          this.refreshLegend();
-        };
+        tsel.onchange = () => this.setPaint({ paintTile: Number(tsel.value) });
         opts.append(tsel);
       }
+      if (this.paintMode === 'object') {
+        const osel = h('select', { 'aria-label': 'Object' });
+        osel.append(h('option', { value: 0 }, '🧽 Remove objects'));
+        for (const d of OBJECTS_LIST) osel.append(h('option', { value: d.id }, `${d.icon} ${d.name}`));
+        osel.value = String(this.paintObject);
+        osel.onchange = () => this.setPaint({ paintObject: Number(osel.value) });
+        opts.append(osel);
+      }
       if (this.paintMode === 'road') {
-        const lv = h('select');
+        const lv = h('select', { 'aria-label': 'Road type' });
         for (const [v, l] of [
           ['1', 'Trail'],
           ['2', 'Road'],
@@ -510,17 +655,20 @@ export class App {
         lv.onchange = () => (this.roadLevel = Number(lv.value));
         opts.append(lv);
       }
-      if (this.paintMode === 'tile' || this.paintMode === 'erase-lines') {
-        const br = h('select', { title: 'Brush size' });
+      if (this.paintMode === 'tile' || this.paintMode === 'erase-lines' || this.paintMode === 'object') {
+        const br = h('select', { title: 'Brush size', 'aria-label': 'Brush size' });
         for (const v of [0, 1, 2, 3]) br.append(h('option', { value: v }, `Brush ${v + 1}`));
         br.value = String(this.brush);
         br.onchange = () => (this.brush = Number(br.value));
         opts.append(br);
       }
+    } else if (tool === 'feature' && game) {
+      opts.append(...gamePlaceOptions(this));
     } else if (tool === 'feature') {
-      const sel = h('select');
+      const sel = h('select', { 'aria-label': 'Place type' });
       const scopes: Record<string, HTMLOptGroupElement> = {};
       for (const d of FEATURE_DEFS) {
+        if (d.scope === 'game') continue;
         scopes[d.scope] ??= sel.appendChild(h('optgroup', { label: d.scope }) as HTMLOptGroupElement);
         scopes[d.scope].append(h('option', { value: d.type }, `${d.icon} ${d.label}`));
       }
@@ -529,6 +677,28 @@ export class App {
       opts.append(sel);
     }
     this.canvas.style.cursor = tool === 'pan' ? 'grab' : tool === 'select' ? 'crosshair' : 'cell';
+  }
+
+  /** Change paint settings (mode, tile, object, zone, brush) and refresh the palette. */
+  setPaint(change: Partial<Pick<App, 'paintMode' | 'paintTile' | 'paintObject' | 'groveObject' | 'oreObject' | 'paintZone' | 'brush'>>): void {
+    Object.assign(this, change);
+    if (change.paintMode === 'zone' && !this.view.zones) this.setView('zones', true);
+    this.setTool('paint');
+    this.refreshLegend();
+  }
+
+  setPlaceType(type: string): void {
+    this.featureType = type;
+    this.setTool('feature');
+  }
+
+  setView(key: keyof ViewOptions, value: boolean): void {
+    this.view[key] = value;
+    const input = this.viewInputs[key];
+    if (input) input.checked = value;
+    if (key !== 'features' && key !== 'labels') this.cache = null;
+    this.refreshPanels();
+    this.draw();
   }
 
   private renderGenSettings(): void {
@@ -552,13 +722,30 @@ export class App {
   // ---- panels -----------------------------------------------------------------------------
 
   refreshPanels(): void {
-    byId('empty-state').style.display = this.map ? 'none' : 'flex';
-    this.refreshAtlas();
-    this.refreshMapInfo();
-    this.refreshSelection();
-    this.refreshFeature();
-    this.refreshLegend();
-    this.updateUndoButtons();
+    // A field losing focus while its panel is rebuilt fires `change`, which refreshes again:
+    // finish this rebuild first, then run once more.
+    if (this.refreshing) {
+      this.refreshAgain = true;
+      return;
+    }
+    this.refreshing = true;
+    try {
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.closest('.panel')) active.blur();
+      byId('empty-state').style.display = this.map ? 'none' : 'flex';
+      this.refreshAtlas();
+      this.refreshMapInfo();
+      this.refreshSelection();
+      this.refreshFeature();
+      this.refreshLegend();
+      this.updateUndoButtons();
+    } finally {
+      this.refreshing = false;
+    }
+    if (this.refreshAgain) {
+      this.refreshAgain = false;
+      this.refreshPanels();
+    }
   }
 
   private refreshAtlas(): void {
@@ -597,6 +784,9 @@ export class App {
       this.changed();
     };
     const parent = map.parent ? this.project.maps[map.parent.mapId] : undefined;
+    const regen = byId<HTMLButtonElement>('btn-regenerate');
+    regen.disabled = isRpgdc(map);
+    regen.title = isRpgdc(map) ? 'RPG-DC maps are hand-made and are not regenerated' : 'Re-generate the open map with these settings';
     box.append(
       h('h2', {}, 'Map'),
       h('label', {}, 'Name', name),
@@ -639,6 +829,7 @@ export class App {
           'Delete',
         ),
       ),
+      isRpgdc(map) ? gameMapPanel(this, map) : '',
     );
   }
 
@@ -654,13 +845,17 @@ export class App {
       list.append(h('div', { onclick: () => this.selectFeature(f.id) }, `${featureDef(f.type).icon} ${f.name || featureDef(f.type).label}`));
     }
     box.append(
-      h('h2', {}, 'Selected area'),
+      sheetHeader('Selected area', () => {
+        this.selection = null;
+        this.refreshPanels();
+        this.draw();
+      }),
       h('p', { class: 'hint' }, `Cells ${sel.c0},${sel.r0} → ${sel.c1},${sel.r1} (${sel.c1 - sel.c0 + 1}×${sel.r1 - sel.r0 + 1})`),
       h(
         'div',
         { class: 'btn-row' },
         h('button', { class: 'primary', title: 'Generate a detailed child map of this area', onclick: () => openZoomDialog(this, map, sel) }, '🔍 Zoom in / detail map'),
-        h('button', { title: 'Regenerate just this area with a new seed, keeping the rest', onclick: () => this.rerollSelection() }, '🎲 Re-roll area'),
+        isRpgdc(map) ? '' : h('button', { title: 'Regenerate just this area with a new seed, keeping the rest', onclick: () => this.rerollSelection() }, '🎲 Re-roll area'),
         h(
           'button',
           {
@@ -680,7 +875,7 @@ export class App {
 
   selectFeature(id: string | null): void {
     this.selectedFeature = id;
-    this.refreshFeature();
+    this.refreshPanels();
     this.draw();
   }
 
@@ -690,12 +885,15 @@ export class App {
     const map = this.map;
     const f = map?.features.find((x) => x.id === this.selectedFeature);
     if (!map || !f) return;
+    const game = isRpgdc(map);
     const typeSel = h('select');
-    for (const d of FEATURE_DEFS) typeSel.append(h('option', { value: d.type }, `${d.icon} ${d.label}`));
+    const types = game ? FEATURE_DEFS.filter((d) => (PLACE_TYPES as readonly string[]).includes(d.type) || d.type === f.type) : FEATURE_DEFS.filter((d) => d.scope !== 'game' || d.type === f.type);
+    for (const d of types) typeSel.append(h('option', { value: d.type }, `${d.icon} ${d.label}`));
     typeSel.value = f.type;
     typeSel.onchange = () => {
       this.pushUndo();
       f.type = typeSel.value;
+      if (game) f.props = { ...(defaultProps(f.type) ?? {}), ...(f.props ?? {}) };
       this.changed();
     };
     const name = h('input', { value: f.name });
@@ -713,29 +911,32 @@ export class App {
     };
     const child = f.childMapId ? this.project.maps[f.childMapId] : undefined;
     box.append(
-      h('h2', {}, 'Place'),
+      sheetHeader(`${featureDef(f.type).icon} Place at (${f.c}, ${f.r})`, () => this.selectFeature(null)),
       h('label', {}, 'Type', typeSel),
       h('label', {}, 'Name', name),
+      game ? gameFeatureFields(this, map, f) : '',
       h('label', {}, 'Notes', notes),
       f.tags?.length ? h('p', { class: 'hint' }, `Tags: ${f.tags.join(', ')}`) : '',
       h(
         'div',
         { class: 'btn-row' },
         child
-          ? h('button', { class: 'primary', onclick: () => this.openMap(child.id) }, `Open ${child.name}`)
-          : h(
-              'button',
-              {
-                class: 'primary',
-                onclick: () => {
-                  const rect = { c0: f.c - 1, r0: f.r - 1, c1: f.c + 1, r1: f.r + 1 };
-                  const r = clampRect(rect, map);
-                  this.selection = r;
-                  openZoomDialog(this, map, r);
+          ? h('button', { onclick: () => this.openMap(child.id) }, `Open ${child.name}`)
+          : game
+            ? ''
+            : h(
+                'button',
+                {
+                  class: 'primary',
+                  onclick: () => {
+                    const rect = { c0: f.c - 1, r0: f.r - 1, c1: f.c + 1, r1: f.r + 1 };
+                    const r = clampRect(rect, map);
+                    this.selection = r;
+                    openZoomDialog(this, map, r);
+                  },
                 },
-              },
-              'Create detail map…',
-            ),
+                'Create detail map…',
+              ),
         h(
           'button',
           {
@@ -778,6 +979,24 @@ export class App {
           },
           h('span', { class: 'swatch', style: `background:${t.color}` }),
           t.name,
+        ),
+      );
+    }
+    for (const id of this.map ? objectLegendEntries(this.map) : []) {
+      const d = objectDef(id)!;
+      box.append(
+        h(
+          'div',
+          {
+            class: id === this.paintObject && this.tool === 'paint' && this.paintMode === 'object' ? 'active' : '',
+            title: 'Click to paint this object',
+            onclick: () => {
+              this.setPaint({ paintMode: 'object', paintObject: id });
+              this.setTool('paint');
+            },
+          },
+          h('span', { class: 'swatch obj' }, d.icon),
+          d.name,
         ),
       );
     }
@@ -825,7 +1044,8 @@ export class App {
   }
 
   private ensureCache(map: WorldMap): void {
-    const key = `${map.id}:${this.version}:${this.view.grid}:${this.view.hillshade}:${this.view.rivers}:${this.view.roads}`;
+    const v = this.view;
+    const key = `${map.id}:${this.version}:${v.grid}:${v.hillshade}:${v.rivers}:${v.roads}:${v.objects}:${v.zones}`;
     const wanted = safeScale(map, Math.min(48, Math.max(baseUnitPx(map.grid), this.scale)));
     if (this.cache && this.cache.key === key) {
       if (wanted > this.cache.s * 1.4 || wanted < this.cache.s / 3) {
@@ -895,6 +1115,31 @@ export class App {
         ctx.stroke();
       }
     }
+    // Game overlays: a selected monster spawn's wander area, a selected link's arrival tile.
+    const sel = map.features.find((f) => f.id === this.selectedFeature);
+    if (sel && isRpgdc(map)) {
+      const radius = Number(sel.props?.radius ?? 0);
+      if (sel.type === 'monster_spawn' && radius > 0) {
+        const r = clampRect({ c0: sel.c - radius, r0: sel.r - radius, c1: sel.c + radius, r1: sel.r + radius }, map);
+        this.pathScreen(rectOutline(g, r));
+        ctx.fillStyle = 'rgba(220,60,60,0.12)';
+        ctx.fill();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = 'rgba(255,90,90,0.9)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    if (this.flash && this.flash.mapId === map.id && this.flash.cell < g.size) {
+      this.pathScreen(g.corners(this.flash.cell));
+      ctx.strokeStyle = '#ff4d4d';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
     drawFeatures(ctx, map, this.scale, this.ox, this.oy, this.view, this.selectedFeature);
   }
 
@@ -936,56 +1181,55 @@ export class App {
       e.preventDefault();
       const dpr = window.devicePixelRatio || 1;
       const r = c.getBoundingClientRect();
-      const sx = (e.clientX - r.left) * dpr;
-      const sy = (e.clientY - r.top) * dpr;
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      const ns = Math.max(0.5, Math.min(400, this.scale * factor));
-      this.ox = sx - ((sx - this.ox) * ns) / this.scale;
-      this.oy = sy - ((sy - this.oy) * ns) / this.scale;
-      this.scale = ns;
-      this.draw();
+      this.zoomAt((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr, this.scale * Math.exp(-e.deltaY * 0.0015));
     }, { passive: false });
+
+    const local = (e: PointerEvent) => {
+      const dpr = window.devicePixelRatio || 1;
+      const r = c.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * dpr, y: (e.clientY - r.top) * dpr };
+    };
 
     c.addEventListener('pointerdown', (e) => {
       const map = this.map;
       if (!map) return;
       c.setPointerCapture(e.pointerId);
-      const dpr = window.devicePixelRatio || 1;
-      if (e.button === 1 || e.button === 2 || this.tool === 'pan' || this.spaceDown) {
-        this.drag = { kind: 'pan', x: e.clientX * dpr, y: e.clientY * dpr, ox: this.ox, oy: this.oy };
+      this.lastPointerType = e.pointerType;
+      const pt = local(e);
+      this.pointers.set(e.pointerId, pt);
+      if (this.pointers.size === 2) return this.beginPinch();
+      if (this.pointers.size > 2) return;
+      const cell = this.eventCell(e);
+      const g = new Grid(map.grid, map.width, map.height);
+      this.tapStart = { x: pt.x, y: pt.y, t: performance.now(), cell };
+      if (cell >= 0) {
+        this.hoverCell = cell;
+        this.updateStatus(map, g, cell);
+      }
+      if (this.pick || e.button === 1 || e.button === 2 || this.tool === 'pan' || this.spaceDown) {
+        this.drag = { kind: 'pan', x: pt.x, y: pt.y, ox: this.ox, oy: this.oy };
         c.style.cursor = 'grabbing';
         return;
       }
-      const cell = this.eventCell(e);
       if (cell < 0) return;
-      const g = new Grid(map.grid, map.width, map.height);
       if (this.tool === 'select') {
         this.drag = { kind: 'select', start: cell };
         this.selection = { c0: g.col(cell), r0: g.row(cell), c1: g.col(cell), r1: g.row(cell) };
         this.draw();
       } else if (this.tool === 'paint') {
         this.pushUndo();
-        const buildingId = Math.max(0, ...map.layers.building) + 1;
-        this.drag = { kind: 'paint', last: cell, buildingId };
-        this.paintAt(map, g, cell, -1, buildingId);
+        const d = { kind: 'paint' as const, last: cell, buildingId: layerMax(map.layers.building) + 1, cells: 1, stamp: -1 };
+        this.drag = d;
+        this.paintAt(map, g, cell, -1, d);
       } else if (this.tool === 'feature') {
         const existing = featureAt(map, g, cell);
+        this.pushUndo();
         if (existing) {
-          this.pushUndo();
           this.selectFeature(existing.id);
-          this.drag = { kind: 'move-feature', id: existing.id };
+          this.drag = { kind: 'move-feature', id: existing.id, created: false };
         } else {
-          this.pushUndo();
-          const f: Feature = {
-            id: newId('f'),
-            type: this.featureType,
-            name: featureName(new Rng(randomSeed()), this.featureType) || featureDef(this.featureType).label,
-            c: g.col(cell),
-            r: g.row(cell),
-          };
-          map.features.push(f);
-          this.selectedFeature = f.id;
-          this.changed();
+          const f = this.placeFeature(map, g, cell);
+          this.drag = { kind: 'move-feature', id: f.id, created: true };
         }
       }
     });
@@ -993,11 +1237,26 @@ export class App {
     c.addEventListener('pointermove', (e) => {
       const map = this.map;
       if (!map) return;
-      const dpr = window.devicePixelRatio || 1;
+      const pt = local(e);
+      if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, pt);
+      if (this.ignored.has(e.pointerId)) return;
+      if (this.pinch) {
+        if (this.pointers.size < 2) return;
+        const [a, b] = [...this.pointers.values()];
+        const p = this.pinch;
+        const ns = Math.max(0.5, Math.min(400, (p.scale0 * Math.hypot(a.x - b.x, a.y - b.y)) / p.d0));
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        this.ox = mx - ((p.mx - p.ox0) * ns) / p.scale0;
+        this.oy = my - ((p.my - p.oy0) * ns) / p.scale0;
+        this.scale = ns;
+        this.draw();
+        return;
+      }
       const d = this.drag;
       if (d?.kind === 'pan') {
-        this.ox = d.ox + e.clientX * dpr - d.x;
-        this.oy = d.oy + e.clientY * dpr - d.y;
+        this.ox = d.ox + pt.x - d.x;
+        this.oy = d.oy + pt.y - d.y;
         this.draw();
         return;
       }
@@ -1014,7 +1273,8 @@ export class App {
       if (d?.kind === 'select') {
         this.selection = normalizeRect({ c0: g.col(d.start), r0: g.row(d.start), c1: g.col(cell), r1: g.row(cell) });
       } else if (d?.kind === 'paint' && cell !== d.last) {
-        this.paintAt(map, g, cell, d.last, d.buildingId);
+        d.cells++;
+        this.paintAt(map, g, cell, d.last, d);
         d.last = cell;
       } else if (d?.kind === 'move-feature') {
         const f = map.features.find((x) => x.id === d.id);
@@ -1027,20 +1287,50 @@ export class App {
     });
 
     const end = (e: PointerEvent) => {
+      this.pointers.delete(e.pointerId);
+      if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
+      if (this.ignored.delete(e.pointerId)) return;
+      if (this.pinch) {
+        if (this.pointers.size < 2) {
+          this.pinch = null;
+          // The finger still down belongs to the pinch: ignore it until it lifts.
+          for (const id of this.pointers.keys()) this.ignored.add(id);
+          this.draw();
+        }
+        return;
+      }
       const d = this.drag;
       this.drag = null;
-      if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
-      this.setTool(this.tool);
+      this.canvas.style.cursor = this.tool === 'pan' ? 'grab' : this.tool === 'select' ? 'crosshair' : 'cell';
       const map = this.map;
-      if (!map || !d) return;
+      const start = this.tapStart;
+      this.tapStart = null;
+      const pt = local(e);
+      const dpr = window.devicePixelRatio || 1;
+      const tap = !!start && e.type === 'pointerup' && Math.hypot(pt.x - start.x, pt.y - start.y) < 12 * dpr && performance.now() - start.t < 700;
+      if (!map) return;
+      if (this.pick) {
+        if (tap && start!.cell >= 0) this.completePick(start!.cell);
+        return;
+      }
+      if (!d) return;
       if (d.kind === 'select' && this.selection) {
         const s = this.selection;
         if (s.c0 === s.c1 && s.r0 === s.r1) {
-          // A click: inspect the place under the cursor.
+          // A tap or click: inspect the place under it; a double tap opens its detail map.
           const g = new Grid(map.grid, map.width, map.height);
-          const f = featureAt(map, g, g.idx(s.c0, s.r0));
+          const cell = g.idx(s.c0, s.r0);
+          const f = featureAt(map, g, cell);
           this.selection = null;
           this.selectedFeature = f?.id ?? null;
+          this.flash = null;
+          const now = performance.now();
+          if (e.pointerType !== 'mouse' && this.lastTap && this.lastTap.cell === cell && now - this.lastTap.t < 400) {
+            this.lastTap = null;
+            if (this.openChildAt(map, g, cell)) return;
+          } else {
+            this.lastTap = { t: now, cell };
+          }
         }
         this.refreshPanels();
         this.draw();
@@ -1050,38 +1340,137 @@ export class App {
     };
     c.addEventListener('pointerup', end);
     c.addEventListener('pointercancel', end);
-    c.addEventListener('pointerleave', () => {
+    c.addEventListener('pointerleave', (e) => {
+      if (e.pointerType !== 'mouse') return;
       this.hoverCell = -1;
       this.draw();
     });
 
     c.addEventListener('dblclick', (e) => {
       const map = this.map;
-      if (!map) return;
+      if (!map || this.lastPointerType !== 'mouse') return;
       const cell = this.eventCell(e);
-      if (cell < 0) return;
-      const g = new Grid(map.grid, map.width, map.height);
-      const f = featureAt(map, g, cell);
-      if (f?.childMapId && this.project.maps[f.childMapId]) return this.openMap(f.childMapId);
-      for (const cid of map.children) {
-        const child = this.project.maps[cid];
-        if (child?.parent && inRect(child.parent, g.col(cell), g.row(cell))) return this.openMap(cid);
-      }
+      if (cell >= 0) this.openChildAt(map, new Grid(map.grid, map.width, map.height), cell);
     });
+
+    // Zoom buttons for touch screens without a wheel (pinch works too).
+    byId('btn-zoom-in').onclick = () => this.zoomAt(this.canvas.width / 2, this.canvas.height / 2, this.scale * 1.5);
+    byId('btn-zoom-out').onclick = () => this.zoomAt(this.canvas.width / 2, this.canvas.height / 2, this.scale / 1.5);
   }
 
-  private paintAt(map: WorldMap, g: Grid, cell: number, last: number, buildingId: number): void {
+  private zoomAt(sx: number, sy: number, scale: number): void {
+    const ns = Math.max(0.5, Math.min(400, scale));
+    this.ox = sx - ((sx - this.ox) * ns) / this.scale;
+    this.oy = sy - ((sy - this.oy) * ns) / this.scale;
+    this.scale = ns;
+    this.draw();
+  }
+
+  /** Two fingers down: start pinch-zooming, dropping a stroke the first finger had only just begun. */
+  private beginPinch(): void {
+    const d = this.drag;
+    if (d?.kind === 'paint') {
+      if (d.cells <= 1) this.undoQuietly();
+      else this.changed();
+    } else if (d?.kind === 'move-feature') {
+      if (d.created) this.undoQuietly();
+      else this.changed();
+    } else if (d?.kind === 'select') {
+      this.selection = null;
+      this.refreshPanels();
+    }
+    this.drag = null;
+    this.tapStart = null;
+    const [a, b] = [...this.pointers.values()];
+    this.pinch = { d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, scale0: this.scale, ox0: this.ox, oy0: this.oy };
+  }
+
+  /** Undo the last change without offering it for redo (an accidental stroke). */
+  private undoQuietly(): void {
+    const view = { scale: this.scale, ox: this.ox, oy: this.oy };
+    this.undo();
+    this.redoStack.pop();
+    Object.assign(this, view);
+    this.updateUndoButtons();
+  }
+
+  /** Open the detail map of the place or outlined region at a cell. Returns true if one opened. */
+  private openChildAt(map: WorldMap, g: Grid, cell: number): boolean {
+    const f = featureAt(map, g, cell);
+    if (f?.childMapId && this.project.maps[f.childMapId]) {
+      this.openMap(f.childMapId);
+      return true;
+    }
+    for (const cid of map.children) {
+      const child = this.project.maps[cid];
+      if (child?.parent && inRect(child.parent, g.col(cell), g.row(cell))) {
+        this.openMap(cid);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private placeFeature(map: WorldMap, g: Grid, cell: number): Feature {
+    const type = this.featureType;
+    const game = isRpgdc(map);
+    if (game && type === 'spawn_point') {
+      // There is only ever one spawn point: move it.
+      const existing = map.features.find((f) => f.type === 'spawn_point');
+      if (existing) {
+        existing.c = g.col(cell);
+        existing.r = g.row(cell);
+        this.selectedFeature = existing.id;
+        toast('Spawn point moved');
+        this.changed();
+        return existing;
+      }
+    }
+    const f: Feature = {
+      id: newId('f'),
+      type,
+      name: game ? featureDef(type).label : featureName(new Rng(randomSeed()), type) || featureDef(type).label,
+      c: g.col(cell),
+      r: g.row(cell),
+    };
+    const props = game ? defaultProps(type) : undefined;
+    if (props) f.props = props;
+    map.features.push(f);
+    this.selectedFeature = f.id;
+    this.changed();
+    return f;
+  }
+
+  private paintAt(map: WorldMap, g: Grid, cell: number, last: number, d: { buildingId: number; stamp: number }): void {
     const L = map.layers;
+    const game = isRpgdc(map);
     if (this.paintMode === 'tile') {
       for (const i of this.brushCells(g, cell)) {
         L.terrain[i] = this.paintTile;
-        L.building[i] = this.paintTile === T.BUILDING || this.paintTile === T.KEEP ? buildingId : 0;
+        L.building[i] = this.paintTile === T.BUILDING || this.paintTile === T.KEEP ? d.buildingId : 0;
+        if (game && this.paintTile !== T.GRASS) {
+          // Paths, floors and water clear away trees, rocks and fences, but not stations or stairs.
+          const o = objectDef(L.object[i]);
+          if (o && NATURE_GROUPS.has(o.group)) L.object[i] = 0;
+        }
         const e = PAINT_ELEVATION[this.paintTile];
-        if (map.kind === 'overland') {
+        if (map.kind === 'overland' && !game) {
           if (e !== undefined) L.elevation[i] = e;
           else if (L.elevation[i] < SEA_LEVEL && !tile(this.paintTile).category.includes('water')) L.elevation[i] = SEA_LEVEL + 0.03;
         }
       }
+    } else if (this.paintMode === 'object') {
+      for (const i of this.brushCells(g, cell)) L.object[i] = this.paintObject;
+    } else if (this.paintMode === 'zone') {
+      for (const i of this.brushCells(g, cell)) L.zone[i] = this.paintZone;
+    } else if (this.paintMode === 'grove' || this.paintMode === 'ore') {
+      // One grove or cluster per tap; dragging stamps another once the finger has moved far enough.
+      const spacing = this.paintMode === 'grove' ? this.brush + 2 : 2;
+      if (d.stamp >= 0 && g.dist(d.stamp, cell) < spacing) return;
+      d.stamp = cell;
+      const rng = new Rng(randomSeed());
+      if (this.paintMode === 'grove') paintGrove(map, cell, this.groveObject, this.brush + 1, rng);
+      else paintCluster(map, cell, this.oreObject, rng);
     } else if (this.paintMode === 'erase-lines') {
       for (const i of this.brushCells(g, cell)) {
         unlinkCell(g, L.road, i);
@@ -1110,10 +1499,18 @@ export class App {
     }
     const L = map.layers;
     const parts = [`col ${g.col(cell)}, row ${g.row(cell)}`, tile(L.terrain[cell]).name];
-    if (map.kind === 'overland') parts.push(`elev ${L.elevation[cell].toFixed(2)}`, `moist ${L.moisture[cell].toFixed(2)}`, `temp ${L.temperature[cell].toFixed(2)}`);
+    if (map.kind === 'overland' && !isRpgdc(map)) parts.push(`elev ${L.elevation[cell].toFixed(2)}`, `moist ${L.moisture[cell].toFixed(2)}`, `temp ${L.temperature[cell].toFixed(2)}`);
     if (L.river[cell]) parts.push('river');
     if (L.road[cell]) parts.push(['', 'trail', 'road', 'highway'][L.roadLevel[cell]] || 'road');
     if (L.building[cell]) parts.push(`building #${L.building[cell]}`);
+    const o = objectDef(L.object[cell]);
+    if (o) parts.push(`${o.icon} ${o.name}`);
+    if (isRpgdc(map)) {
+      const z = zoneAt(map, cell);
+      parts.push(z ? `${z.name} zone` : 'no zone', isWalkableAt(map, g.col(cell), g.row(cell)) ? 'walkable' : 'blocked');
+    } else if (L.zone[cell]) {
+      parts.push(`zone ${L.zone[cell]}`);
+    }
     const f = featureAt(map, g, cell);
     if (f) parts.push(`${featureDef(f.type).icon} ${f.name}`);
     el.textContent = parts.join(' · ');
@@ -1203,4 +1600,9 @@ export function rectOutline(g: Grid, rect: CellRect): [number, number][] {
     [x1, y1],
     [x0, y1],
   ];
+}
+
+/** Panel heading with a close button (the panel becomes a bottom sheet on phones). */
+function sheetHeader(title: string, onClose: () => void): HTMLElement {
+  return h('div', { class: 'sheet-head' }, h('h2', {}, title), h('button', { class: 'icon close', 'aria-label': 'Close', onclick: onClose }, '✕'));
 }

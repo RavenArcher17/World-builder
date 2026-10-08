@@ -15,6 +15,8 @@ export interface Feature {
   tags?: string[];
   /** A detail map generated for this feature (town layout, dungeon, zoomed region). */
   childMapId?: string;
+  /** Typed fields for place types that define them (e.g. a monster spawn's kind and count). */
+  props?: Record<string, string | number | boolean>;
 }
 
 /**
@@ -38,6 +40,10 @@ export interface MapLayers {
   riverSize: number[];
   /** Building id per cell (0 = none) so engines can tell adjacent buildings apart. */
   building: number[];
+  /** What stands on the cell (objects.ts id, 0 = nothing): trees, rocks, stations, stairs. */
+  object: number[];
+  /** Rules zone per cell (0 = none; game maps use 1 safe, 2 frontier, 3 wilderness, 4 deep). */
+  zone: number[];
 }
 
 export interface ParentLink {
@@ -86,6 +92,13 @@ export interface Project {
 
 export const SEA_LEVEL = 0.4;
 
+/** Largest value in a layer (a loop: spreading a 256×256 layer into Math.max overflows the stack on some browsers). */
+export function layerMax(values: number[]): number {
+  let m = 0;
+  for (const v of values) if (v > m) m = v;
+  return m;
+}
+
 export function emptyLayers(size: number): MapLayers {
   const z = () => new Array<number>(size).fill(0);
   return {
@@ -98,6 +111,8 @@ export function emptyLayers(size: number): MapLayers {
     river: z(),
     riverSize: z(),
     building: z(),
+    object: z(),
+    zone: z(),
   };
 }
 

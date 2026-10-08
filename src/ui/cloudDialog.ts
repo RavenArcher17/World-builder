@@ -51,9 +51,11 @@ export function openCloudDialog(app: App): void {
                   disabled: isOpen,
                   onclick: async () => {
                     try {
-                      const project = await cloud.loadProject(p.id);
+                      const { project, migrated } = await cloud.loadProject(p.id);
                       app.replaceProject(project, { cloud: true });
-                      toast(`Opened “${project.name}” from the cloud`);
+                      // Store a converted project back in its new form.
+                      if (migrated.length) void app.saveToCloud();
+                      toast(migrated.length ? `Opened “${project.name}” and converted ${migrated.length} RPG-DC map(s)` : `Opened “${project.name}” from the cloud`);
                       (document.getElementById('dialog') as HTMLDialogElement).close();
                     } catch (e) {
                       toast(cloud.describeError(e));

@@ -459,20 +459,322 @@ dialog::backdrop {
   opacity: 1;
 }
 
+/* ---- palettes (paint / place) ------------------------------------------------------------ */
+.palette {
+  flex-basis: 100%;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+button.pal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 64px;
+  min-height: 52px;
+  padding: 4px 6px;
+  flex-shrink: 0;
+}
+.pal-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.pal-swatch {
+  width: 22px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+.pal-label {
+  font-size: 10px;
+  line-height: 1.1;
+  max-width: 76px;
+  white-space: normal;
+  text-align: center;
+}
+.seg {
+  display: flex;
+  gap: 0;
+}
+.seg button {
+  border-radius: 0;
+}
+.seg button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.seg button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.seg button.active {
+  background: #3a3220;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.swatch.obj {
+  border: none;
+  font-size: 12px;
+  line-height: 12px;
+  text-align: center;
+}
+
+/* ---- view menu, zoom buttons, link picking --------------------------------------------- */
+.view-details {
+  position: relative;
+}
+.view-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.view-details > summary::-webkit-details-marker {
+  display: none;
+}
+.view-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-width: 150px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+.zoom-buttons {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.zoom-buttons button {
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  background: rgba(29, 34, 43, 0.85);
+}
+.pick-banner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(58, 50, 32, 0.95);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-weight: 600;
+  z-index: 4;
+}
+.pick-banner[hidden] {
+  display: none;
+}
+.pick-banner span {
+  flex: 1;
+}
+
+/* ---- game panels -------------------------------------------------------------------------- */
+.game-panel {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+.zone-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.zone-legend div {
+  display: grid;
+  grid-template-columns: 14px auto;
+  column-gap: 6px;
+  align-items: start;
+}
+.zone-legend div span:last-child {
+  grid-column: 2;
+  color: var(--muted);
+}
+.issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+button.issue {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  white-space: normal;
+  min-height: 44px;
+  padding: 8px 10px;
+}
+button.issue.error {
+  border-color: #6a3328;
+}
+button.issue.warning {
+  border-color: #6a5a28;
+}
+.issue-where {
+  font-size: 12px;
+  color: var(--muted);
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sheet-head h2 {
+  margin: 6px 0;
+}
+.sheet-head .close {
+  display: none;
+}
+
+/* ---- touch screens: 44px targets -------------------------------------------------------- */
+@media (pointer: coarse), (max-width: 900px) {
+  button,
+  select,
+  input:not([type='checkbox']):not([type='range']),
+  .view-details > summary,
+  details.group > summary,
+  .legend-wrap > summary {
+    min-height: 44px;
+  }
+  details.group > summary,
+  .legend-wrap > summary,
+  .view-details > summary {
+    display: flex;
+    align-items: center;
+  }
+  .check {
+    min-height: 44px;
+  }
+  input[type='checkbox'] {
+    width: 22px;
+    height: 22px;
+  }
+  .atlas-item,
+  .feature-list div,
+  .legend div {
+    min-height: 44px;
+  }
+}
+
+.menu-btn {
+  display: none;
+}
+/* No double-tap zoom or tap delay on controls (iOS). */
+button,
+select,
+input,
+summary,
+label {
+  touch-action: manipulation;
+}
+
 @media (max-width: 900px) {
   body {
     height: auto;
     overflow: auto;
   }
+  .topbar {
+    gap: 4px;
+    padding: 6px;
+  }
+  .brand-text,
+  .topbar .lbl {
+    display: none;
+  }
+  /* iOS Safari zooms the page into any field smaller than 16px. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .menu-btn {
+    display: inline-block;
+  }
+  .topbar:not(.menu-open) .secondary {
+    display: none;
+  }
+  .topbar .spacer {
+    display: none;
+  }
+  .project-name {
+    flex: 1 1 140px;
+    width: auto;
+  }
   .layout {
     flex-direction: column;
+  }
+  /* The map comes first on phones; generator settings go to the bottom. The toolbar grows with
+     its palette while the map keeps its own height. */
+  .viewport {
+    order: -1;
+    height: auto;
+  }
+  .canvas-wrap {
+    flex: none;
+    height: 60vh;
+    min-height: 300px;
   }
   .panel,
   .panel.right {
     width: 100%;
     border: none;
   }
-  .viewport {
-    height: 70vh;
+  .panel.left {
+    order: 2;
+  }
+  /* Place and selection details slide up as a bottom sheet over the map. */
+  #feature-panel:not(:empty),
+  #selection-panel:not(:empty) {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 55vh;
+    overflow-y: auto;
+    z-index: 8;
+    background: var(--panel);
+    border-top: 2px solid var(--accent);
+    border-radius: 14px 14px 0 0;
+    padding: 6px 14px calc(14px + env(safe-area-inset-bottom));
+    margin: 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .sheet-head .close {
+    display: inline-block;
+  }
+  dialog {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 92vh;
+    margin: auto 0 0;
+    border-radius: 14px 14px 0 0;
+  }
+  .dlg .cols {
+    grid-template-columns: 1fr;
+  }
+  .toolbar {
+    padding: 4px 6px;
   }
 }

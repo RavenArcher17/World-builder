@@ -87,6 +87,8 @@ export function composeMaps(project: Project, opts: ComposeOptions): WorldMap {
       maxB = Math.max(maxB, S.building[i]);
       L.roadLevel[j] = S.roadLevel[i];
       L.riverSize[j] = S.riverSize[i];
+      L.object[j] = S.object[i];
+      L.zone[j] = S.zone[i];
       // Keep only connections that stay inside the piece; the same offset keeps directions valid.
       for (let d = 0; d < sg.dirCount; d++) {
         const n = sg.neighbor(i, d);

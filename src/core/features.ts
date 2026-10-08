@@ -1,6 +1,7 @@
 /** Points of interest placed on maps (settlements, dungeons, shops, treasure, ...). */
 
-export type FeatureScope = 'overland' | 'settlement' | 'dungeon';
+/** `game` types only appear on maps made for a specific game (see rpgdc/). */
+export type FeatureScope = 'overland' | 'settlement' | 'dungeon' | 'game';
 
 export interface FeatureDef {
   type: string;
@@ -64,6 +65,11 @@ export const FEATURE_DEFS: FeatureDef[] = [
   f('trap', 'Trap', '⚠️', 'dungeon', 2),
   f('altar', 'Altar', '🕯️', 'dungeon', 3),
   f('secret', 'Secret door', '❓', 'dungeon', 2),
+  // Game maps
+  f('spawn_point', 'Spawn point', '🚩', 'game', 8),
+  f('monster_spawn', 'Monster spawn', '⚔️', 'game', 4),
+  f('brazier', 'Brazier', '🏮', 'game', 2),
+  f('link', 'Stairs link', '🔗', 'game', 6),
 ];
 
 const BY_TYPE = new Map(FEATURE_DEFS.map((d) => [d.type, d]));

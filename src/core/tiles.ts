@@ -6,6 +6,9 @@
 
 export type TileCategory = 'water' | 'land' | 'urban' | 'dungeon';
 
+/** Texture drawn over a tile's colour so similar colours stay distinguishable. */
+export type TilePattern = 'blades' | 'dirt' | 'waves' | 'cobbles' | 'flags' | 'bricks';
+
 export interface TileDef {
   id: number;
   key: string;
@@ -15,6 +18,7 @@ export interface TileDef {
   walkable: boolean;
   /** Relative travel cost used for road and street routing (Infinity = impassable). */
   cost: number;
+  pattern?: TilePattern;
 }
 
 export const T = {
@@ -55,6 +59,13 @@ export const T = {
   STAIRS_DOWN: 34,
   PIT: 35,
   POOL: 36,
+  // Plain ground for hand-built game maps (things standing on it live in the object layer).
+  GRASS: 37,
+  PATH: 38,
+  WATER: 39,
+  TOWN_FLOOR: 40,
+  CRYPT_FLOOR: 41,
+  CRYPT_WALL: 42,
 } as const;
 
 const def = (
@@ -65,7 +76,8 @@ const def = (
   category: TileCategory,
   walkable: boolean,
   cost: number,
-): TileDef => ({ id, key, name, color, category, walkable, cost });
+  pattern?: TilePattern,
+): TileDef => ({ id, key, name, color, category, walkable, cost, pattern });
 
 export const TILES: TileDef[] = [
   def(T.DEEP_OCEAN, 'deep_ocean', 'Deep ocean', '#1f3f6b', 'water', false, Infinity),
@@ -105,6 +117,12 @@ export const TILES: TileDef[] = [
   def(T.STAIRS_DOWN, 'stairs_down', 'Stairs down', '#c27ba0', 'dungeon', true, 1),
   def(T.PIT, 'pit', 'Pit / chasm', '#121216', 'dungeon', false, Infinity),
   def(T.POOL, 'pool', 'Underground pool', '#3d6fa0', 'water', false, Infinity),
+  def(T.GRASS, 'grass', 'Grass', '#7cad4c', 'land', true, 1, 'blades'),
+  def(T.PATH, 'path', 'Dirt path', '#c8a46a', 'land', true, 0.5, 'dirt'),
+  def(T.WATER, 'water', 'Water', '#3b78bd', 'water', false, Infinity, 'waves'),
+  def(T.TOWN_FLOOR, 'town_floor', 'Town cobbles', '#b9b2a2', 'urban', true, 0.5, 'cobbles'),
+  def(T.CRYPT_FLOOR, 'crypt_floor', 'Crypt floor', '#8f877a', 'dungeon', true, 1, 'flags'),
+  def(T.CRYPT_WALL, 'crypt_wall', 'Crypt wall', '#3b3640', 'dungeon', false, Infinity, 'bricks'),
 ];
 
 export function tile(id: number): TileDef {
@@ -112,7 +130,7 @@ export function tile(id: number): TileDef {
 }
 
 export function isWater(id: number): boolean {
-  return id === T.DEEP_OCEAN || id === T.OCEAN || id === T.LAKE || id === T.POOL;
+  return id === T.DEEP_OCEAN || id === T.OCEAN || id === T.LAKE || id === T.POOL || id === T.WATER;
 }
 
 export function isSea(id: number): boolean {

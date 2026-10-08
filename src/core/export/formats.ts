@@ -6,6 +6,7 @@ import { featureDef } from '../features';
 import { DIRECTION_NAMES, Grid, GridType } from '../grid';
 import { extractPolylines } from '../links';
 import { getScale } from '../scales';
+import { OBJECTS, objectDef } from '../objects';
 import { TILES } from '../tiles';
 import type { WorldMap } from '../types';
 
@@ -50,7 +51,10 @@ export function toGameJson(map: WorldMap): object {
       river: map.layers.river,
       riverSize: map.layers.riverSize,
       building: map.layers.building,
+      object: map.layers.object,
+      ...(map.layers.zone.some(Boolean) && { zone: map.layers.zone }),
     },
+    objectLegend: OBJECTS.map((d) => (d.id ? { id: d.id, key: d.key, name: d.name, blocksWalking: d.blocks, usedFromNeighbour: d.useFromNeighbour } : { id: 0, key: '', name: 'Nothing' })),
     roads: extractPolylines(g, map.layers.road).map((cells) => cells.map((i) => [g.col(i), g.row(i)])),
     rivers: extractPolylines(g, map.layers.river).map((cells) => cells.map((i) => [g.col(i), g.row(i)])),
     features: map.features.map((f) => ({
@@ -62,6 +66,7 @@ export function toGameJson(map: WorldMap): object {
       row: f.r,
       tags: f.tags ?? [],
       notes: f.notes ?? '',
+      props: f.props ?? {},
       detailMapId: f.childMapId ?? null,
     })),
     parent: map.parent ?? null,
@@ -197,8 +202,30 @@ export function toTiled(map: WorldMap, tilesetImage: string): object {
             { name: 'row', type: 'int', value: f.r },
             { name: 'notes', type: 'string', value: f.notes ?? '' },
             { name: 'tags', type: 'string', value: (f.tags ?? []).join(',') },
+            ...Object.entries(f.props ?? {}).map(([name, value]) => ({
+              name,
+              type: typeof value === 'number' ? (Number.isInteger(value) ? 'int' : 'float') : typeof value === 'boolean' ? 'bool' : 'string',
+              value,
+            })),
           ],
         };
+      }),
+    },
+    {
+      id: 5,
+      name: 'objects',
+      type: 'objectgroup',
+      draworder: 'topdown',
+      opacity: 1,
+      visible: true,
+      x: 0,
+      y: 0,
+      objects: map.layers.object.flatMap((o, i) => {
+        const d = objectDef(o);
+        if (!d) return [];
+        const p = tiledPoint(g, i, px);
+        return [{ id: objectId++, name: d.name, type: d.key, x: p.x, y: p.y, width: 0, height: 0, rotation: 0, visible: true, point: true,
+          properties: [{ name: 'blocksWalking', type: 'bool', value: d.blocks }] }];
       }),
     },
   ];
@@ -214,7 +241,7 @@ export function toTiled(map: WorldMap, tilesetImage: string): object {
     tilewidth: px.tileWidth,
     tileheight: px.tileHeight,
     infinite: false,
-    nextlayerid: 5,
+    nextlayerid: 6,
     nextobjectid: objectId,
     layers,
     tilesets: [

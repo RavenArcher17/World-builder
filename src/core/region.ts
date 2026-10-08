@@ -21,7 +21,7 @@ import { Rng } from './rng';
 import { getScale } from './scales';
 import { SettingsReader } from './settings';
 import { DUNGEON_PASSABLE, STREET_TILES, T, isWater } from './tiles';
-import type { Project, WorldMap } from './types';
+import { layerMax, type Project, type WorldMap } from './types';
 import { guideForMap } from './zoom';
 
 export function cloneMap(m: WorldMap): WorldMap {
@@ -39,12 +39,14 @@ export function regenerateRegion(project: Project, map: WorldMap, rectIn: CellRe
 
   // Features: drop unlinked ones inside the area, they get re-rolled below.
   out.features = out.features.filter((f) => !inRect(rect, f.c, f.r) || f.childMapId);
+  // Objects stood on the old ground; generators don't place any.
+  for (const i of cells) out.layers.object[i] = 0;
 
   if (map.kind === 'overland') regenOverland(g, out, fresh, rect, cells, inside, seed, !!guideForMap(project, map));
   else {
     const L = out.layers;
     const F = fresh.layers;
-    const maxB = Math.max(0, ...L.building);
+    const maxB = layerMax(L.building);
     for (const i of cells) {
       L.terrain[i] = F.terrain[i];
       L.building[i] = F.building[i] ? F.building[i] + maxB : 0;

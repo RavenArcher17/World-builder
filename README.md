@@ -53,6 +53,25 @@ preview links) must be added under Authentication → Settings → Authorised do
 
 Projects autosave in the browser; **Save** downloads a `.world.json` you can re-open anywhere.
 
+## Game maps: RPG-DC
+
+Maps whose settings carry `rpgdcMapId` (made by [RPG-DC](https://github.com/RavenArcher17/RPG-DC)'s
+`tools/world-builder/export-map.ts`) switch on a game mode; every other map behaves as above.
+
+- **Ground and objects:** paint the game's six grounds (grass, path, water, town cobbles, crypt
+  floor and wall) and what stands on each tile (trees by species, boulders, fences, ore, stations,
+  fishing spots, stairs). Grove and Ore brushes scatter one species or ore at a time.
+- **Places with fields:** spawn point, monster spawns (kind, count, radius), bosses, braziers, and
+  stairs links that name the target map and the exact tile you arrive on (tap it on the target map).
+- **Zones:** paint Safe / Frontier / Wilderness / Deep on the overworld (legend shows each zone's
+  rules); dungeon floors pick one zone for the whole floor.
+- **Check for game:** lists every problem with its tile; tap one to jump there.
+- **Export → RPG-DC maps:** one `rpg-dc.maps.json` with every RPG-DC map, documented in
+  [`docs/rpgdc-export.md`](docs/rpgdc-export.md).
+
+Projects from the game's exporter are converted to this form when opened. Everything works by
+touch on a phone: one finger paints or places, two fingers pinch and pan.
+
 ## Export formats
 
 **Game JSON** (`*.map.json`) — everything an engine needs:
@@ -63,7 +82,7 @@ Projects autosave in the browser; **Save** downloads a `.world.json` you can re-
   `terrain`, `elevation`, `moisture`, `temperature`, `road` / `river` (direction **bitmasks** —
   bit *d* set means "connected to the neighbour in `directions[d]`", ready for autotiling),
   `roadLevel` (1 trail, 2 road, 3 highway), `riverSize`, `building` (id per cell so adjacent
-  buildings can be told apart).
+  buildings can be told apart), `object` (what stands on the cell; see `objectLegend`).
 - `roads` / `rivers` as polylines of `[col, row]`, and `features` with type, name, position,
   tags, notes and the id of any linked detail map.
 
@@ -93,6 +112,9 @@ src/core/            pure TypeScript, no DOM — usable from Node scripts too
   compose.ts         combine maps on a larger board
   resample.ts        convert between grid types / sizes
   export/formats.ts  game JSON, Tiled, CSV
+  objects.ts         object layer registry (ids are stable — append only)
+  brushes.ts         grove and ore-cluster brushes
+  rpgdc/             RPG-DC game mode: rules, migration, checks, export
 src/cloud/           Firebase config, Google sign-in, Firestore project storage (lazy-loaded)
   tiles.ts           shared tile registry (ids are stable — append only)
   features.ts        place types and icons

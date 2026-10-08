@@ -5,6 +5,7 @@ import { extractPolylines } from '../core/links';
 import { T, TILES, tile } from '../core/tiles';
 import { SEA_LEVEL, WorldMap } from '../core/types';
 import { TILESET_COLUMNS, tilePixels } from '../core/export/formats';
+import { cellMetrics, drawObject, drawPattern, paintOrder } from './drawObjects';
 
 export interface ViewOptions {
   grid: boolean;
@@ -13,9 +14,15 @@ export interface ViewOptions {
   roads: boolean;
   features: boolean;
   labels: boolean;
+  objects: boolean;
+  /** Tint cells by their rules zone (game maps). */
+  zones: boolean;
 }
 
-export const DEFAULT_VIEW: ViewOptions = { grid: false, hillshade: true, rivers: true, roads: true, features: true, labels: true };
+export const DEFAULT_VIEW: ViewOptions = { grid: false, hillshade: true, rivers: true, roads: true, features: true, labels: true, objects: true, zones: false };
+
+/** Zone tint colours by zone layer value (1 = safe … 4 = deep). */
+export const ZONE_TINT = ['', 'rgba(63,191,111,0.32)', 'rgba(224,192,64,0.32)', 'rgba(224,122,48,0.34)', 'rgba(192,58,74,0.36)'];
 
 /** Pixels per render unit that give cells of similar on-screen size across grid types. */
 export function baseUnitPx(grid: GridType): number {
@@ -93,6 +100,7 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
   const L = map.layers;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  const { inner, flat } = cellMetrics(g, s);
   for (let i = 0; i < g.size; i++) {
     const c = cellColor(map, g, i, view.hillshade);
     polygon(ctx, g.corners(i), s);
@@ -101,6 +109,19 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
     ctx.lineWidth = 1;
     ctx.fill();
     ctx.stroke();
+    const pattern = tile(L.terrain[i]).pattern;
+    if (pattern && inner >= 4) {
+      const [x, y] = g.center(i);
+      drawPattern(ctx, pattern, x * s, y * s, inner, flat, i);
+    }
+  }
+  if (view.zones && L.zone.some(Boolean)) {
+    for (let i = 0; i < g.size; i++) {
+      if (!L.zone[i]) continue;
+      polygon(ctx, g.corners(i), s);
+      ctx.fillStyle = ZONE_TINT[L.zone[i]] ?? 'transparent';
+      ctx.fill();
+    }
   }
 
   // Outlines between different buildings / walls so each structure reads as one shape.
@@ -170,6 +191,15 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
       ctx.stroke();
     }
     ctx.setLineDash([]);
+  }
+
+  if (view.objects && L.object.some(Boolean)) {
+    const u = g.type === 'iso' ? s * 0.5 : inner;
+    for (const i of paintOrder(g)) {
+      if (!L.object[i]) continue;
+      const [x, y] = g.center(i);
+      drawObject(ctx, L.object[i], x * s, y * s, u);
+    }
   }
 
   if (view.grid) {

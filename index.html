@@ -8,18 +8,19 @@
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">🗺️ World Builder</div>
-      <input id="project-name" class="project-name" title="Project name" />
+      <div class="brand">🗺️ <span class="brand-text">World Builder</span></div>
+      <input id="project-name" class="project-name" title="Project name" aria-label="Project name" />
       <div class="spacer"></div>
       <button id="btn-cloud" title="Sign in with Google to save projects to the cloud">☁ Sign in</button>
-      <button id="btn-new-project" title="Start an empty project">New project</button>
-      <button id="btn-open" title="Open a saved project file">Open…</button>
-      <button id="btn-save" title="Download the whole project as a file">Save</button>
-      <button id="btn-undo" title="Undo (Ctrl+Z)">↶ Undo</button>
-      <button id="btn-redo" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
-      <button id="btn-compose" title="Stitch several maps onto one bigger map">🧩 Stitch maps</button>
+      <button id="btn-new-project" class="secondary" title="Start an empty project">New project</button>
+      <button id="btn-open" class="secondary" title="Open a saved project file">Open…</button>
+      <button id="btn-save" class="secondary" title="Download the whole project as a file">Save</button>
+      <button id="btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="lbl"> Undo</span></button>
+      <button id="btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷<span class="lbl"> Redo</span></button>
+      <button id="btn-compose" class="secondary" title="Stitch several maps onto one bigger map">🧩 Stitch maps</button>
       <button id="btn-export" class="primary" title="Export the current map for a game">⬇ Export</button>
-      <button id="btn-help" title="How to use">?</button>
+      <button id="btn-help" class="secondary" title="How to use">?</button>
+      <button id="btn-menu" class="menu-btn" aria-label="More" aria-expanded="false">☰</button>
       <input id="file-open" type="file" accept=".json,application/json" hidden />
     </header>
 
@@ -55,6 +56,11 @@
         </div>
         <div class="canvas-wrap" id="canvas-wrap">
           <canvas id="map-canvas"></canvas>
+          <div id="pick-banner" class="pick-banner" hidden></div>
+          <div class="zoom-buttons">
+            <button id="btn-zoom-in" class="icon" aria-label="Zoom in">＋</button>
+            <button id="btn-zoom-out" class="icon" aria-label="Zoom out">－</button>
+          </div>
           <div class="empty" id="empty-state">
             <h1>Build a world</h1>
             <p>Pick a scale on the left (world, kingdom, county, town, dungeon…), choose a grid and hit <b>Generate</b>.</p>

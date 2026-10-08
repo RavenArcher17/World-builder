@@ -42,6 +42,8 @@ export function resampleMap(src: WorldMap, grid: GridType, width?: number, heigh
     D.moisture[i] = S.moisture[j];
     D.temperature[i] = S.temperature[j];
     D.building[i] = S.building[j];
+    D.object[i] = S.object[j];
+    D.zone[i] = S.zone[j];
   }
   for (const [layer, out, extra] of [
     [S.road, D.road, 'road'],

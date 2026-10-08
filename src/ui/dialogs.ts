@@ -7,9 +7,12 @@ import { resampleMap } from '../core/resample';
 import { parseSeed, randomSeed } from '../core/rng';
 import { SCALES, getScale } from '../core/scales';
 import type { Placement, WorldMap } from '../core/types';
+import { gameMaps } from '../core/rpgdc/game';
+import { RPGDC_EXPORT_NAME } from '../core/rpgdc/export';
 import { createChildMap, suggestSize, suggestZoom } from '../core/zoom';
 import type { App } from './app';
 import { downloadCanvas, downloadText, h, settingsForm, showDialog, slug, toast } from './dom';
+import { exportRpgdc, gameExportSummary, openCheckDialog } from './gameUi';
 import { DEFAULT_VIEW, baseUnitPx, renderMapCanvas, renderTileset, safeScale } from './render';
 
 function gridSelect(value: string, includeKeep = false): HTMLSelectElement {
@@ -94,6 +97,8 @@ export function openZoomDialog(app: App, parent: WorldMap, rect: CellRect): void
 
 export function openExportDialog(app: App, map: WorldMap): void {
   const format = h('select');
+  const hasGame = gameMaps(app.project).length > 0;
+  if (hasGame) format.append(h('option', { value: 'rpgdc' }, `RPG-DC maps (${RPGDC_EXPORT_NAME})`));
   for (const [v, l] of [
     ['png', 'PNG image'],
     ['json', 'Game JSON (all layers + places)'],
@@ -115,10 +120,21 @@ export function openExportDialog(app: App, map: WorldMap): void {
     h('label', { class: 'check' }, withGrid, 'Draw grid lines'),
   );
   const note = h('p', { class: 'hint' });
+  const convert = h(
+    'div',
+    {},
+    h('div', { class: 'cols' }, h('label', {}, 'Convert to grid', grid), h('div', { class: 'cols' }, h('label', {}, 'Width', w), h('label', {}, 'Height', hh))),
+    h('p', { class: 'hint' }, 'Converting re-samples terrain, roads, rivers and places onto the new layout — e.g. export a hex map as square tiles. Leave width/height empty to keep the same area.'),
+  );
+  const checkBtn = h('button', { onclick: () => openCheckDialog(app) }, '✓ Check for game');
   const update = () => {
     pngOpts.style.display = format.value === 'png' ? '' : 'none';
+    convert.style.display = format.value === 'rpgdc' || format.value === 'project' ? 'none' : '';
+    checkBtn.style.display = format.value === 'rpgdc' ? '' : 'none';
     note.textContent =
-      format.value === 'tiled'
+      format.value === 'rpgdc'
+        ? `Every RPG-DC map in the project in one file for the game (format: docs/rpgdc-export.md). ${gameExportSummary(app)}`
+        : format.value === 'tiled'
         ? 'Opens in the Tiled editor and imports into Godot, Unity (SuperTiled2Unity), GameMaker, Phaser, Defold and more. Roads, rivers and places are object layers.'
         : format.value === 'json'
           ? 'Plain JSON: terrain ids, elevation/moisture/temperature, road & river direction bitmasks, building ids, polylines and places — easy to load in any engine.'
@@ -134,10 +150,10 @@ export function openExportDialog(app: App, map: WorldMap): void {
     'div',
     {},
     h('label', {}, 'Format', format),
-    h('div', { class: 'cols' }, h('label', {}, 'Convert to grid', grid), h('div', { class: 'cols' }, h('label', {}, 'Width', w), h('label', {}, 'Height', hh))),
-    h('p', { class: 'hint' }, 'Converting re-samples terrain, roads, rivers and places onto the new layout — e.g. export a hex map as square tiles. Leave width/height empty to keep the same area.'),
+    convert,
     pngOpts,
     note,
+    h('div', { class: 'btn-row' }, checkBtn),
   );
   showDialog(`Export ${map.name}`, body, [
     { label: 'Cancel' },
@@ -145,6 +161,7 @@ export function openExportDialog(app: App, map: WorldMap): void {
       label: '⬇ Export',
       primary: true,
       action: async () => {
+        if (format.value === 'rpgdc') return exportRpgdc(app);
         let out = map;
         const targetGrid = (grid.value || map.grid) as GridType;
         const tw = Number(w.value) || undefined;
@@ -344,6 +361,15 @@ export function openHelpDialog(): void {
         li('Stitch', 'combine several maps onto a larger board, fill the gaps and connect them with roads.'),
         li('Export', 'PNG, Tiled (.tmj + tileset), game JSON or CSV — optionally converting hex ↔ square ↔ isometric.'),
       ),
+      h('h3', {}, 'RPG-DC maps'),
+      h(
+        'ul',
+        {},
+        li('Paint', 'Ground (grass, path, water, cobbles, crypt floor and wall), Objects (trees, rocks, ore, stations, fishing spots, stairs), Grove and Ore brushes, and Zones on the overworld.'),
+        li('Place', 'spawn point, monster spawns (kind, count, radius), bosses, braziers and stairs links. Tap a place to edit its fields; for a link, choose the map and tap “Pick arrival tile”.'),
+        li('Check for game', 'in the Map panel lists every problem; tap one to jump to its tile. Export → RPG-DC maps writes rpg-dc.maps.json for the game.'),
+      ),
+      h('p', { class: 'hint' }, 'Touch: one finger paints, places or selects; two fingers pinch to zoom and drag to pan; double-tap a linked place to open its map.'),
       h('p', { class: 'hint' }, 'Shortcuts: S select · H pan · P paint · F place · Space+drag or right-drag pans · wheel zooms · Esc clears · Del deletes the selected place.'),
       h('p', { class: 'hint' }, 'Your project autosaves in this browser. Use Save to download a project file you can re-open anywhere.'),
     ),

@@ -1,3 +1,4 @@
+import { migrateRpgdcProject } from './rpgdc/migrate';
 import { emptyLayers, MapLayers, Project, WorldMap, newId } from './types';
 
 export function createProject(name = 'My World'): Project {
@@ -41,6 +42,11 @@ export function serializeProject(project: Project): string {
 }
 
 export function parseProject(text: string): Project {
+  return parseProjectReport(text).project;
+}
+
+/** Parse a project file, upgrading older formats. `migrated` lists maps converted on the way. */
+export function parseProjectReport(text: string): { project: Project; migrated: string[] } {
   const data = JSON.parse(text);
   if (!data || data.format !== 'world-builder-project' || typeof data.maps !== 'object') {
     throw new Error('Not a World Builder project file');
@@ -58,5 +64,6 @@ export function parseProject(text: string): Project {
     m.children = (m.children ?? []).filter((c) => c in project.maps);
     m.settings = m.settings ?? {};
   }
-  return project;
+  const migrated = migrateRpgdcProject(project);
+  return { project, migrated };
 }
