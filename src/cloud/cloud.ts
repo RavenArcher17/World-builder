@@ -13,6 +13,7 @@ import {
   GoogleAuthProvider,
   type User,
   getAuth,
+  getRedirectResult,
   linkWithPopup,
   onAuthStateChanged,
   signInAnonymously,
@@ -27,8 +28,19 @@ import type { Project } from '../core/types';
 import { compress, decompress, joinChunks, splitChunks } from './codec';
 import { firebaseConfig } from './config';
 
-const app = initializeApp(firebaseConfig);
+/**
+ * On the live site, Google sign-in finishes on the site's own address (Firebase Hosting serves
+ * /__/auth/handler there) rather than on firebaseapp.com. Browsers built into other apps, and
+ * Safari, block the cross-site storage the firebaseapp.com handler needs, so sign-in would fail
+ * there. Needs https://<site>/__/auth/handler among the OAuth client's authorised redirect URIs.
+ */
+const OWN_DOMAINS = [`${firebaseConfig.projectId}.web.app`, `${firebaseConfig.projectId}.firebaseapp.com`];
+const sameSiteAuth = OWN_DOMAINS.includes(location.hostname);
+const app = initializeApp({ ...firebaseConfig, authDomain: sameSiteAuth ? location.hostname : firebaseConfig.authDomain });
 const auth = getAuth(app);
+
+/** iPhone and iPad, including iPads that report a Mac: popups there are unreliable in app browsers. */
+const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const db = getFirestore(app);
 
 /** Stay well under Firestore's per-commit size limit. */
@@ -90,14 +102,27 @@ export async function upgradeGuest(): Promise<number> {
   }
 }
 
+/**
+ * Google sign-in. On iPhone and iPad it goes to Google and back in the same tab, which works in
+ * browsers built into other apps too; elsewhere it opens a popup.
+ */
 export async function signIn(): Promise<void> {
   const provider = new GoogleAuthProvider();
+  if (sameSiteAuth && isIos) {
+    await signInWithRedirect(auth, provider);
+    return;
+  }
   try {
     await signInWithPopup(auth, provider);
   } catch (e) {
     if (errorCode(e) === 'auth/popup-blocked') await signInWithRedirect(auth, provider);
     else throw e;
   }
+}
+
+/** Completes a sign-in that went to Google and back; throws if it failed. */
+export async function finishRedirect(): Promise<void> {
+  await getRedirectResult(auth);
 }
 
 export function signOutUser(): Promise<void> {
@@ -199,7 +224,10 @@ export function errorCode(e: unknown): string {
 export function describeError(e: unknown): string {
   const code = errorCode(e);
   const msg = e instanceof Error ? e.message : String(e);
-  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return 'Sign-in cancelled';
+  // Also what browsers built into other apps report: Google's sign-in window can't hand back to them.
+  if (code === 'auth/popup-closed-by-user')
+    return "Sign-in didn't finish. If World Builder is open inside another app (say, from a link in a chat), open it in Safari or your usual browser and sign in there.";
+  if (code === 'auth/cancelled-popup-request') return 'Sign-in cancelled';
   if (code === 'auth/admin-restricted-operation') return 'Guest sign-in is not switched on (Firebase console → Authentication → Sign-in method → Anonymous).';
   if (code === 'auth/operation-not-allowed' || code === 'auth/configuration-not-found')
     return 'Google sign-in is not switched on yet (Firebase console → Authentication → Sign-in method → Google).';

@@ -450,6 +450,9 @@ dialog::backdrop {
   bottom: 40px;
   left: 50%;
   transform: translateX(-50%);
+  width: max-content;
+  max-width: min(520px, calc(100vw - 32px));
+  text-align: center;
   background: #2b3240;
   border: 1px solid var(--accent);
   padding: 8px 14px;
