@@ -593,6 +593,19 @@ export class App {
     }
     const viewMenu = h('details', { class: 'view-details' }, h('summary', {}, '👁 View'), menu);
     byId('view-toggles').append(viewMenu);
+    // Open under the button, shifted sideways as needed to stay on screen (on a phone the
+    // button can sit at either edge depending on how the toolbar wraps).
+    viewMenu.addEventListener('toggle', () => {
+      if (!viewMenu.open) return;
+      menu.style.left = '0px';
+      const box = viewMenu.getBoundingClientRect();
+      const width = menu.offsetWidth;
+      const margin = 8;
+      const rightAligned = box.width - width;
+      const min = margin - box.left;
+      const max = document.documentElement.clientWidth - margin - width - box.left;
+      menu.style.left = `${Math.max(min, Math.min(max, rightAligned))}px`;
+    });
     // Close the menu when tapping anywhere else.
     document.addEventListener('pointerdown', (e) => {
       if (viewMenu.open && !viewMenu.contains(e.target as Node)) viewMenu.open = false;
@@ -1196,6 +1209,11 @@ export class App {
   private bindCanvas(): void {
     const c = this.canvas;
     c.addEventListener('contextmenu', (e) => e.preventDefault());
+    // iOS Safari ignores `touch-action: none` once the page can scroll, so a drag on the map would
+    // scroll or zoom the page. Cancelling the touch events keeps every gesture on the map; the
+    // pointer events below still fire.
+    for (const type of ['touchstart', 'touchmove'] as const) c.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+    for (const type of ['gesturestart', 'gesturechange']) c.addEventListener(type, (e) => e.preventDefault());
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
       const dpr = window.devicePixelRatio || 1;
