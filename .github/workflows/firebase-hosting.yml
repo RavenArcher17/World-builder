@@ -1,18 +1,20 @@
 name: Deploy to Firebase Hosting
 
-# Pushes to main go live; pull requests get a temporary preview URL posted on the PR.
+# Pushes to main (or "Run workflow" on the Actions tab) go live; pull requests get a temporary
+# preview URL posted on the PR.
 # Needs the FIREBASE_SERVICE_ACCOUNT repository secret; without it the build still runs
 # and the deploy step is skipped.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     # Forks cannot read repository secrets, so skip their PRs.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       checks: write
@@ -33,4 +35,4 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          channelId: ${{ github.event_name == 'push' && 'live' || '' }}
+          channelId: ${{ github.event_name != 'pull_request' && 'live' || '' }}
