@@ -1,0 +1,1060 @@
+/** The editor: viewport, tools, panels, atlas, undo and persistence. */
+import { FEATURE_DEFS, featureDef } from '../core/features';
+import { generateMap } from '../core/generate';
+import { CellRect, GRID_TYPES, Grid, GridType, inRect, normalizeRect } from '../core/grid';
+import { link, linkPath, traceLine, unlinkCell } from '../core/links';
+import { featureName } from '../core/names';
+import { createProject, deleteMap, parseProject, rootMaps, serializeProject } from '../core/project';
+import { cloneMap, regenerateRegion } from '../core/region';
+import { Rng, parseSeed, randomSeed } from '../core/rng';
+import { SCALES, getScale } from '../core/scales';
+import { defaultSettings } from '../core/settings';
+import { T, TILES, tile } from '../core/tiles';
+import { Feature, MapSpec, Project, SEA_LEVEL, Settings, WorldMap, newId } from '../core/types';
+import { guideForMap } from '../core/zoom';
+import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
+import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
+import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
+
+type Tool = 'select' | 'pan' | 'paint' | 'feature';
+type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines';
+
+const STORAGE_KEY = 'world-builder:project';
+const KIND_ICON: Record<string, string> = { overland: '🌍', settlement: '🏘️', dungeon: '💀' };
+
+/** Typical elevation for painted overland tiles so hill shading still makes sense. */
+const PAINT_ELEVATION: Partial<Record<number, number>> = {
+  [T.DEEP_OCEAN]: 0.2,
+  [T.OCEAN]: 0.35,
+  [T.BEACH]: 0.41,
+  [T.HILLS]: 0.62,
+  [T.MOUNTAINS]: 0.76,
+  [T.PEAKS]: 0.9,
+};
+
+export class App {
+  project: Project;
+  currentId: string | null = null;
+  tool: Tool = 'select';
+  view: ViewOptions = { ...DEFAULT_VIEW };
+  scale = 10;
+  ox = 0;
+  oy = 0;
+  selection: CellRect | null = null;
+  selectedFeature: string | null = null;
+  hoverCell = -1;
+  paintMode: PaintMode = 'tile';
+  paintTile: number = T.GRASSLAND;
+  brush = 0;
+  roadLevel = 2;
+  featureType = 'village';
+  private undoStack: string[] = [];
+  private redoStack: string[] = [];
+  private version = 0;
+  private cache: { canvas: HTMLCanvasElement; s: number; key: string } | null = null;
+  private cacheTimer = 0;
+  private saveTimer = 0;
+  private genSettings: Settings = {};
+  private canvas = byId<HTMLCanvasElement>('map-canvas');
+  private ctx = this.canvas.getContext('2d')!;
+  private drag:
+    | { kind: 'pan'; x: number; y: number; ox: number; oy: number }
+    | { kind: 'select'; start: number }
+    | { kind: 'paint'; last: number; buildingId: number }
+    | { kind: 'move-feature'; id: string }
+    | null = null;
+  private spaceDown = false;
+  private needsFit = false;
+
+  constructor() {
+    this.project = this.loadSaved() ?? createProject('My World');
+    this.buildStaticUi();
+    this.bindCanvas();
+    this.bindKeys();
+    new ResizeObserver(() => this.resize()).observe(byId('canvas-wrap'));
+    this.resize();
+    const first = rootMaps(this.project)[0];
+    if (first) this.openMap(first.id);
+    else {
+      this.loadSpecIntoPanel(null);
+      this.generateNew();
+    }
+    this.refreshPanels();
+  }
+
+  get map(): WorldMap | null {
+    return this.currentId ? this.project.maps[this.currentId] ?? null : null;
+  }
+
+  // ---- persistence & undo -----------------------------------------------------------------
+
+  private loadSaved(): Project | null {
+    try {
+      const text = localStorage.getItem(STORAGE_KEY);
+      return text ? parseProject(text) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private scheduleSave(): void {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, serializeProject(this.project));
+      } catch {
+        toast('Autosave skipped (project too large for browser storage) — use Save.');
+      }
+    }, 600);
+  }
+
+  /** Snapshot the project before a change. */
+  pushUndo(): void {
+    this.undoStack.push(JSON.stringify({ p: this.project, c: this.currentId }));
+    if (this.undoStack.length > 25) this.undoStack.shift();
+    this.redoStack = [];
+    this.updateUndoButtons();
+  }
+
+  private restore(snapshot: string): void {
+    const { p, c } = JSON.parse(snapshot) as { p: Project; c: string | null };
+    this.project = p;
+    this.currentId = c && p.maps[c] ? c : rootMaps(p)[0]?.id ?? null;
+    this.selectedFeature = null;
+    this.changed();
+    if (this.map) this.loadSpecIntoPanel(this.map);
+  }
+
+  undo(): void {
+    const s = this.undoStack.pop();
+    if (!s) return;
+    this.redoStack.push(JSON.stringify({ p: this.project, c: this.currentId }));
+    this.restore(s);
+  }
+
+  redo(): void {
+    const s = this.redoStack.pop();
+    if (!s) return;
+    this.undoStack.push(JSON.stringify({ p: this.project, c: this.currentId }));
+    this.restore(s);
+  }
+
+  private updateUndoButtons(): void {
+    byId<HTMLButtonElement>('btn-undo').disabled = !this.undoStack.length;
+    byId<HTMLButtonElement>('btn-redo').disabled = !this.redoStack.length;
+  }
+
+  /** Call after any change to the project. */
+  changed(): void {
+    this.version++;
+    this.cache = null;
+    this.scheduleSave();
+    this.refreshPanels();
+    this.draw();
+  }
+
+  // ---- maps -------------------------------------------------------------------------------
+
+  openMap(id: string, fit = true): void {
+    if (!this.project.maps[id]) return;
+    this.currentId = id;
+    this.selection = null;
+    this.selectedFeature = null;
+    this.cache = null;
+    this.loadSpecIntoPanel(this.map);
+    if (fit) this.fit();
+    this.refreshPanels();
+    this.draw();
+  }
+
+  addMap(map: WorldMap, open = true): void {
+    this.project.maps[map.id] = map;
+    if (open) this.openMap(map.id);
+    this.changed();
+  }
+
+  private specFromPanel(): MapSpec {
+    const scale = getScale(byId<HTMLSelectElement>('gen-scale').value);
+    const clampN = (v: number) => Math.max(8, Math.min(256, Math.round(v) || 8));
+    return {
+      name: byId<HTMLInputElement>('gen-name').value.trim() || scale.label,
+      kind: scale.kind,
+      scaleId: scale.id,
+      grid: byId<HTMLSelectElement>('gen-grid').value as GridType,
+      width: clampN(Number(byId<HTMLInputElement>('gen-width').value)),
+      height: clampN(Number(byId<HTMLInputElement>('gen-height').value)),
+      seed: parseSeed(byId<HTMLInputElement>('gen-seed').value || String(randomSeed())),
+      settings: { ...this.genSettings },
+    };
+  }
+
+  generateNew(): void {
+    const spec = this.specFromPanel();
+    this.pushUndo();
+    const map = generateMap(spec);
+    this.addMap(map);
+    toast(`Generated ${spec.name}`);
+  }
+
+  regenerateCurrent(): void {
+    const old = this.map;
+    if (!old) return this.generateNew();
+    const spec = this.specFromPanel();
+    this.pushUndo();
+    const fresh = generateMap({ ...spec, kind: getScale(spec.scaleId).kind }, guideForMap(this.project, { ...old, ...spec }));
+    const map: WorldMap = { ...fresh, id: old.id, parent: old.parent, children: old.children, composedFrom: old.composedFrom };
+    this.project.maps[old.id] = map;
+    this.selection = null;
+    this.selectedFeature = null;
+    if (old.grid !== map.grid || old.width !== map.width || old.height !== map.height) this.fit();
+    this.changed();
+  }
+
+  rerollSelection(): void {
+    const map = this.map;
+    if (!map || !this.selection) return;
+    this.pushUndo();
+    this.project.maps[map.id] = regenerateRegion(this.project, map, this.selection, randomSeed());
+    this.changed();
+    toast('Area re-rolled');
+  }
+
+  // ---- static UI --------------------------------------------------------------------------
+
+  private buildStaticUi(): void {
+    const scaleSel = byId<HTMLSelectElement>('gen-scale');
+    const groups: Record<string, HTMLOptGroupElement> = {};
+    for (const s of SCALES) {
+      const label = s.kind === 'overland' ? 'Overland' : s.kind === 'settlement' ? 'Settlements' : 'Dungeons';
+      groups[label] ??= scaleSel.appendChild(h('optgroup', { label }) as HTMLOptGroupElement);
+      groups[label].append(h('option', { value: s.id }, `${s.label} (${s.cell})`));
+    }
+    scaleSel.addEventListener('change', () => {
+      const s = getScale(scaleSel.value);
+      byId<HTMLInputElement>('gen-width').value = String(s.width);
+      byId<HTMLInputElement>('gen-height').value = String(s.height);
+      byId<HTMLInputElement>('gen-name').value = s.label;
+      this.genSettings = defaultSettings(s.kind, s.id);
+      this.renderGenSettings();
+    });
+    const gridSel = byId<HTMLSelectElement>('gen-grid');
+    for (const g of GRID_TYPES) gridSel.append(h('option', { value: g.id }, g.label));
+    byId('gen-dice').onclick = () => (byId<HTMLInputElement>('gen-seed').value = String(randomSeed()));
+    byId('btn-generate').onclick = () => {
+      if (!byId<HTMLInputElement>('gen-seed').value) byId<HTMLInputElement>('gen-seed').value = String(randomSeed());
+      this.generateNew();
+      byId<HTMLInputElement>('gen-seed').value = String(randomSeed());
+    };
+    byId('btn-regenerate').onclick = () => this.regenerateCurrent();
+
+    const nameInput = byId<HTMLInputElement>('project-name');
+    nameInput.value = this.project.name;
+    nameInput.onchange = () => {
+      this.project.name = nameInput.value || 'My World';
+      this.scheduleSave();
+    };
+    byId('btn-new-project').onclick = () => {
+      if (!confirm('Start a new empty project? Unsaved maps in this browser will be replaced (use Save first to keep them).')) return;
+      this.pushUndo();
+      this.project = createProject('My World');
+      byId<HTMLInputElement>('project-name').value = this.project.name;
+      this.currentId = null;
+      this.changed();
+    };
+    byId('btn-save').onclick = () => downloadText(`${slug(this.project.name)}.world.json`, serializeProject(this.project));
+    const fileInput = byId<HTMLInputElement>('file-open');
+    byId('btn-open').onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = '';
+      if (!file) return;
+      try {
+        const p = parseProject(await file.text());
+        this.pushUndo();
+        this.project = p;
+        byId<HTMLInputElement>('project-name').value = p.name;
+        const first = rootMaps(p)[0];
+        this.currentId = null;
+        if (first) this.openMap(first.id);
+        this.changed();
+        toast(`Opened ${p.name}`);
+      } catch (e) {
+        toast(`Could not open: ${(e as Error).message}`);
+      }
+    };
+    byId('btn-undo').onclick = () => this.undo();
+    byId('btn-redo').onclick = () => this.redo();
+    byId('btn-export').onclick = () => this.map && openExportDialog(this, this.map);
+    byId('btn-compose').onclick = () => openComposeDialog(this);
+    byId('btn-help').onclick = () => openHelpDialog();
+    byId('btn-fit').onclick = () => {
+      this.fit();
+      this.draw();
+    };
+
+    // Tools.
+    const tools: [Tool, string, string][] = [
+      ['select', '⬚ Select', 'Drag to select an area; click a place to inspect it (S)'],
+      ['pan', '✋ Pan', 'Drag to move the map (H, or hold Space / right-drag)'],
+      ['paint', '🖌 Paint', 'Paint terrain, roads or rivers (P)'],
+      ['feature', '📍 Place', 'Click to place a feature, drag one to move it (F)'],
+    ];
+    const toolBox = byId('tools');
+    for (const [id, label, title] of tools) {
+      toolBox.append(h('button', { 'data-tool': id, title, onclick: () => this.setTool(id) }, label));
+    }
+    const toggles: [keyof ViewOptions, string][] = [
+      ['grid', 'Grid'],
+      ['hillshade', 'Relief'],
+      ['rivers', 'Rivers'],
+      ['roads', 'Roads'],
+      ['features', 'Places'],
+      ['labels', 'Labels'],
+    ];
+    const vt = byId('view-toggles');
+    for (const [k, label] of toggles) {
+      const cb = h('input', { type: 'checkbox', checked: this.view[k] });
+      cb.addEventListener('change', () => {
+        this.view[k] = cb.checked;
+        if (k !== 'features' && k !== 'labels') this.cache = null;
+        this.draw();
+      });
+      vt.append(h('label', {}, cb, label));
+    }
+    this.setTool('select');
+  }
+
+  setTool(tool: Tool): void {
+    this.tool = tool;
+    document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
+    const opts = byId('tool-options');
+    opts.replaceChildren();
+    if (tool === 'paint') {
+      const mode = h('select');
+      for (const [v, l] of [
+        ['tile', 'Terrain'],
+        ['road', 'Road'],
+        ['river', 'River'],
+        ['erase-lines', 'Erase roads/rivers'],
+      ]) mode.append(h('option', { value: v }, l));
+      mode.value = this.paintMode;
+      mode.onchange = () => {
+        this.paintMode = mode.value as PaintMode;
+        this.setTool('paint');
+      };
+      opts.append(mode);
+      if (this.paintMode === 'tile') {
+        const tsel = h('select');
+        for (const t of TILES) tsel.append(h('option', { value: t.id }, t.name));
+        tsel.value = String(this.paintTile);
+        tsel.onchange = () => {
+          this.paintTile = Number(tsel.value);
+          this.refreshLegend();
+        };
+        opts.append(tsel);
+      }
+      if (this.paintMode === 'road') {
+        const lv = h('select');
+        for (const [v, l] of [
+          ['1', 'Trail'],
+          ['2', 'Road'],
+          ['3', 'Highway'],
+        ]) lv.append(h('option', { value: v }, l));
+        lv.value = String(this.roadLevel);
+        lv.onchange = () => (this.roadLevel = Number(lv.value));
+        opts.append(lv);
+      }
+      if (this.paintMode === 'tile' || this.paintMode === 'erase-lines') {
+        const br = h('select', { title: 'Brush size' });
+        for (const v of [0, 1, 2, 3]) br.append(h('option', { value: v }, `Brush ${v + 1}`));
+        br.value = String(this.brush);
+        br.onchange = () => (this.brush = Number(br.value));
+        opts.append(br);
+      }
+    } else if (tool === 'feature') {
+      const sel = h('select');
+      const scopes: Record<string, HTMLOptGroupElement> = {};
+      for (const d of FEATURE_DEFS) {
+        scopes[d.scope] ??= sel.appendChild(h('optgroup', { label: d.scope }) as HTMLOptGroupElement);
+        scopes[d.scope].append(h('option', { value: d.type }, `${d.icon} ${d.label}`));
+      }
+      sel.value = this.featureType;
+      sel.onchange = () => (this.featureType = sel.value);
+      opts.append(sel);
+    }
+    this.canvas.style.cursor = tool === 'pan' ? 'grab' : tool === 'select' ? 'crosshair' : 'cell';
+  }
+
+  private renderGenSettings(): void {
+    const scale = getScale(byId<HTMLSelectElement>('gen-scale').value);
+    byId('gen-scale-hint').textContent = scale.description;
+    byId('gen-settings').replaceChildren(settingsForm(scale.kind, this.genSettings));
+  }
+
+  loadSpecIntoPanel(map: WorldMap | null): void {
+    const scale = getScale(map?.scaleId ?? 'world');
+    byId<HTMLSelectElement>('gen-scale').value = scale.id;
+    byId<HTMLSelectElement>('gen-grid').value = map?.grid ?? 'hex-pointy';
+    byId<HTMLInputElement>('gen-width').value = String(map?.width ?? scale.width);
+    byId<HTMLInputElement>('gen-height').value = String(map?.height ?? scale.height);
+    byId<HTMLInputElement>('gen-seed').value = String(map?.seed ?? randomSeed());
+    byId<HTMLInputElement>('gen-name').value = map?.name ?? scale.label;
+    this.genSettings = { ...defaultSettings(scale.kind, scale.id), ...(map?.settings ?? {}) };
+    this.renderGenSettings();
+  }
+
+  // ---- panels -----------------------------------------------------------------------------
+
+  refreshPanels(): void {
+    byId('empty-state').style.display = this.map ? 'none' : 'flex';
+    this.refreshAtlas();
+    this.refreshMapInfo();
+    this.refreshSelection();
+    this.refreshFeature();
+    this.refreshLegend();
+    this.updateUndoButtons();
+  }
+
+  private refreshAtlas(): void {
+    const atlas = byId('atlas');
+    atlas.replaceChildren();
+    const add = (m: WorldMap, depth: number) => {
+      atlas.append(
+        h(
+          'div',
+          {
+            class: `atlas-item${m.id === this.currentId ? ' current' : ''}`,
+            style: `padding-left:${6 + depth * 14}px`,
+            title: `${getScale(m.scaleId).label} · ${m.width}×${m.height}`,
+            onclick: () => this.openMap(m.id),
+          },
+          `${KIND_ICON[m.kind] ?? '🗺️'} ${m.name}`,
+          h('span', { class: 'meta' }, getScale(m.scaleId).label.split(' ')[0]),
+        ),
+      );
+      for (const c of m.children) if (this.project.maps[c]) add(this.project.maps[c], depth + 1);
+    };
+    const roots = rootMaps(this.project);
+    for (const r of roots) add(r, 0);
+    if (!roots.length) atlas.append(h('p', { class: 'hint' }, 'No maps yet — generate one.'));
+  }
+
+  private refreshMapInfo(): void {
+    const box = byId('map-info');
+    box.replaceChildren();
+    const map = this.map;
+    if (!map) return;
+    const name = h('input', { value: map.name });
+    name.onchange = () => {
+      this.pushUndo();
+      map.name = name.value || map.name;
+      this.changed();
+    };
+    const parent = map.parent ? this.project.maps[map.parent.mapId] : undefined;
+    box.append(
+      h('h2', {}, 'Map'),
+      h('label', {}, 'Name', name),
+      h('p', { class: 'hint' }, `${getScale(map.scaleId).label} · ${GRID_TYPES.find((g) => g.id === map.grid)?.label} · ${map.width}×${map.height} · seed ${map.seed}`),
+      h(
+        'div',
+        { class: 'btn-row' },
+        parent ? h('button', { onclick: () => this.openMap(parent.id) }, `↑ ${parent.name}`) : null,
+        h(
+          'button',
+          {
+            onclick: () => {
+              this.pushUndo();
+              const copy = cloneMap(map);
+              copy.id = newId('map');
+              copy.name = `${map.name} copy`;
+              copy.parent = undefined;
+              copy.children = [];
+              for (const f of copy.features) delete f.childMapId;
+              this.addMap(copy);
+            },
+          },
+          'Duplicate',
+        ),
+        h(
+          'button',
+          {
+            class: 'danger',
+            onclick: () => {
+              const n = map.children.length;
+              if (!confirm(`Delete "${map.name}"${n ? ` and its ${n} detail map(s)` : ''}?`)) return;
+              this.pushUndo();
+              deleteMap(this.project, map.id);
+              this.currentId = null;
+              const next = parent ?? rootMaps(this.project)[0];
+              if (next) this.openMap(next.id);
+              this.changed();
+            },
+          },
+          'Delete',
+        ),
+      ),
+    );
+  }
+
+  private refreshSelection(): void {
+    const box = byId('selection-panel');
+    box.replaceChildren();
+    const map = this.map;
+    const sel = this.selection;
+    if (!map || !sel) return;
+    const inside = map.features.filter((f) => inRect(sel, f.c, f.r));
+    const list = h('div', { class: 'feature-list' });
+    for (const f of inside.sort((a, b) => featureDef(b.type).rank - featureDef(a.type).rank)) {
+      list.append(h('div', { onclick: () => this.selectFeature(f.id) }, `${featureDef(f.type).icon} ${f.name || featureDef(f.type).label}`));
+    }
+    box.append(
+      h('h2', {}, 'Selected area'),
+      h('p', { class: 'hint' }, `Cells ${sel.c0},${sel.r0} → ${sel.c1},${sel.r1} (${sel.c1 - sel.c0 + 1}×${sel.r1 - sel.r0 + 1})`),
+      h(
+        'div',
+        { class: 'btn-row' },
+        h('button', { class: 'primary', title: 'Generate a detailed child map of this area', onclick: () => openZoomDialog(this, map, sel) }, '🔍 Zoom in / detail map'),
+        h('button', { title: 'Regenerate just this area with a new seed, keeping the rest', onclick: () => this.rerollSelection() }, '🎲 Re-roll area'),
+        h(
+          'button',
+          {
+            onclick: () => {
+              this.selection = null;
+              this.refreshPanels();
+              this.draw();
+            },
+          },
+          'Clear',
+        ),
+      ),
+      inside.length ? h('h3', {}, `${inside.length} place(s) here`) : '',
+      list,
+    );
+  }
+
+  selectFeature(id: string | null): void {
+    this.selectedFeature = id;
+    this.refreshFeature();
+    this.draw();
+  }
+
+  private refreshFeature(): void {
+    const box = byId('feature-panel');
+    box.replaceChildren();
+    const map = this.map;
+    const f = map?.features.find((x) => x.id === this.selectedFeature);
+    if (!map || !f) return;
+    const typeSel = h('select');
+    for (const d of FEATURE_DEFS) typeSel.append(h('option', { value: d.type }, `${d.icon} ${d.label}`));
+    typeSel.value = f.type;
+    typeSel.onchange = () => {
+      this.pushUndo();
+      f.type = typeSel.value;
+      this.changed();
+    };
+    const name = h('input', { value: f.name });
+    name.onchange = () => {
+      this.pushUndo();
+      f.name = name.value;
+      this.changed();
+    };
+    const notes = h('textarea', { placeholder: 'Notes, hooks, NPCs…' });
+    notes.value = f.notes ?? '';
+    notes.onchange = () => {
+      this.pushUndo();
+      f.notes = notes.value;
+      this.changed();
+    };
+    const child = f.childMapId ? this.project.maps[f.childMapId] : undefined;
+    box.append(
+      h('h2', {}, 'Place'),
+      h('label', {}, 'Type', typeSel),
+      h('label', {}, 'Name', name),
+      h('label', {}, 'Notes', notes),
+      f.tags?.length ? h('p', { class: 'hint' }, `Tags: ${f.tags.join(', ')}`) : '',
+      h(
+        'div',
+        { class: 'btn-row' },
+        child
+          ? h('button', { class: 'primary', onclick: () => this.openMap(child.id) }, `Open ${child.name}`)
+          : h(
+              'button',
+              {
+                class: 'primary',
+                onclick: () => {
+                  const rect = { c0: f.c - 1, r0: f.r - 1, c1: f.c + 1, r1: f.r + 1 };
+                  const r = clampRect(rect, map);
+                  this.selection = r;
+                  openZoomDialog(this, map, r);
+                },
+              },
+              'Create detail map…',
+            ),
+        h(
+          'button',
+          {
+            class: 'danger',
+            onclick: () => this.deleteFeature(f.id),
+          },
+          'Delete',
+        ),
+      ),
+    );
+  }
+
+  private deleteFeature(id: string): void {
+    const map = this.map;
+    if (!map) return;
+    this.pushUndo();
+    map.features = map.features.filter((x) => x.id !== id);
+    this.selectedFeature = null;
+    this.changed();
+  }
+
+  private refreshLegend(): void {
+    const box = byId('legend');
+    box.replaceChildren();
+    const used = new Set(this.map?.layers.terrain ?? []);
+    for (const t of TILES) {
+      if (used.size && !used.has(t.id) && t.id !== this.paintTile) continue;
+      box.append(
+        h(
+          'div',
+          {
+            class: t.id === this.paintTile && this.tool === 'paint' ? 'active' : '',
+            title: 'Click to paint with this tile',
+            onclick: () => {
+              this.paintTile = t.id;
+              this.paintMode = 'tile';
+              this.setTool('paint');
+              this.refreshLegend();
+            },
+          },
+          h('span', { class: 'swatch', style: `background:${t.color}` }),
+          t.name,
+        ),
+      );
+    }
+  }
+
+  // ---- viewport ---------------------------------------------------------------------------
+
+  private resize(): void {
+    const wrap = byId('canvas-wrap');
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.max(1, Math.floor(wrap.clientWidth * dpr));
+    this.canvas.height = Math.max(1, Math.floor(wrap.clientHeight * dpr));
+    if (this.needsFit) this.fit();
+    this.draw();
+  }
+
+  fit(): void {
+    const map = this.map;
+    if (!map) return;
+    const b = new Grid(map.grid, map.width, map.height).renderBounds();
+    const w = this.canvas.width;
+    const hgt = this.canvas.height;
+    if (w < 50 || hgt < 50) {
+      this.needsFit = true;
+      return;
+    }
+    this.needsFit = false;
+    this.scale = Math.min(w / b.w, hgt / b.h) * 0.94;
+    this.ox = (w - b.w * this.scale) / 2;
+    this.oy = (hgt - b.h * this.scale) / 2;
+    this.cache = null;
+  }
+
+  private toRender(sx: number, sy: number): [number, number] {
+    return [(sx - this.ox) / this.scale, (sy - this.oy) / this.scale];
+  }
+
+  private eventCell(e: MouseEvent): number {
+    const map = this.map;
+    if (!map) return -1;
+    const dpr = window.devicePixelRatio || 1;
+    const r = this.canvas.getBoundingClientRect();
+    const [x, y] = this.toRender((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr);
+    return new Grid(map.grid, map.width, map.height).pixelToCell(x, y);
+  }
+
+  private ensureCache(map: WorldMap): void {
+    const key = `${map.id}:${this.version}:${this.view.grid}:${this.view.hillshade}:${this.view.rivers}:${this.view.roads}`;
+    const wanted = safeScale(map, Math.min(48, Math.max(baseUnitPx(map.grid), this.scale)));
+    if (this.cache && this.cache.key === key) {
+      if (wanted > this.cache.s * 1.4 || wanted < this.cache.s / 3) {
+        clearTimeout(this.cacheTimer);
+        this.cacheTimer = window.setTimeout(() => {
+          this.cache = null;
+          this.draw();
+        }, 150);
+      }
+      return;
+    }
+    this.cache = { canvas: renderMapCanvas(map, wanted, this.view), s: wanted, key };
+  }
+
+  draw(): void {
+    const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#0e1014';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    const map = this.map;
+    if (!map) return;
+    this.ensureCache(map);
+    const cache = this.cache!;
+    const k = this.scale / cache.s;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(cache.canvas, this.ox, this.oy, cache.canvas.width * k, cache.canvas.height * k);
+
+    const g = new Grid(map.grid, map.width, map.height);
+    // Child map regions.
+    for (const cid of map.children) {
+      const child = this.project.maps[cid];
+      if (!child?.parent) continue;
+      const pts = rectOutline(g, child.parent);
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = 'rgba(255,215,120,0.9)';
+      ctx.lineWidth = 1.5;
+      this.pathScreen(pts);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const [x, y] = pts[0];
+      ctx.font = '600 12px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.strokeText(`${KIND_ICON[child.kind]} ${child.name}`, this.ox + x * this.scale + 2, this.oy + y * this.scale - 2);
+      ctx.fillStyle = '#ffd778';
+      ctx.fillText(`${KIND_ICON[child.kind]} ${child.name}`, this.ox + x * this.scale + 2, this.oy + y * this.scale - 2);
+    }
+    // Selection.
+    if (this.selection) {
+      const pts = rectOutline(g, this.selection);
+      this.pathScreen(pts);
+      ctx.fillStyle = 'rgba(224,176,74,0.18)';
+      ctx.fill();
+      ctx.strokeStyle = '#e0b04a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    // Hover.
+    if (this.hoverCell >= 0 && this.hoverCell < g.size) {
+      const cells = this.tool === 'paint' ? this.brushCells(g, this.hoverCell) : [this.hoverCell];
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1.5;
+      for (const i of cells) {
+        this.pathScreen(g.corners(i));
+        ctx.stroke();
+      }
+    }
+    drawFeatures(ctx, map, this.scale, this.ox, this.oy, this.view, this.selectedFeature);
+  }
+
+  private pathScreen(pts: [number, number][]): void {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    pts.forEach(([x, y], k) => {
+      const sx = this.ox + x * this.scale;
+      const sy = this.oy + y * this.scale;
+      if (k) ctx.lineTo(sx, sy);
+      else ctx.moveTo(sx, sy);
+    });
+    if (pts.length) ctx.closePath();
+  }
+
+  private brushCells(g: Grid, center: number): number[] {
+    if (this.brush <= 0) return [center];
+    const [cx, cy] = g.pos(center);
+    const out: number[] = [];
+    const r = this.brush + 0.5;
+    const c0 = g.col(center);
+    const r0 = g.row(center);
+    for (let rr = r0 - this.brush - 1; rr <= r0 + this.brush + 1; rr++) {
+      for (let cc = c0 - this.brush - 1; cc <= c0 + this.brush + 1; cc++) {
+        if (!g.inBounds(cc, rr)) continue;
+        const [x, y] = g.posCR(cc, rr);
+        if (Math.hypot(x - cx, y - cy) <= r) out.push(g.idx(cc, rr));
+      }
+    }
+    return out;
+  }
+
+  // ---- input ------------------------------------------------------------------------------
+
+  private bindCanvas(): void {
+    const c = this.canvas;
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const dpr = window.devicePixelRatio || 1;
+      const r = c.getBoundingClientRect();
+      const sx = (e.clientX - r.left) * dpr;
+      const sy = (e.clientY - r.top) * dpr;
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      const ns = Math.max(0.5, Math.min(400, this.scale * factor));
+      this.ox = sx - ((sx - this.ox) * ns) / this.scale;
+      this.oy = sy - ((sy - this.oy) * ns) / this.scale;
+      this.scale = ns;
+      this.draw();
+    }, { passive: false });
+
+    c.addEventListener('pointerdown', (e) => {
+      const map = this.map;
+      if (!map) return;
+      c.setPointerCapture(e.pointerId);
+      const dpr = window.devicePixelRatio || 1;
+      if (e.button === 1 || e.button === 2 || this.tool === 'pan' || this.spaceDown) {
+        this.drag = { kind: 'pan', x: e.clientX * dpr, y: e.clientY * dpr, ox: this.ox, oy: this.oy };
+        c.style.cursor = 'grabbing';
+        return;
+      }
+      const cell = this.eventCell(e);
+      if (cell < 0) return;
+      const g = new Grid(map.grid, map.width, map.height);
+      if (this.tool === 'select') {
+        this.drag = { kind: 'select', start: cell };
+        this.selection = { c0: g.col(cell), r0: g.row(cell), c1: g.col(cell), r1: g.row(cell) };
+        this.draw();
+      } else if (this.tool === 'paint') {
+        this.pushUndo();
+        const buildingId = Math.max(0, ...map.layers.building) + 1;
+        this.drag = { kind: 'paint', last: cell, buildingId };
+        this.paintAt(map, g, cell, -1, buildingId);
+      } else if (this.tool === 'feature') {
+        const existing = featureAt(map, g, cell);
+        if (existing) {
+          this.pushUndo();
+          this.selectFeature(existing.id);
+          this.drag = { kind: 'move-feature', id: existing.id };
+        } else {
+          this.pushUndo();
+          const f: Feature = {
+            id: newId('f'),
+            type: this.featureType,
+            name: featureName(new Rng(randomSeed()), this.featureType) || featureDef(this.featureType).label,
+            c: g.col(cell),
+            r: g.row(cell),
+          };
+          map.features.push(f);
+          this.selectedFeature = f.id;
+          this.changed();
+        }
+      }
+    });
+
+    c.addEventListener('pointermove', (e) => {
+      const map = this.map;
+      if (!map) return;
+      const dpr = window.devicePixelRatio || 1;
+      const d = this.drag;
+      if (d?.kind === 'pan') {
+        this.ox = d.ox + e.clientX * dpr - d.x;
+        this.oy = d.oy + e.clientY * dpr - d.y;
+        this.draw();
+        return;
+      }
+      const cell = this.eventCell(e);
+      const g = new Grid(map.grid, map.width, map.height);
+      if (cell !== this.hoverCell) {
+        this.hoverCell = cell;
+        this.updateStatus(map, g, cell);
+      }
+      if (cell < 0) {
+        this.draw();
+        return;
+      }
+      if (d?.kind === 'select') {
+        this.selection = normalizeRect({ c0: g.col(d.start), r0: g.row(d.start), c1: g.col(cell), r1: g.row(cell) });
+      } else if (d?.kind === 'paint' && cell !== d.last) {
+        this.paintAt(map, g, cell, d.last, d.buildingId);
+        d.last = cell;
+      } else if (d?.kind === 'move-feature') {
+        const f = map.features.find((x) => x.id === d.id);
+        if (f) {
+          f.c = g.col(cell);
+          f.r = g.row(cell);
+        }
+      }
+      this.draw();
+    });
+
+    const end = (e: PointerEvent) => {
+      const d = this.drag;
+      this.drag = null;
+      if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
+      this.setTool(this.tool);
+      const map = this.map;
+      if (!map || !d) return;
+      if (d.kind === 'select' && this.selection) {
+        const s = this.selection;
+        if (s.c0 === s.c1 && s.r0 === s.r1) {
+          // A click: inspect the place under the cursor.
+          const g = new Grid(map.grid, map.width, map.height);
+          const f = featureAt(map, g, g.idx(s.c0, s.r0));
+          this.selection = null;
+          this.selectedFeature = f?.id ?? null;
+        }
+        this.refreshPanels();
+        this.draw();
+      } else if (d.kind === 'paint' || d.kind === 'move-feature') {
+        this.changed();
+      }
+    };
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+    c.addEventListener('pointerleave', () => {
+      this.hoverCell = -1;
+      this.draw();
+    });
+
+    c.addEventListener('dblclick', (e) => {
+      const map = this.map;
+      if (!map) return;
+      const cell = this.eventCell(e);
+      if (cell < 0) return;
+      const g = new Grid(map.grid, map.width, map.height);
+      const f = featureAt(map, g, cell);
+      if (f?.childMapId && this.project.maps[f.childMapId]) return this.openMap(f.childMapId);
+      for (const cid of map.children) {
+        const child = this.project.maps[cid];
+        if (child?.parent && inRect(child.parent, g.col(cell), g.row(cell))) return this.openMap(cid);
+      }
+    });
+  }
+
+  private paintAt(map: WorldMap, g: Grid, cell: number, last: number, buildingId: number): void {
+    const L = map.layers;
+    if (this.paintMode === 'tile') {
+      for (const i of this.brushCells(g, cell)) {
+        L.terrain[i] = this.paintTile;
+        L.building[i] = this.paintTile === T.BUILDING || this.paintTile === T.KEEP ? buildingId : 0;
+        const e = PAINT_ELEVATION[this.paintTile];
+        if (map.kind === 'overland') {
+          if (e !== undefined) L.elevation[i] = e;
+          else if (L.elevation[i] < SEA_LEVEL && !tile(this.paintTile).category.includes('water')) L.elevation[i] = SEA_LEVEL + 0.03;
+        }
+      }
+    } else if (this.paintMode === 'erase-lines') {
+      for (const i of this.brushCells(g, cell)) {
+        unlinkCell(g, L.road, i);
+        unlinkCell(g, L.river, i);
+        L.roadLevel[i] = 0;
+        L.riverSize[i] = 0;
+      }
+    } else if (last >= 0) {
+      const layer = this.paintMode === 'road' ? L.road : L.river;
+      const path = g.dirBetween(last, cell) >= 0 ? [last, cell] : traceLine(g, g.pos(last), g.pos(cell));
+      if (this.paintMode === 'road') linkPath(g, layer, path, L.roadLevel, this.roadLevel);
+      else {
+        for (let k = 1; k < path.length; k++) link(g, layer, path[k - 1], path[k]);
+        for (const i of path) L.riverSize[i] = Math.max(L.riverSize[i], 60);
+      }
+    }
+    this.version++;
+    this.cache = null;
+  }
+
+  private updateStatus(map: WorldMap, g: Grid, cell: number): void {
+    const el = byId('status');
+    if (cell < 0) {
+      el.textContent = `${map.name} · zoom ${Math.round(this.scale * 10)}%`;
+      return;
+    }
+    const L = map.layers;
+    const parts = [`col ${g.col(cell)}, row ${g.row(cell)}`, tile(L.terrain[cell]).name];
+    if (map.kind === 'overland') parts.push(`elev ${L.elevation[cell].toFixed(2)}`, `moist ${L.moisture[cell].toFixed(2)}`, `temp ${L.temperature[cell].toFixed(2)}`);
+    if (L.river[cell]) parts.push('river');
+    if (L.road[cell]) parts.push(['', 'trail', 'road', 'highway'][L.roadLevel[cell]] || 'road');
+    if (L.building[cell]) parts.push(`building #${L.building[cell]}`);
+    const f = featureAt(map, g, cell);
+    if (f) parts.push(`${featureDef(f.type).icon} ${f.name}`);
+    el.textContent = parts.join(' · ');
+  }
+
+  private bindKeys(): void {
+    window.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.matches('input, textarea, select')) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) this.redo();
+        else this.undo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        this.redo();
+      } else if (e.key === ' ') {
+        this.spaceDown = true;
+        this.canvas.style.cursor = 'grab';
+        e.preventDefault();
+      } else if (e.key === 'Escape') {
+        this.selection = null;
+        this.selectedFeature = null;
+        this.refreshPanels();
+        this.draw();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedFeature) {
+        this.deleteFeature(this.selectedFeature);
+      } else if (!e.ctrlKey && !e.metaKey) {
+        const map: Record<string, Tool> = { s: 'select', h: 'pan', p: 'paint', f: 'feature' };
+        const t = map[e.key.toLowerCase()];
+        if (t) this.setTool(t);
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.key === ' ') {
+        this.spaceDown = false;
+        this.setTool(this.tool);
+      }
+    });
+  }
+}
+
+function featureAt(map: WorldMap, g: Grid, cell: number): Feature | undefined {
+  const c = g.col(cell);
+  const r = g.row(cell);
+  return [...map.features].reverse().find((f) => f.c === c && f.r === r);
+}
+
+export function clampRect(r: CellRect, map: WorldMap): CellRect {
+  const n = normalizeRect(r);
+  return {
+    c0: Math.max(0, n.c0),
+    r0: Math.max(0, n.r0),
+    c1: Math.min(map.width - 1, n.c1),
+    r1: Math.min(map.height - 1, n.r1),
+  };
+}
+
+/** Screen outline (render units) of a cell rectangle. */
+export function rectOutline(g: Grid, rect: CellRect): [number, number][] {
+  if (g.type === 'iso') {
+    return [g.cornersCR(rect.c0, rect.r0)[0], g.cornersCR(rect.c1, rect.r0)[1], g.cornersCR(rect.c1, rect.r1)[2], g.cornersCR(rect.c0, rect.r1)[3]];
+  }
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  const edge = (c: number, r: number) => {
+    for (const [x, y] of g.cornersCR(c, r)) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+  };
+  for (let c = rect.c0; c <= rect.c1; c++) {
+    edge(c, rect.r0);
+    edge(c, rect.r1);
+  }
+  for (let r = rect.r0; r <= rect.r1; r++) {
+    edge(rect.c0, r);
+    edge(rect.c1, r);
+  }
+  return [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ];
+}

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>World Builder</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">🗺️ World Builder</div>
+      <input id="project-name" class="project-name" title="Project name" />
+      <div class="spacer"></div>
+      <button id="btn-new-project" title="Start an empty project">New project</button>
+      <button id="btn-open" title="Open a saved project file">Open…</button>
+      <button id="btn-save" title="Download the whole project as a file">Save</button>
+      <button id="btn-undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button id="btn-redo" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
+      <button id="btn-compose" title="Stitch several maps onto one bigger map">🧩 Stitch maps</button>
+      <button id="btn-export" class="primary" title="Export the current map for a game">⬇ Export</button>
+      <button id="btn-help" title="How to use">?</button>
+      <input id="file-open" type="file" accept=".json,application/json" hidden />
+    </header>
+
+    <div class="layout">
+      <aside class="panel left" id="left-panel">
+        <h2>Generate</h2>
+        <label>Scale <select id="gen-scale"></select></label>
+        <p class="hint" id="gen-scale-hint"></p>
+        <label>Grid <select id="gen-grid"></select></label>
+        <div class="row">
+          <label>Width <input id="gen-width" type="number" min="8" max="256" /></label>
+          <label>Height <input id="gen-height" type="number" min="8" max="256" /></label>
+        </div>
+        <div class="row">
+          <label class="grow">Seed <input id="gen-seed" /></label>
+          <button id="gen-dice" class="icon" title="Random seed">🎲</button>
+        </div>
+        <label>Name <input id="gen-name" /></label>
+        <div id="gen-settings"></div>
+        <div class="actions">
+          <button id="btn-generate" class="primary">✨ Generate new map</button>
+          <button id="btn-regenerate" title="Re-generate the open map with these settings">↻ Regenerate open map</button>
+        </div>
+      </aside>
+
+      <main class="viewport">
+        <div class="toolbar">
+          <div class="tools" id="tools"></div>
+          <div class="tool-options" id="tool-options"></div>
+          <div class="spacer"></div>
+          <div class="view-toggles" id="view-toggles"></div>
+          <button id="btn-fit" class="icon" title="Fit map to view">⤢</button>
+        </div>
+        <div class="canvas-wrap" id="canvas-wrap">
+          <canvas id="map-canvas"></canvas>
+          <div class="empty" id="empty-state">
+            <h1>Build a world</h1>
+            <p>Pick a scale on the left (world, kingdom, county, town, dungeon…), choose a grid and hit <b>Generate</b>.</p>
+            <p>Then drag a box over any area to <b>re-roll it</b> or <b>zoom in</b> for a detailed child map — towns, dungeons and regions all link back to their parent.</p>
+          </div>
+        </div>
+        <div class="statusbar" id="status"></div>
+      </main>
+
+      <aside class="panel right" id="right-panel">
+        <section>
+          <h2>Atlas</h2>
+          <div id="atlas" class="atlas"></div>
+        </section>
+        <section id="map-info"></section>
+        <section id="selection-panel"></section>
+        <section id="feature-panel"></section>
+        <details class="legend-wrap">
+          <summary>Legend</summary>
+          <div id="legend" class="legend"></div>
+        </details>
+      </aside>
+    </div>
+
+    <dialog id="dialog"></dialog>
+    <div id="toast" class="toast"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
