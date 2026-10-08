@@ -141,13 +141,17 @@ export class App {
   private scheduleSave(): void {
     this.scheduleCloudSave();
     clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, serializeProject(this.project));
-      } catch {
-        toast('Autosave skipped (project too large for browser storage) — use Save.');
-      }
-    }, 600);
+    this.saveTimer = window.setTimeout(() => this.saveLocalNow(), 600);
+  }
+
+  /** Autosave to this browser now (e.g. before leaving the page to sign in). */
+  saveLocalNow(): void {
+    clearTimeout(this.saveTimer);
+    try {
+      localStorage.setItem(STORAGE_KEY, serializeProject(this.project));
+    } catch {
+      toast('Autosave skipped (project too large for browser storage) — use Save.');
+    }
   }
 
   /** Swap in a whole project (opened from a file or the cloud, or a new one). */
@@ -178,6 +182,7 @@ export class App {
     import('../cloud/cloud')
       .then((m) => {
         this.cloud = m;
+        m.finishRedirect().catch((e) => toast(m.describeError(e)));
         m.onUserChanged((u) => {
           this.user = u;
           this.cloudState = 'idle';

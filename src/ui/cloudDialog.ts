@@ -148,7 +148,15 @@ export function openSignInDialog(app: App): void {
     [
       { label: 'Cancel' },
       { label: 'Continue as guest', action: run(() => cloud.signInAsGuest()) },
-      { label: 'Sign in with Google', primary: true, action: run(() => cloud.signIn()) },
+      {
+        label: 'Sign in with Google',
+        primary: true,
+        // On phones sign-in may leave the page for Google and come back: keep the work first.
+        action: run(() => {
+          app.saveLocalNow();
+          return cloud.signIn();
+        }),
+      },
     ],
   );
 }
