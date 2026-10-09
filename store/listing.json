@@ -1,0 +1,17 @@
+{
+  "game": "world-builder",
+  "rev": 1,
+  "title": "World Builder",
+  "tagline": "A procedural map generator for worlds, kingdoms, towns and dungeons, with game-ready exports.",
+  "description": "A procedural map generator for tabletop and video games. Generate worlds, kingdoms, counties, town layouts and dungeons, then drill into any area for more detail, stitch maps together, and export them as game assets, on **square**, **hex** or **isometric** grids.\n\n- **Generate:** pick a scale (World, Continent, Kingdom, County, Local area, City / Town / Village layout, Dungeon, Cave), a grid, size and seed, and choose what goes on the map.\n- **Re-roll an area:** regenerate just a selected box; edges are blended and rivers, roads, streets and corridors reconnect across the seam.\n- **Zoom in:** a selected area becomes a detailed child map that inherits its parent's coastline, climate, rivers, roads and places. A town becomes a street-level layout; a dungeon, cave, lair or mine becomes a room-and-corridor or cavern level.\n- **Edit:** paint terrain, roads and rivers; place, drag, rename and annotate places. Full undo/redo.\n- **Stitch:** place several maps on one bigger board and join them with blended terrain and roads.\n- **Export:** PNG, **Tiled** map (opens in Tiled and imports into Godot, Unity, GameMaker, Phaser, Defold), game JSON or CSV.\n\nYour projects are saved to your account.",
+  "engine": "TypeScript",
+  "tags": [
+    "maps",
+    "procedural",
+    "tools"
+  ],
+  "controls": [
+    "touch",
+    "keyboard_mouse"
+  ]
+}

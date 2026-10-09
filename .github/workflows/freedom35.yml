@@ -1,0 +1,63 @@
+# Publishes this web game to Freedom35 Studios on every push.
+#
+# No secret to store: the run proves which repository it is (GitHub OIDC) and
+# Freedom35 checks that this repository is connected to the game (Creator
+# studio → your game → Publish from GitHub).
+#
+# Each run pushes the folder the game is served from, then — if store/ changed
+# in this push — updates the store page from store/listing.json.
+#
+# Guide: https://freedom35studios.pages.dev/developers/pipeline.md
+name: Publish to Freedom35
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write          # lets the run prove it is this repository; no token needed
+
+concurrency:
+  group: freedom35-publish
+  cancel-in-progress: true
+
+env:
+  F35_GAME: world-builder              # the game's address on Freedom35
+  F35_DIR: dist            # the folder the game is served from
+  F35_BUILD: npm ci && npm run build            # the build command, or empty when the folder is ready as it is
+  F35_SITE: https://freedom35studios.pages.dev
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build
+        if: env.F35_BUILD != ''
+        run: ${{ env.F35_BUILD }}
+
+      - name: Publish to Freedom35
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          curl -fsSLo f35.mjs "$F35_SITE/cli/f35.mjs"
+          node f35.mjs push "$F35_DIR" "$F35_GAME:live" --version "${GITHUB_SHA::7}" --notes "${COMMIT_MESSAGE%%$'\n'*}"
+
+      - name: Update the store page (when store/ changed)
+        run: |
+          if [ ! -f store/listing.json ]; then echo "No store/listing.json — the store page is edited in Creator studio or by your Claude."; exit 0; fi
+          if [ "${{ github.event_name }}" = "push" ] && git rev-parse -q HEAD~1 >/dev/null && git diff --quiet HEAD~1 HEAD -- store/; then
+            echo "store/ did not change in this push."; exit 0
+          fi
+          node f35.mjs listing push "$F35_GAME" || echo "::warning title=Store page not updated::It was edited elsewhere since store/listing.json was pulled. Run: node f35.mjs listing pull $F35_GAME"
