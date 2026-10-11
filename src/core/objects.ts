@@ -20,7 +20,7 @@ export interface ObjectDef {
   blocks: boolean;
   /** Used by standing next to it (a station, fishing spot or staircase) rather than on it. */
   useFromNeighbour: boolean;
-  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs';
+  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture';
 }
 
 const o = (
@@ -55,6 +55,25 @@ export const OBJECTS: ObjectDef[] = [
   o(17, 'crypt_entrance', 'Crypt entrance', '#2a2230', '🕳️', 'icon', 'stairs', true),
   o(18, 'stairs_down', 'Stairs down', '#7a5c96', '⬇️', 'icon', 'stairs', true),
   o(19, 'stairs_up', 'Stairs up', '#4f7fae', '⬆️', 'icon', 'stairs', true),
+  // Herb patches, picked by hand from beside them.
+  o(20, 'herb_sunleaf', 'Herb: sunleaf', '#c8e86a', '🌿', 'icon', 'herb', true),
+  o(21, 'herb_silverweed', 'Herb: silverweed', '#c8d8e8', '🌾', 'icon', 'herb', true),
+  o(22, 'herb_thornberry', 'Herb: thornberry', '#d86a5a', '🍓', 'icon', 'herb', true),
+  o(23, 'herb_nightshade', 'Herb: nightshade', '#6a4a8a', '🍇', 'icon', 'herb', true),
+  o(24, 'herb_emberbloom', 'Herb: emberbloom', '#e8843a', '🌺', 'icon', 'herb', true),
+  // Town: doors into buildings, the way into the sewers, workshop benches and furniture.
+  o(25, 'door', 'Door', '#8a5a2a', '🚪', 'icon', 'door', true),
+  o(26, 'sewer_grate', 'Sewer grate', '#4a4a50', '🕳️', 'icon', 'stairs', true),
+  o(27, 'alchemy_table', 'Alchemy table', '#5aa85a', '⚗️', 'icon', 'station', true),
+  o(28, 'sewing_table', 'Sewing table', '#c04a7a', '🧵', 'icon', 'station', true),
+  o(29, 'fletching_bench', 'Fletching bench', '#8a6a3a', '🏹', 'icon', 'station', true),
+  o(30, 'counter', 'Counter', '#9a6a3a', '🟫', 'icon', 'furniture'),
+  o(31, 'bookshelf', 'Bookshelf', '#6a4a2a', '📚', 'icon', 'furniture'),
+  o(32, 'table', 'Table', '#8a7a6a', '🍽️', 'icon', 'furniture'),
+  o(33, 'bed', 'Bed', '#4a6a4a', '🛏️', 'icon', 'furniture'),
+  o(34, 'barrel', 'Barrel', '#8a5a2a', '🛢️', 'icon', 'furniture'),
+  o(35, 'crate', 'Crate', '#a87a4a', '📦', 'icon', 'furniture'),
+  o(36, 'lectern', 'Lectern', '#7a5a3a', '📖', 'icon', 'furniture'),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -76,7 +95,24 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'FISHING_SALMON'
   | 'CRYPT_ENTRANCE'
   | 'STAIRS_DOWN'
-  | 'STAIRS_UP',
+  | 'STAIRS_UP'
+  | 'HERB_SUNLEAF'
+  | 'HERB_SILVERWEED'
+  | 'HERB_THORNBERRY'
+  | 'HERB_NIGHTSHADE'
+  | 'HERB_EMBERBLOOM'
+  | 'DOOR'
+  | 'SEWER_GRATE'
+  | 'ALCHEMY_TABLE'
+  | 'SEWING_TABLE'
+  | 'FLETCHING_BENCH'
+  | 'COUNTER'
+  | 'BOOKSHELF'
+  | 'TABLE'
+  | 'BED'
+  | 'BARREL'
+  | 'CRATE'
+  | 'LECTERN',
   number
 >;
 

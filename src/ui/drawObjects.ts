@@ -17,6 +17,7 @@ const PATTERN_INK: Record<TilePattern, string> = {
   cobbles: 'rgba(70,64,56,0.45)',
   flags: 'rgba(40,36,30,0.45)',
   bricks: 'rgba(0,0,0,0.45)',
+  boards: 'rgba(60,35,15,0.5)',
 };
 
 /** A small texture inside a cell so grass, path and floors stay distinguishable at a glance. */
@@ -66,6 +67,15 @@ export function drawPattern(ctx: CanvasRenderingContext2D, pattern: TilePattern,
       ctx.lineTo(0.6 * R, (j - 0.5) * 0.4 * R);
       ctx.moveTo((0.5 - j) * 0.4 * R, -0.6 * R);
       ctx.lineTo((0.5 - j) * 0.4 * R, 0.6 * R);
+      ctx.stroke();
+      break;
+    case 'boards':
+      for (const dy of [-0.4, -0.13, 0.13, 0.4]) {
+        ctx.moveTo(-0.65 * R, dy * R);
+        ctx.lineTo(0.65 * R, dy * R);
+      }
+      ctx.moveTo((j - 0.5) * R, -0.4 * R);
+      ctx.lineTo((j - 0.5) * R, -0.13 * R);
       ctx.stroke();
       break;
     case 'bricks':

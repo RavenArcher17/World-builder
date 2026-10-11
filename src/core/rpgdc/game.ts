@@ -15,12 +15,16 @@ export function gameMapId(map: WorldMap): string {
   return String(map.settings.rpgdcMapId);
 }
 
-export function gameKind(map: WorldMap): 'overworld' | 'dungeon' {
+/** The game's kinds of map: the open world, a dungeon floor (dark), or a building's inside (lit). */
+export type GameKind = 'overworld' | 'dungeon' | 'interior';
+
+export function gameKind(map: WorldMap): GameKind {
+  if (map.settings.rpgdcKind === 'interior') return 'interior';
   return map.kind === 'dungeon' ? 'dungeon' : 'overworld';
 }
 
 export function gameMaps(project: Project): WorldMap[] {
-  const order = (m: WorldMap) => (gameKind(m) === 'overworld' ? 0 : 1);
+  const order = (m: WorldMap) => ['overworld', 'dungeon', 'interior'].indexOf(gameKind(m));
   return Object.values(project.maps)
     .filter((m) => isRpgdc(m))
     .sort((a, b) => order(a) - order(b) || gameMapId(a).localeCompare(gameMapId(b), 'en', { numeric: true }));
@@ -33,13 +37,15 @@ export function findGameMap(project: Project, id: unknown): WorldMap | undefined
 // ---- ground and objects ------------------------------------------------------------------
 
 /** Export order of ground kinds; index = value in the exported `ground` layer. */
-export const GROUND_LEGEND = ['grass', 'path', 'water', 'town_floor', 'crypt_floor', 'crypt_wall'] as const;
-export const GROUND_TILES = [T.GRASS, T.PATH, T.WATER, T.TOWN_FLOOR, T.CRYPT_FLOOR, T.CRYPT_WALL];
-const GROUND_WALKABLE = [true, true, false, true, true, false];
+export const GROUND_LEGEND = ['grass', 'path', 'water', 'town_floor', 'crypt_floor', 'crypt_wall', 'planks'] as const;
+export const GROUND_TILES = [T.GRASS, T.PATH, T.WATER, T.TOWN_FLOOR, T.CRYPT_FLOOR, T.CRYPT_WALL, T.PLANKS];
+const GROUND_WALKABLE = [true, true, false, true, true, false, true];
 
+/** How many objects the game knows: World Builder's first ones, in the same order. */
+const GAME_OBJECT_COUNT = 37;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
-export const OBJECT_LEGEND = OBJECTS.slice(0, 20).map((d) => d.key);
-export const GAME_OBJECTS = OBJECTS.slice(1, 20);
+export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
+export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
 
 /**
  * The game ground index for any World Builder tile. The six game grounds map to themselves;
@@ -64,13 +70,111 @@ export function gameObject(objectId: number): number {
   return objectId > 0 && objectId < OBJECT_LEGEND.length ? objectId : 0;
 }
 
-/** Walkable in the game: walkable ground with nothing standing on it. */
-export function isWalkable(map: WorldMap, i: number): boolean {
-  return GROUND_WALKABLE[gameGround(map.layers.terrain[i])] && gameObject(map.layers.object[i]) === 0;
+/** Walkable in the game: walkable ground with nothing standing on it, and not inside a building's walls. */
+export function isWalkable(map: WorldMap, i: number, mask: Uint8Array = buildingMask(map)): boolean {
+  return GROUND_WALKABLE[gameGround(map.layers.terrain[i])] && gameObject(map.layers.object[i]) === 0 && !mask[i];
 }
 
-export function isWalkableAt(map: WorldMap, x: number, y: number): boolean {
-  return x >= 0 && y >= 0 && x < map.width && y < map.height && isWalkable(map, y * map.width + x);
+// ---- buildings ---------------------------------------------------------------------------
+
+export interface GameBuilding {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  style: string;
+  sign: string;
+}
+
+export const BUILDING_STYLES = [
+  { value: 'timber', label: 'Timber and plaster' },
+  { value: 'stone', label: 'Stone' },
+  { value: 'tower', label: 'Tower' },
+];
+
+/** The sizes there's art for: houses 3 to 8 tiles a side, towers square and 3 to 5. */
+export const BUILDING_SIZES = { min: 3, max: 8, towerMin: 3, towerMax: 5 } as const;
+
+export function buildingSizeOk(style: string, w: number, h: number): boolean {
+  const { min, max, towerMin, towerMax } = BUILDING_SIZES;
+  return style === 'tower' ? w === h && w >= towerMin && w <= towerMax : w >= min && w <= max && h >= min && h <= max;
+}
+
+/** The buildings placed on a map (their walls block walking in the game, except where an object stands). */
+export function buildings(map: WorldMap): GameBuilding[] {
+  return map.features
+    .filter((f) => f.type === 'building')
+    .map((f) => {
+      const p = placeProps(f);
+      return { x: f.c, y: f.r, w: Math.round(Number(p.w)), h: Math.round(Number(p.h)), style: String(p.style), sign: String(p.sign ?? '') };
+    });
+}
+
+const masks = new WeakMap<WorldMap, { key: string; mask: Uint8Array }>();
+/** 1 for every cell inside a building's walls with nothing standing on it. Cached per map. */
+export function buildingMask(map: WorldMap): Uint8Array {
+  const list = buildings(map);
+  let key = `${map.width}x${map.height}`;
+  for (const b of list) key += `|${b.x},${b.y},${b.w},${b.h}`;
+  const cached = masks.get(map);
+  if (cached && cached.key === key) return cached.mask;
+  const mask = new Uint8Array(map.width * map.height);
+  for (const b of list) {
+    for (let y = b.y; y < b.y + b.h && y < map.height; y++) {
+      for (let x = b.x; x < b.x + b.w && x < map.width; x++) {
+        const i = y * map.width + x;
+        if (!gameObject(map.layers.object[i])) mask[i] = 1;
+      }
+    }
+  }
+  masks.set(map, { key, mask });
+  return mask;
+}
+
+/** Which wall a door at (x, y) is in: south or east (the walls the game's camera sees), or null. */
+export function doorFace(b: GameBuilding, x: number, y: number): 's' | 'e' | null {
+  const inX = x > b.x && x < b.x + b.w - 1;
+  const inY = y > b.y && y < b.y + b.h - 1;
+  if (y === b.y + b.h - 1 && inX) return 's';
+  if (x === b.x + b.w - 1 && inY) return 'e';
+  return null;
+}
+
+// ---- townspeople -------------------------------------------------------------------------
+
+export const NPC_ROLES = [
+  { value: 'banker', label: 'Banker' },
+  { value: 'general', label: 'General Store keeper' },
+  { value: 'smith', label: 'Blacksmith' },
+  { value: 'mage', label: 'Wizard (Mage Tower)' },
+  { value: 'alchemist', label: 'Alchemist' },
+  { value: 'tailor', label: 'Tailor' },
+  { value: 'fletcher', label: 'Fletcher' },
+  { value: 'inn', label: 'Innkeeper' },
+];
+
+/** Whether someone at (fx, fy) can talk to a townsperson at (x, y): next to them, or across a counter. */
+export function canTalkFrom(map: WorldMap, fx: number, fy: number, x: number, y: number): boolean {
+  const dx = fx - x;
+  const dy = fy - y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) <= 1) return true;
+  if (!((Math.abs(dx) === 2 && dy === 0) || (Math.abs(dy) === 2 && dx === 0))) return false;
+  return map.layers.object[(y + dy / 2) * map.width + x + dx / 2] === O.COUNTER;
+}
+
+/** The walkable tiles you can talk to a townsperson at (x, y) from. */
+export function talkSpots(map: WorldMap, x: number, y: number): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (let sy = y - 2; sy <= y + 2; sy++) {
+    for (let sx = x - 2; sx <= x + 2; sx++) {
+      if ((sx !== x || sy !== y) && isWalkableAt(map, sx, sy) && canTalkFrom(map, sx, sy, x, y)) out.push({ x: sx, y: sy });
+    }
+  }
+  return out;
+}
+
+export function isWalkableAt(map: WorldMap, x: number, y: number, mask?: Uint8Array): boolean {
+  return x >= 0 && y >= 0 && x < map.width && y < map.height && isWalkable(map, y * map.width + x, mask);
 }
 
 /** The order the game tries neighbouring tiles in (e.g. where you arrive beside stairs). */
@@ -92,8 +196,10 @@ export function reachable(map: WorldMap, starts: { x: number; y: number }[]): Ui
   const w = map.width;
   const seen = new Uint8Array(w * map.height);
   const queue: number[] = [];
+  const mask = buildingMask(map);
+  const walkable = (x: number, y: number) => isWalkableAt(map, x, y, mask);
   for (const s of starts) {
-    if (!isWalkableAt(map, s.x, s.y)) continue;
+    if (!walkable(s.x, s.y)) continue;
     const i = s.y * w + s.x;
     if (!seen[i]) {
       seen[i] = 1;
@@ -106,8 +212,8 @@ export function reachable(map: WorldMap, starts: { x: number; y: number }[]): Ui
     for (const [dx, dy] of NEIGHBOURS) {
       const nx = cx + dx;
       const ny = cy + dy;
-      if (!isWalkableAt(map, nx, ny)) continue;
-      if (dx && dy && (!isWalkableAt(map, cx + dx, cy) || !isWalkableAt(map, cx, cy + dy))) continue;
+      if (!walkable(nx, ny)) continue;
+      if (dx && dy && (!walkable(cx + dx, cy) || !walkable(cx, cy + dy))) continue;
       const k = ny * w + nx;
       if (seen[k]) continue;
       seen[k] = 1;
@@ -131,8 +237,14 @@ export interface ZoneDef {
 export const ZONES: ZoneDef[] = [
   { id: 1, key: 'safe', name: 'Safe', color: '#3fbf6f', rules: 'No PvP. You keep everything when you die.' },
   { id: 2, key: 'frontier', name: 'Frontier', color: '#e0c040', rules: 'No PvP. Keep 3 items. Only the owner can loot your grave. Graves last 8 min.' },
-  { id: 3, key: 'wilderness', name: 'Wilderness', color: '#e07a30', rules: 'PvP. Keep 1 item. Anyone can loot graves. Graves last 6 min.' },
-  { id: 4, key: 'deep', name: 'Deep', color: '#c03a4a', rules: 'PvP. Keep 0 items. Anyone can loot graves. Graves last 6 min.' },
+  {
+    id: 3,
+    key: 'wilderness',
+    name: 'Wilderness',
+    color: '#e07a30',
+    rules: 'PvP with laws: attacking an innocent player makes you a criminal, killing one is a murder. Keep 1 item (murderers keep nothing, anywhere). Anyone can loot graves. Graves last 6 min.',
+  },
+  { id: 4, key: 'deep', name: 'Deep', color: '#c03a4a', rules: 'PvP, no laws. Keep 0 items. Anyone can loot graves. Graves last 6 min.' },
 ];
 export const ZONE_LEGEND = ZONES.map((z) => z.key);
 
@@ -145,13 +257,17 @@ export function mapZone(map: WorldMap): ZoneDef | undefined {
   return zoneByKey(map.settings.rpgdcZone);
 }
 
-/** Zone of a cell: the map's zone on dungeon floors, the zone layer elsewhere. */
+/** Zone of a cell: the map's zone on dungeon floors and insides, the zone layer on the overworld. */
 export function zoneAt(map: WorldMap, i: number): ZoneDef | undefined {
-  if (gameKind(map) === 'dungeon') return mapZone(map);
+  if (gameKind(map) !== 'overworld') return mapZone(map);
   return ZONES[map.layers.zone[i] - 1];
 }
 
-/** Zone by distance from the town centre (larger of the column and row distance), as the game had it. */
+/**
+ * Zone by distance from the town centre (larger of the column and row distance), as the game had
+ * it before its bigger town (now: Safe to 14, Frontier to 30, Wilderness to 48). Only used to
+ * convert projects made from its first, seed-generated maps.
+ */
 export function zoneByDistance(d: number): number {
   return d <= 6 ? 1 : d <= 24 ? 2 : d <= 44 ? 3 : 4;
 }
@@ -169,6 +285,10 @@ export const MONSTER_KINDS: { key: string; name: string; range: number }[] = [
   { key: 'giant_spider', name: 'Giant spider', range: 8 },
   { key: 'ghoul', name: 'Ghoul', range: 8 },
   { key: 'bone_king', name: 'Bone King', range: 7 },
+  { key: 'sewer_rat', name: 'Sewer rat', range: 6 },
+  { key: 'slime', name: 'Slime', range: 5 },
+  { key: 'beetle', name: 'Sewer beetle', range: 7 },
+  { key: 'rat_king', name: 'Rat King', range: 6 },
 ];
 
 /** A monster's normal roaming range in tiles: the radius a new spawn of it starts with. */
@@ -179,7 +299,7 @@ export function normalRange(kind: unknown): number {
 export interface PlaceField {
   key: string;
   label: string;
-  type: 'select' | 'number' | 'map';
+  type: 'select' | 'number' | 'map' | 'text';
   options?: { value: string; label: string }[];
   min?: number;
   max?: number;
@@ -194,7 +314,7 @@ const kindField = (def: string): PlaceField => ({
   default: def,
 });
 
-export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link'] as const;
+export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc'] as const;
 
 export const PLACE_FIELDS: Record<string, PlaceField[]> = {
   spawn_point: [],
@@ -210,6 +330,13 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
     { key: 'toX', label: 'Arrive at x (column)', type: 'number', min: 0, max: 1023, default: 0 },
     { key: 'toY', label: 'Arrive at y (row)', type: 'number', min: 0, max: 1023, default: 0 },
   ],
+  building: [
+    { key: 'style', label: 'Style', type: 'select', options: BUILDING_STYLES, default: 'timber' },
+    { key: 'w', label: 'Width (tiles, along x)', type: 'number', min: BUILDING_SIZES.min, max: BUILDING_SIZES.max, default: 5 },
+    { key: 'h', label: 'Depth (tiles, along y)', type: 'number', min: BUILDING_SIZES.min, max: BUILDING_SIZES.max, default: 4 },
+    { key: 'sign', label: 'Name (on its sign)', type: 'text', default: '' },
+  ],
+  npc: [{ key: 'role', label: 'Who', type: 'select', options: NPC_ROLES, default: 'general' }],
 };
 
 export const PLACE_HELP: Record<string, string> = {
@@ -218,7 +345,10 @@ export const PLACE_HELP: Record<string, string> = {
     'Monsters of one kind live here. Radius: how far they roam from here (they chase you that far). 0: they stay on their tile and only fight what comes next to them. Picking a monster sets its normal range.',
   boss: 'A boss fight.',
   brazier: 'A light in the crypt.',
-  link: 'Put it on a crypt entrance or stairs. Players taking them arrive on the chosen tile of the target map.',
+  link: 'Put it on a crypt entrance, stairs, a door or a sewer grate. Players using it arrive on the chosen tile of the target map. Stairs down (and grates) need stairs up leading back; a door needs a door back.',
+  building:
+    'A house: this tile is its north-west (top) corner, and its walls fill Width × Depth tiles. Houses are 3 to 8 tiles a side; towers are square, 3 to 5. Put a Door object in its south or east wall (not a corner) and a link on the door to the inside.',
+  npc: 'A townsperson who stands here all day: tap them in the game to bank or trade. Put a Counter in front of them; players talk across it.',
 };
 
 /** A place's props with defaults filled in. */
@@ -249,11 +379,16 @@ export function objectAt(map: WorldMap, x: number, y: number) {
   return objectDef(map.layers.object[y * map.width + x]);
 }
 
-export function stairsDirection(objectId: number): 'down' | 'up' | null {
-  if (objectId === O.CRYPT_ENTRANCE || objectId === O.STAIRS_DOWN) return 'down';
+/** What a link stands on: a way down (entrance, stairs, the sewer grate), up, or a door. */
+export function stairsDirection(objectId: number): 'down' | 'up' | 'door' | null {
+  if (objectId === O.CRYPT_ENTRANCE || objectId === O.STAIRS_DOWN || objectId === O.SEWER_GRATE) return 'down';
   if (objectId === O.STAIRS_UP) return 'up';
+  if (objectId === O.DOOR) return 'door';
   return null;
 }
+
+/** Which way a link must lead back. */
+export const BACK = { down: 'up', up: 'down', door: 'door' } as const;
 
 export function gridOf(map: WorldMap): Grid {
   return new Grid(map.grid, map.width, map.height);

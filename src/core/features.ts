@@ -69,7 +69,9 @@ export const FEATURE_DEFS: FeatureDef[] = [
   f('spawn_point', 'Spawn point', '🚩', 'game', 8),
   f('monster_spawn', 'Monster spawn', '⚔️', 'game', 4),
   f('brazier', 'Brazier', '🏮', 'game', 2),
-  f('link', 'Stairs link', '🔗', 'game', 6),
+  f('link', 'Link (stairs, door)', '🔗', 'game', 6),
+  f('building', 'Building', '🏠', 'game', 7),
+  f('npc', 'Townsperson', '🧑', 'game', 5),
 ];
 
 const BY_TYPE = new Map(FEATURE_DEFS.map((d) => [d.type, d]));

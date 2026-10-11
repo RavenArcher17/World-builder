@@ -7,6 +7,7 @@ import { featureName } from '../core/names';
 import { paintCluster, paintGrove } from '../core/brushes';
 import { O, OBJECTS, objectDef } from '../core/objects';
 import { createProject, deleteMap, parseProjectReport, rootMaps, serializeProject } from '../core/project';
+import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
 import { PLACE_TYPES, defaultProps, gameMapId, isRpgdc, isWalkableAt, placeProps, zoneAt } from '../core/rpgdc/game';
 import { cloneMap, regenerateRegion } from '../core/region';
 import { Rng, parseSeed, randomSeed } from '../core/rng';
@@ -19,7 +20,7 @@ import type * as CloudModule from '../cloud/cloud';
 import { openCloudDialog, openSignInDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
-import { artBase, gameArtReady, loadGameArt } from './gameArt';
+import { artBase, gameArtReady, loadGameArt, onGameArtChange } from './gameArt';
 import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectLegendEntries } from './gameUi';
 import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
 
@@ -542,7 +543,16 @@ export class App {
       fileInput.value = '';
       if (!file) return;
       try {
-        const { project: p, migrated } = parseProjectReport(await file.text());
+        const text = await file.text();
+        // The game's own map file (rpg-dc.maps.json) opens as an RPG-DC project.
+        const data = JSON.parse(text);
+        if (isRpgdcMapsFile(data)) {
+          const p = fromRpgdcMaps(data);
+          this.replaceProject(p);
+          toast(`Opened ${Object.keys(p.maps).length} RPG-DC maps (saved in this browser; use Save to download)`);
+          return;
+        }
+        const { project: p, migrated } = parseProjectReport(text);
         this.replaceProject(p);
         toast(
           migrated.length
@@ -715,6 +725,11 @@ export class App {
   setGameArt(on: boolean): void {
     if (!on) return this.setView('gameArt', false);
     this.setView('gameArt', true);
+    // Houses load as maps need them: redraw when one arrives.
+    onGameArtChange(() => {
+      this.cache = null;
+      this.draw();
+    });
     if (gameArtReady()) return;
     toast("Loading the game's art…");
     loadGameArt()

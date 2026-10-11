@@ -10,6 +10,7 @@ import {
   gameGround,
   gameKind,
   gameMapId,
+  type GameKind,
   gameMaps,
   gameObject,
   mapZone,
@@ -21,12 +22,14 @@ export type RpgdcPlace =
   | { type: 'monster_spawn'; x: number; y: number; kind: string; count: number; radius: number }
   | { type: 'boss'; x: number; y: number; kind: string }
   | { type: 'brazier'; x: number; y: number }
-  | { type: 'link'; x: number; y: number; toMap: string; toX: number; toY: number };
+  | { type: 'link'; x: number; y: number; toMap: string; toX: number; toY: number }
+  | { type: 'building'; x: number; y: number; w: number; h: number; style: string; sign?: string }
+  | { type: 'npc'; x: number; y: number; role: string };
 
 export interface RpgdcMap {
   id: string;
   name: string;
-  kind: 'overworld' | 'dungeon';
+  kind: GameKind;
   width: number;
   height: number;
   zone: string | null;
@@ -64,20 +67,20 @@ function exportMap(map: WorldMap): RpgdcMap {
     kind,
     width: map.width,
     height: map.height,
-    zone: kind === 'dungeon' ? (mapZone(map)?.key ?? 'deep') : null,
+    zone: kind === 'overworld' ? null : (mapZone(map)?.key ?? (kind === 'interior' ? 'safe' : 'deep')),
     groundLegend: [...GROUND_LEGEND],
     ground: L.terrain.map(gameGround),
     objectLegend: [...OBJECT_LEGEND],
     objects: L.object.map(gameObject),
     zoneLegend: [...ZONE_LEGEND],
-    zones: kind === 'dungeon' ? null : L.zone.map(zoneIndex),
+    zones: kind === 'overworld' ? L.zone.map(zoneIndex) : null,
     places: exportPlaces(map),
   };
 }
 
 function exportPlaces(map: WorldMap): RpgdcPlace[] {
   const out: RpgdcPlace[] = [];
-  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier'];
+  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc'];
   const features = map.features.filter((f) => order.includes(f.type)).sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
   for (const f of features) {
     const p = placeProps(f);
@@ -98,6 +101,14 @@ function exportPlaces(map: WorldMap): RpgdcPlace[] {
         break;
       case 'link':
         out.push({ type: 'link', x, y, toMap: String(p.toMap), toX: Math.round(Number(p.toX) || 0), toY: Math.round(Number(p.toY) || 0) });
+        break;
+      case 'building': {
+        const sign = String(p.sign ?? '').trim();
+        out.push({ type: 'building', x, y, w: Math.round(Number(p.w)), h: Math.round(Number(p.h)), style: String(p.style), ...(sign && { sign }) });
+        break;
+      }
+      case 'npc':
+        out.push({ type: 'npc', x, y, role: String(p.role) });
         break;
     }
   }

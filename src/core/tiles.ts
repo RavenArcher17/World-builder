@@ -7,7 +7,7 @@
 export type TileCategory = 'water' | 'land' | 'urban' | 'dungeon';
 
 /** Texture drawn over a tile's colour so similar colours stay distinguishable. */
-export type TilePattern = 'blades' | 'dirt' | 'waves' | 'cobbles' | 'flags' | 'bricks';
+export type TilePattern = 'blades' | 'dirt' | 'waves' | 'cobbles' | 'flags' | 'bricks' | 'boards';
 
 export interface TileDef {
   id: number;
@@ -66,6 +66,7 @@ export const T = {
   TOWN_FLOOR: 40,
   CRYPT_FLOOR: 41,
   CRYPT_WALL: 42,
+  PLANKS: 43,
 } as const;
 
 const def = (
@@ -123,6 +124,7 @@ export const TILES: TileDef[] = [
   def(T.TOWN_FLOOR, 'town_floor', 'Town cobbles', '#b9b2a2', 'urban', true, 0.5, 'cobbles'),
   def(T.CRYPT_FLOOR, 'crypt_floor', 'Crypt floor', '#8f877a', 'dungeon', true, 1, 'flags'),
   def(T.CRYPT_WALL, 'crypt_wall', 'Crypt wall', '#3b3640', 'dungeon', false, Infinity, 'bricks'),
+  def(T.PLANKS, 'planks', 'Wooden floor', '#a8794a', 'urban', true, 0.5, 'boards'),
 ];
 
 export function tile(id: number): TileDef {

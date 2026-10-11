@@ -487,6 +487,19 @@ button.pal {
   padding: 4px 6px;
   flex-shrink: 0;
 }
+/* A group's name, between its buttons in the scrolling row. */
+.pal-heading {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 0 4px 0 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
 .pal-icon {
   font-size: 20px;
   line-height: 1;

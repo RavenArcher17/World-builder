@@ -38,5 +38,7 @@ npm run build
 The game lives in its own repo, [RavenArcher17/RPG-DC](https://github.com/RavenArcher17/RPG-DC).
 It reads the **RPG-DC maps** export (`docs/rpgdc-export.md`) in `shared/src/mapfile.ts` and runs the
 same checks as **Check for game**. When the format or a rule changes, change both repos together.
-The game's own copy of the maps is `shared/maps/rpg-dc.maps.json`; `tests/fixtures/rpg-dc.world.json`
-here is the project that produced it.
+The game's own copy of the maps is `shared/maps/rpg-dc.maps.json`; `tests/fixtures/rpg-dc.maps.json`
+here is a copy of it (the town, its insides and the sewers), which the tests open, check and export
+back. `tests/fixtures/rpg-dc.world.json` is the project made from the game's first, seed-generated
+maps, for the conversion tests. When the game's maps change, copy the new file over the fixture.

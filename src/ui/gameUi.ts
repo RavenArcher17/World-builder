@@ -6,6 +6,7 @@ import { featureDef } from '../core/features';
 import { O, OBJECTS, objectDef } from '../core/objects';
 import { checkGameMaps, type GameIssue } from '../core/rpgdc/checks';
 import { RPGDC_EXPORT_NAME, toRpgdcMaps } from '../core/rpgdc/export';
+import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
 import {
   GAME_OBJECTS,
   GROUND_TILES,
@@ -32,6 +33,11 @@ import { ART_CREDITS_URL, artBase } from './gameArt';
 export type GamePaintMode = 'tile' | 'object' | 'grove' | 'ore' | 'zone';
 
 const GROVE_OBJECTS = [O.TREE, O.OAK, O.WILLOW];
+const OBJECT_GROUPS: [string, string[]][] = [
+  ['Nature', ['tree', 'rock', 'ore', 'fishing', 'herb']],
+  ['Town', ['wall', 'station', 'door', 'stairs']],
+  ['Indoors', ['furniture']],
+];
 const ORE_OBJECTS = [O.COPPER_ROCK, O.TIN_ROCK, O.IRON_ROCK];
 
 function palButton(label: string, icon: HTMLElement | string, active: boolean, onclick: () => void, title?: string): HTMLButtonElement {
@@ -68,7 +74,13 @@ export function gamePaintOptions(app: App, map: WorldMap): HTMLElement[] {
     for (const id of GROUND_TILES) pal.append(palButton(tile(id).name, swatch(tile(id).color), app.paintTile === id, () => app.setPaint({ paintTile: id })));
   } else if (mode === 'object') {
     pal.append(palButton('Remove', '🧽', app.paintObject === 0, () => app.setPaint({ paintObject: 0 }), 'Remove objects'));
-    for (const d of GAME_OBJECTS) pal.append(palButton(d.name, d.icon, app.paintObject === d.id, () => app.setPaint({ paintObject: d.id })));
+    // In groups, so the long list is easy to find your way round on a phone.
+    for (const [title, groups] of OBJECT_GROUPS) {
+      pal.append(h('div', { class: 'pal-heading' }, title));
+      for (const d of GAME_OBJECTS.filter((o) => groups.includes(o.group))) {
+        pal.append(palButton(d.name, d.icon, app.paintObject === d.id, () => app.setPaint({ paintObject: d.id })));
+      }
+    }
   } else if (mode === 'grove') {
     for (const id of GROVE_OBJECTS) pal.append(palButton(`${objectDef(id)!.name} grove`, objectDef(id)!.icon, app.groveObject === id, () => app.setPaint({ groveObject: id })));
   } else if (mode === 'ore') {
@@ -114,6 +126,10 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
       sel.value = String(props[field.key] ?? '');
       sel.onchange = () => set(field.key, sel.value);
       box.append(h('label', {}, field.label, sel));
+    } else if (field.type === 'text') {
+      const input = h('input', { type: 'text', value: String(props[field.key] ?? field.default), maxlength: 40 });
+      input.onchange = () => set(field.key, input.value.trim());
+      box.append(h('label', {}, field.label, input));
     } else {
       const input = h('input', { type: 'number', inputmode: 'numeric', min: field.min ?? 0, max: field.max ?? 9999, step: 1, value: Number(props[field.key] ?? field.default) });
       input.onchange = () => {
@@ -153,17 +169,22 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
 /** The RPG-DC section of the Map panel: game id, zones and their rules, checks and export. */
 export function gameMapPanel(app: App, map: WorldMap): HTMLElement {
   const box = h('div', { class: 'game-panel' }, h('h3', {}, `🎮 RPG-DC map “${gameMapId(map)}”`));
-  if (gameKind(map) === 'dungeon') {
+  if (gameKind(map) !== 'overworld') {
+    const inside = gameKind(map) === 'interior';
     const sel = h('select');
     for (const z of ZONES) sel.append(h('option', { value: z.key }, z.name));
-    sel.value = mapZone(map)?.key ?? 'deep';
+    sel.value = mapZone(map)?.key ?? (inside ? 'safe' : 'deep');
     sel.onchange = () => {
       app.pushUndo();
       map.settings.rpgdcZone = sel.value;
       app.changed();
     };
-    const z = mapZone(map) ?? zoneByKey('deep')!;
-    box.append(h('label', {}, 'Zone for the whole floor', sel), h('p', { class: 'hint' }, z.rules));
+    const z = mapZone(map) ?? zoneByKey(inside ? 'safe' : 'deep')!;
+    box.append(
+      h('p', { class: 'hint' }, inside ? "A building's inside: lit, one zone throughout." : 'A dungeon floor: dark (braziers light it), one zone throughout.'),
+      h('label', {}, inside ? 'Zone for the whole building' : 'Zone for the whole floor', sel),
+      h('p', { class: 'hint' }, z.rules),
+    );
   } else {
     const toggle = h('input', { type: 'checkbox', checked: app.view.zones });
     toggle.onchange = () => app.setView('zones', toggle.checked);
@@ -188,8 +209,31 @@ export function gameMapPanel(app: App, map: WorldMap): HTMLElement {
       h('button', { class: 'primary', onclick: () => openCheckDialog(app) }, '✓ Check for game'),
       h('button', { onclick: () => exportRpgdc(app) }, '⬇ RPG-DC maps'),
     ),
+    h('div', { class: 'btn-row' }, h('button', { onclick: () => void fetchGameMaps(app) }, "⟳ Get the game's maps")),
+    h('p', { class: 'hint' }, "Replaces this project with the maps the game is playing now (from the live game), e.g. after maps were changed on the game's side."),
   );
   return box;
+}
+
+/** Where the live game serves its map file (next to its art). */
+export function gameMapsUrl(): string {
+  return new URL('../maps/rpg-dc.maps.json', artBase()).href;
+}
+
+/** Replace the project with the maps the live game is playing. */
+async function fetchGameMaps(app: App): Promise<void> {
+  if (!confirm("Replace this project with the game's current maps? Save first to keep a copy of these.")) return;
+  try {
+    const res = await fetch(gameMapsUrl(), { mode: 'cors', cache: 'no-store' });
+    if (!res.ok) throw new Error(`the game answered ${res.status}`);
+    const data = await res.json();
+    if (!isRpgdcMapsFile(data)) throw new Error("that isn't an RPG-DC maps file");
+    const project = fromRpgdcMaps(data);
+    app.replaceProject(project);
+    toast(`Loaded the game's ${Object.keys(project.maps).length} maps`);
+  } catch (e) {
+    toast(`Couldn't get the game's maps: ${(e as Error).message}`);
+  }
 }
 
 function issueLabel(i: GameIssue): string {

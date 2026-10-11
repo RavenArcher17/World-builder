@@ -55,23 +55,30 @@ Projects autosave in the browser; **Save** downloads a `.world.json` you can re-
 
 ## Game maps: RPG-DC
 
-Maps whose settings carry `rpgdcMapId` (made by [RPG-DC](https://github.com/RavenArcher17/RPG-DC)'s
-`tools/world-builder/export-map.ts`) switch on a game mode; every other map behaves as above.
+Maps whose settings carry `rpgdcMapId` (opened from the game's own map file, or made by
+[RPG-DC](https://github.com/RavenArcher17/RPG-DC)'s `tools/world-builder/export-map.ts`) switch on a
+game mode; every other map behaves as above.
 
-- **Ground and objects:** paint the game's six grounds (grass, path, water, town cobbles, crypt
-  floor and wall) and what stands on each tile (trees by species, boulders, fences, ore, stations,
-  fishing spots, stairs). Grove and Ore brushes scatter one species or ore at a time.
-- **Places with fields:** spawn point, monster spawns (kind, count, radius), bosses, braziers, and
-  stairs links that name the target map and the exact tile you arrive on (tap it on the target map).
+- **Opening the game's maps:** **Open…** takes the game's `rpg-dc.maps.json` as well as project
+  files, and **⟳ Get the game's maps** (Map panel) loads what the live game is playing: the
+  overworld, the crypt, the sewers and the inside of every building in town.
+- **Ground and objects:** paint the game's seven grounds (grass, path, water, town cobbles, crypt
+  floor and wall, wooden floors) and what stands on each tile, in groups: Nature (trees by species,
+  boulders, ore, fishing spots, herbs), Town (fences, stations, workbenches, doors, stairs, the
+  sewer grate) and Indoors (counters, bookshelves, tables, beds, barrels, crates, lecterns). Grove
+  and Ore brushes scatter one species or ore at a time.
+- **Places with fields:** spawn point, monster spawns (kind, count, radius), bosses, braziers,
+  links on stairs, doors and grates that name the target map and the exact tile you arrive on (tap
+  it on the target map), buildings (style, size, name) and townspeople (banker or shopkeeper).
 - **Zones:** paint Safe / Frontier / Wilderness / Deep on the overworld (legend shows each zone's
-  rules); dungeon floors pick one zone for the whole floor.
+  rules); dungeon floors and buildings' insides pick one zone for the whole map.
 - **Check for game:** lists every problem with its tile; tap one to jump there.
 - **Export → RPG-DC maps:** one `rpg-dc.maps.json` with every RPG-DC map, documented in
   [`docs/rpgdc-export.md`](docs/rpgdc-export.md).
 
 - **Game art preview:** "Draw with the game's art" in the Map panel draws the map with the game's
   own sprites (Flare, CC BY-SA 3.0), loaded from `https://rpg-dc.onrender.com/art/` (the game
-  serves them cross-origin).
+  serves them cross-origin): houses, doors, herbs, insides with their furniture, sewer water.
 
 Projects from the game's exporter are converted to this form when opened. Everything works by
 touch on a phone: one finger paints or places, two fingers pinch and pan.
