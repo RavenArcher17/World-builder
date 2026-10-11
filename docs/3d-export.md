@@ -113,7 +113,11 @@ what it is:
 `storey` appears only on storeys other than the ground storey, `facing` only where one was set,
 and `sanctuary` on hearths, campfires and bonfires.
 
-`tags`, `notes`, `props` and `detailMapId` appear only when the place has them. Node names are the
+`tags`, `notes`, `props` and `detailMapId` appear only when the place has them. Overland maps
+generated with **Danger rings from the capital** give every place
+`"props": { "danger": 3, "dangerName": "Frontier" }` (1 Heartland, 2 Borderland, 3 Frontier,
+4 Wilds, 5 Deep wilds, by distance from home), and the home place also has `"home": true`.
+**Level ground under places** gives towns and places flat ground to build on. Node names are the
 place's label and name (for example `City Aldoford`) or the object's key and cell (`bank 12,7`).
 
 ### Reading it in Godot

@@ -1,6 +1,7 @@
 /** The editor: viewport, tools, panels, atlas, undo and persistence. */
 import { FEATURE_DEFS, featureDef } from '../core/features';
 import { generateMap } from '../core/generate';
+import { dangerLabel } from '../core/generate/frontier';
 import { CellRect, GRID_TYPES, Grid, GridType, inRect, normalizeRect } from '../core/grid';
 import { link, linkPath, traceLine, unlinkCell } from '../core/links';
 import { featureName } from '../core/names';
@@ -1003,6 +1004,7 @@ export class App {
       game ? gameFeatureFields(this, map, f) : isUnderkeep(map) ? underkeepPlaceFields(this, f) : '',
       h('label', {}, 'Notes', notes),
       f.tags?.length ? h('p', { class: 'hint' }, `Tags: ${f.tags.join(', ')}`) : '',
+      dangerLabel(f) ? h('p', { class: 'hint' }, dangerLabel(f)) : '',
       h(
         'div',
         { class: 'btn-row' },

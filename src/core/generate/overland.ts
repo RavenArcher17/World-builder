@@ -15,6 +15,7 @@ import { ScaleDef, getScale } from '../scales';
 import { SettingsReader } from '../settings';
 import { T, isSea, isWater, tile } from '../tiles';
 import { Feature, MapLayers, MapSpec, SEA_LEVEL, WorldMap, emptyLayers, newId } from '../types';
+import { DANGER_NAMES, dangerRings, levelPlaces } from './frontier';
 
 export interface GuideFeature {
   type: string;
@@ -23,6 +24,8 @@ export interface GuideFeature {
   y: number;
   tags?: string[];
   notes?: string;
+  /** The place's danger level on the parent map (danger rings), kept by the zoomed-in map. */
+  danger?: number;
 }
 
 export interface OverlandGuide {
@@ -70,6 +73,7 @@ export function generateOverland(spec: MapSpec, guide?: OverlandGuide): WorldMap
         r: g.row(cell),
         tags: gf.tags ? [...gf.tags] : undefined,
         notes: gf.notes,
+        ...(gf.danger !== undefined && { props: { danger: gf.danger, dangerName: DANGER_NAMES[gf.danger - 1] ?? '' } }),
       });
     }
   }
@@ -79,6 +83,8 @@ export function generateOverland(spec: MapSpec, guide?: OverlandGuide): WorldMap
     buildRoadNetwork(g, L, features, S, rng.fork('roads'));
     features.push(...placeInns(g, L, S, scale, rng.fork('inns'), features));
   }
+  if (S.bool('levelPlaces')) levelPlaces(g, L, features);
+  if (S.bool('dangerRings')) dangerRings(g, L, features);
 
   return {
     ...spec,
@@ -102,6 +108,9 @@ function buildFields(g: Grid, L: MapLayers, S: SettingsReader, scale: ScaleDef, 
   const nM = new Noise2D(rng.fork('moist'));
   const nT = new Noise2D(rng.fork('temp'));
   const nD = new Noise2D(rng.fork('detail'));
+  const nB = new Noise2D(rng.fork('belts'));
+  const ranges = S.bool('ranges');
+  const plains = S.num('plains', 0);
   const angle = rng.fork('coast').next() * Math.PI * 2;
   const landform = S.str('landform', 'continents');
   const N = g.size;
@@ -121,6 +130,7 @@ function buildFields(g: Grid, L: MapLayers, S: SettingsReader, scale: ScaleDef, 
     }
   } else {
     const raw = new Float64Array(N);
+    const belts = ranges ? new Float64Array(N) : null;
     for (let i = 0; i < N; i++) {
       const [x, y] = g.pos(i);
       const nx = x / LW;
@@ -151,6 +161,11 @@ function buildFields(g: Grid, L: MapLayers, S: SettingsReader, scale: ScaleDef, 
       }
       const land = smoothstep(-0.1, 0.4, v);
       v += mountains * 0.55 * nR.ridged(wx * f * 1.6, wy * f * 1.6, 5) ** 2 * land;
+      if (belts) {
+        // Long ranges along the zero lines of a broad noise: a raised massif with sharp ridges on top.
+        const belt = smoothstep(0.8, 0.96, 1 - Math.abs(nB.fbm(wx * f * 0.55, wy * f * 0.55, 3)));
+        belts[i] = belt * (0.35 + 0.65 * nR.ridged(wx * f * 1.6, wy * f * 1.6, 5) ** 1.6);
+      }
       raw[i] = v;
     }
     // Remap so exactly `waterLevel` of the map lies below SEA_LEVEL; keeps child maps consistent.
@@ -162,11 +177,19 @@ function buildFields(g: Grid, L: MapLayers, S: SettingsReader, scale: ScaleDef, 
     const exponent = 1.9 - mountains * 0.9;
     for (let i = 0; i < N; i++) {
       const v = raw[i];
-      E[i] =
-        v < seaRaw
-          ? (SEA_LEVEL * (v - min)) / Math.max(1e-9, seaRaw - min)
-          : SEA_LEVEL + (1 - SEA_LEVEL) * Math.pow((v - seaRaw) / Math.max(1e-9, max - seaRaw), exponent);
+      if (v < seaRaw) {
+        E[i] = (SEA_LEVEL * (v - min)) / Math.max(1e-9, seaRaw - min);
+        continue;
+      }
+      let p = Math.pow((v - seaRaw) / Math.max(1e-9, max - seaRaw), exponent);
+      // A cubic curve keeps the lowlands flat and pushes the heights up into steep peaks.
+      if (plains > 0) p += ((0.4 * p + 1.3 * p * p * p) / 1.7 - p) * plains;
+      // Ranges: the same coastline, but the high ground gathers into long ranges that divide the
+      // land, with lower, smoother country between them.
+      if (belts) p = Math.min(1, p * (1 - 0.6 * mountains) + mountains * 1.3 * belts[i] * smoothstep(0, 0.08, p));
+      E[i] = SEA_LEVEL + (1 - SEA_LEVEL) * p;
     }
+    if (S.bool('shelves')) coastalShelves(g, E, scale);
     // Moisture: noise + proximity to the sea.
     const oceanDist = distanceFrom(g, (i) => E[i] < SEA_LEVEL);
     const moistShift = (S.num('moisture', 0.5) - 0.5) * 0.6;
@@ -191,6 +214,24 @@ function buildFields(g: Grid, L: MapLayers, S: SettingsReader, scale: ScaleDef, 
     E[i] = round3(E[i]);
     M[i] = round3(M[i]);
     Tm[i] = round3(Tm[i]);
+  }
+}
+
+/**
+ * Shallow shelves along the coasts that deepen smoothly to the open ocean, with the seafloor's
+ * bumps fading out as it goes. Only the depth of the sea changes, never where it is.
+ */
+function coastalShelves(g: Grid, E: number[], scale: ScaleDef): void {
+  // Heights are rounded later, so test land the way the rest of the generator will see it.
+  const land = (i: number) => round3(E[i]) >= SEA_LEVEL;
+  const fromLand = distanceFrom(g, land);
+  const width = Math.max(2, scale.featureSize * 0.15);
+  for (let i = 0; i < g.size; i++) {
+    if (land(i)) continue;
+    const d = isFinite(fromLand[i]) ? fromLand[i] : width * 4;
+    const depth = d <= width ? 0.015 + 0.045 * (d / width) : 0.06 + 0.3 * smoothstep(width, width * 3, d);
+    const target = SEA_LEVEL - depth;
+    E[i] = Math.max(0, Math.min(SEA_LEVEL - 0.005, target + (E[i] - target) * 0.25));
   }
 }
 

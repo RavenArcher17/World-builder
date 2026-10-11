@@ -84,7 +84,7 @@ export function buildGuide(parent: WorldMap, rect: CellRect, cg: Grid): Overland
     if (!inRect(rect, f.c, f.r)) continue;
     const [px, py] = pg.posCR(f.c, f.r);
     const [x, y] = mapper.toChild(px, py);
-    features.push({ type: f.type, name: f.name, x, y, tags: f.tags, notes: f.notes });
+    features.push({ type: f.type, name: f.name, x, y, tags: f.tags, notes: f.notes, ...(f.props?.danger !== undefined && { danger: Number(f.props.danger) }) });
   }
   return {
     sample: (x, y) => {
