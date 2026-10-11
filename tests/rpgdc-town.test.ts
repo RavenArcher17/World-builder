@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { O } from '../src/core/objects';
 import { checkGameMaps } from '../src/core/rpgdc/checks';
 import { toRpgdcMaps, type RpgdcMapsFile } from '../src/core/rpgdc/export';
-import { buildingMask, buildings, gameKind, guardPosts, isWalkableAt, OBJECT_LEGEND } from '../src/core/rpgdc/game';
+import { buildingMask, buildings, dungeonTheme, gameKind, guardPosts, isWalkableAt, mapTheme, OBJECT_LEGEND } from '../src/core/rpgdc/game';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import type { Project, WorldMap } from '../src/core/types';
 
@@ -55,7 +55,7 @@ describe('opening the game’s map file', () => {
     expect(after.maps.map((m) => m.id).sort()).toEqual(before.maps.map((m) => m.id).sort());
     for (const m of before.maps) {
       const out = after.maps.find((o) => o.id === m.id)!;
-      expect([out.name, out.kind, out.width, out.height, out.zone]).toEqual([m.name, m.kind, m.width, m.height, m.zone]);
+      expect([out.name, out.kind, out.width, out.height, out.zone, out.theme]).toEqual([m.name, m.kind, m.width, m.height, m.zone, m.theme]);
       expect(decoded(out)).toEqual(decoded(m));
       expect(out.places.map(placeKey).sort()).toEqual(m.places.map(placeKey).sort());
     }
@@ -79,6 +79,22 @@ describe('opening the game’s map file', () => {
     // Townspeople who just talk.
     const roles = Object.values(project().maps).flatMap((m) => m.features.filter((f) => f.type === 'npc').map((f) => f.props?.role));
     expect(roles).toEqual(expect.arrayContaining(['mayor', 'captain', 'villager']));
+  });
+
+  it('keeps the Ember Caverns: cave floors with lava, their monsters and the Cinder Wyrm', () => {
+    const p = project();
+    for (const id of ['caves1', 'caves2', 'caves3']) {
+      const m = byGameId(p, id);
+      expect([gameKind(m), mapTheme(m), dungeonTheme(m)]).toEqual(['dungeon', 'cave', 'cave']);
+    }
+    expect([dungeonTheme(byGameId(p, 'crypt1')), dungeonTheme(byGameId(p, 'sewer1'))]).toEqual(['crypt', 'sewer']);
+    expect(mapTheme(byGameId(p, 'crypt1'))).toBeUndefined();
+    const kinds = new Set(['caves1', 'caves2', 'caves3'].flatMap((id) => byGameId(p, id).features.filter((f) => f.type === 'monster_spawn' || f.type === 'boss').map((f) => f.props?.kind)));
+    expect([...kinds].sort()).toEqual(['cinder_wyrm', 'fire_ant', 'fire_wyvern', 'hobgoblin']);
+    // The crypt and the sewers export no theme, as before.
+    const out = toRpgdcMaps(p).maps;
+    expect(out.find((m) => m.id === 'caves2')!.theme).toBe('cave');
+    expect('theme' in out.find((m) => m.id === 'crypt1')!).toBe(false);
   });
 
   it('posts town guards where the game does, one at each gate', () => {
@@ -148,6 +164,12 @@ describe('game checks for the town', () => {
   it('catches colours the game doesn’t have', () => {
     expect(edit((p) => { building(byGameId(p, 'overworld'), 'Bank').props!.roof = 'pink'; }).some((m) => /Bank \(57, 58\) has an unknown roof colour "pink"/.test(m))).toBe(true);
     expect(edit((p) => { building(byGameId(p, 'overworld'), 'Bank').props!.walls = 'plaid'; }).some((m) => /unknown wall colour "plaid"/.test(m))).toBe(true);
+  });
+
+  it('catches a look (theme) the game doesn’t have, or on a map that isn’t a dungeon floor', () => {
+    expect(edit((p) => { byGameId(p, 'crypt2').settings.rpgdcTheme = 'swamp'; }).some((m) => /look \(theme\) "swamp" isn't one the game knows/.test(m))).toBe(true);
+    expect(edit((p) => { byGameId(p, 'bank').settings.rpgdcTheme = 'cave'; }).some((m) => /Only dungeon floors have a look/.test(m))).toBe(true);
+    expect(edit((p) => { byGameId(p, 'crypt2').settings.rpgdcTheme = 'cave'; })).toEqual([]);
   });
 
   it('warns when the town has no gate, so no guards', () => {

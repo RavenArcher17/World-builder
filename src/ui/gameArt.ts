@@ -5,7 +5,7 @@
  */
 import { Grid } from '../core/grid';
 import { O } from '../core/objects';
-import { ROOF_COLOURS, WALL_COLOURS, buildings, doorFace, gameKind, type GameBuilding } from '../core/rpgdc/game';
+import { ROOF_COLOURS, WALL_COLOURS, buildings, doorFace, dungeonTheme, gameKind, type GameBuilding } from '../core/rpgdc/game';
 import { T } from '../core/tiles';
 import type { WorldMap } from '../core/types';
 import { paintOrder } from './drawObjects';
@@ -226,6 +226,12 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < map.height ? y * w + x : -1);
   const order = paintOrder(g);
 
+  // The caverns: rock walls, lava, embers and mine clutter (client/src/scenes/WorldScene.ts drawCave).
+  if (kind === 'dungeon' && dungeonTheme(map) === 'cave' && haveSheet('cave')) {
+    drawCave();
+    return true;
+  }
+
   if (kind !== 'overworld') {
     const inside = kind === 'interior';
     // Indoors, doors and bookshelves stand in the line of the walls.
@@ -236,8 +242,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     const lights = new Set(map.features.filter((f) => f.type === 'brazier').map((f) => f.r * w + f.c));
     const pieces = new Map<number, string>();
     const anyPlanks = L.terrain.includes(T.PLANKS);
-    // A dungeon with water in it is a sewer: damp, mossy stone, with drains in the walls.
-    const sewer = !inside && L.terrain.includes(T.WATER);
+    // The sewers: damp, mossy stone, with drains in the walls.
+    const sewer = !inside && dungeonTheme(map) === 'sewer';
     const damp = sewer ? { tint: SEWER_TINT } : undefined;
     const floor = (i: number, x: number, y: number) => {
       if (!inside) {
@@ -344,6 +350,67 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     if (b) drawHouse(b);
   }
   return true;
+
+  /**
+   * A cave floor: Flare's rock walls (low ledges where a wall has floor north or west of it too,
+   * nothing on a chamber's near side), dirt floors with rubble, bones and glowing cracks, mine
+   * clutter along the walls, and lava (the map's water) with a crust along its edges.
+   */
+  function drawCave() {
+    const isWall = (x: number, y: number) => {
+      const i = at(x, y);
+      return i < 0 || L.terrain[i] === T.CRYPT_WALL;
+    };
+    const open = (x: number, y: number) => at(x, y) >= 0 && !isWall(x, y);
+    const isLava = (x: number, y: number) => at(x, y) >= 0 && L.terrain[at(x, y)] === T.WATER;
+    const lights = new Set(map.features.filter((f) => f.type === 'brazier').map((f) => f.r * w + f.c));
+    const caveFrames = art!.sheets.cave.frames;
+    const pick = (what: string, x: number, y: number, salt: number) => variant(what, x, y, salt, 'cave');
+    const pieces = new Map<number, string>();
+    // Ground: floors (under walls that are drawn too), lava, cracks and bones.
+    for (const i of order) {
+      const x = i % w;
+      const y = Math.floor(i / w);
+      if (isWall(x, y)) {
+        const piece = wallPiece((dx, dy) => open(x + dx, y + dy));
+        if (!piece || !caveFrames[`wall-${piece}/0`]) continue;
+        pieces.set(i, piece);
+        putFrom('cave', pick('floor', x, y, 2), i);
+        continue;
+      }
+      if (isLava(x, y)) {
+        putFrom('cave', pick('lava', x, y, 0), i);
+        EDGE_NEIGHBOURS.forEach(([dx, dy], e) => {
+          const n = at(x + dx, y + dy);
+          if (n >= 0 && L.terrain[n] !== T.WATER && L.terrain[n] !== T.CRYPT_WALL) putFrom('cave', `lava-edge/${e}`, i);
+        });
+        continue;
+      }
+      putFrom('cave', tileHash(x, y, 2) < 0.15 ? pick('rubble', x, y, 3) : pick('floor', x, y, 2), i);
+      if (L.object[i] === O.STAIRS_DOWN) put('stairs-down', i);
+      else if (!L.object[i] && L.terrain[i] === T.CRYPT_FLOOR && !lights.has(i)) {
+        if (tileHash(x, y, 11) < 0.1) putFrom('cave', pick('embers', x, y, 12), i);
+        if (tileHash(x, y, 6) > 0.97) putFrom('cave', pick('bones', x, y, 8), i);
+      }
+    }
+    // Standing things, back to front: walls, clutter, stairs up and braziers.
+    for (const i of order) {
+      const x = i % w;
+      const y = Math.floor(i / w);
+      const piece = pieces.get(i);
+      if (piece) {
+        const kind = open(x, y - 1) || open(x - 1, y) ? 'ledge' : 'wall';
+        putFrom('cave', pick(`${kind}-${piece}`, x, y, 5), i);
+        continue;
+      }
+      if (!L.object[i] && L.terrain[i] === T.CRYPT_FLOOR && !lights.has(i)) {
+        const byWall = EDGE_NEIGHBOURS.some(([dx, dy]) => isWall(x + dx, y + dy));
+        if (byWall && tileHash(x, y, 6) < 0.22) putFrom('cave', pick('prop', x, y, 7), i);
+      }
+      if (L.object[i] === O.STAIRS_UP) put('stairs-up', i);
+      if (lights.has(i)) put('brazier', i);
+    }
+  }
 
   function drawHouse(b: GameBuilding) {
     const sheet = `house/${b.style}-${b.w}x${b.h}`;

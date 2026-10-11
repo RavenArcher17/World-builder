@@ -8,6 +8,8 @@ import {
   BACK,
   BUILDING_SIZES,
   BUILDING_STYLES,
+  DUNGEON_THEMES,
+  mapTheme,
   MONSTER_KINDS,
   NEIGHBOURS,
   NPC_ROLES,
@@ -242,6 +244,11 @@ export function checkGameMaps(project: Project): GameIssue[] {
       if (!isWalkable(m, i)) add('error', m, f.c, f.r, `${label} ${at(f)} is on a tile you can't walk on.`);
       else if (zoneAt(m, i)?.key === 'safe') add('error', m, f.c, f.r, `${label} ${at(f)} is in the Safe zone.`);
     }
+
+    // A theme (how a dungeon floor looks): only on dungeon floors, and one the game knows.
+    const theme = mapTheme(m);
+    if (theme && gameKind(m) !== 'dungeon') add('error', m, 0, 0, `Only dungeon floors have a look (theme); this map has "${theme}".`);
+    else if (theme && !DUNGEON_THEMES.some((t) => t.value === theme)) add('error', m, 0, 0, `The look (theme) "${theme}" isn't one the game knows.`);
 
     // Zones: every overworld cell, or one zone for a whole dungeon floor.
     if (gameKind(m) === 'overworld') {

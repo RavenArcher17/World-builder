@@ -82,7 +82,9 @@ game mode; every other map behaves as above.
 - **Game art preview:** "Draw with the game's art" in the Map panel draws the map with the game's
   own sprites (Flare, CC BY-SA 3.0), loaded from `https://rpg-dc.onrender.com/art/` (the game
   serves them cross-origin): houses in their colours, doors, herbs, street decorations, insides
-  with their furniture, and the sewers' damp stone, moss, drains and water.
+  with their furniture, the sewers' damp stone, moss, drains and water, and the caverns' rock walls,
+  lava, glowing cracks and mine clutter. **Looks like** (Map panel) sets a dungeon floor's look:
+  crypt, sewers or caverns.
 
 Projects from the game's exporter are converted to this form when opened. Everything works by
 touch on a phone: one finger paints or places, two fingers pinch and pan.

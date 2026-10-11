@@ -13,6 +13,7 @@ import {
   type GameKind,
   gameMaps,
   gameObject,
+  mapTheme,
   mapZone,
   placeProps,
 } from './game';
@@ -33,6 +34,8 @@ export interface RpgdcMap {
   width: number;
   height: number;
   zone: string | null;
+  /** Dungeon floors only: how it looks (crypt, sewer or cave). */
+  theme?: string;
   groundLegend: string[];
   ground: number[];
   objectLegend: string[];
@@ -68,6 +71,7 @@ function exportMap(map: WorldMap): RpgdcMap {
     width: map.width,
     height: map.height,
     zone: kind === 'overworld' ? null : (mapZone(map)?.key ?? (kind === 'interior' ? 'safe' : 'deep')),
+    ...(kind === 'dungeon' && mapTheme(map) && { theme: mapTheme(map) }),
     groundLegend: [...GROUND_LEGEND],
     ground: L.terrain.map(gameGround),
     objectLegend: [...OBJECT_LEGEND],

@@ -72,6 +72,7 @@ function importMap(raw: RpgdcMap): WorldMap {
   const settings: WorldMap['settings'] = { rpgdcMapId: raw.id, rpgdcPlaces: PLACES_VERSION };
   if (kind !== 'overworld') settings.rpgdcZone = raw.zone ?? (kind === 'interior' ? 'safe' : 'deep');
   if (kind === 'interior') settings.rpgdcKind = 'interior';
+  if (typeof raw.theme === 'string' && raw.theme) settings.rpgdcTheme = raw.theme;
   return {
     id: `rpgdc-${raw.id}`,
     name: raw.name,

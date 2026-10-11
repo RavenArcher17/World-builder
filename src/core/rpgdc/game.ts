@@ -324,6 +324,26 @@ export function zoneByKey(key: unknown): ZoneDef | undefined {
   return ZONES.find((z) => z.key === key);
 }
 
+// ---- dungeon looks ------------------------------------------------------------------------
+
+/** How a dungeon floor can look in the game (its `theme`); stored in `settings.rpgdcTheme`. */
+export const DUNGEON_THEMES = [
+  { value: 'crypt', label: 'Crypt (dressed stone)' },
+  { value: 'sewer', label: 'Sewers (damp stone; water is sewer water)' },
+  { value: 'cave', label: 'Caverns (rough rock; water is lava)' },
+];
+
+/** A dungeon floor's chosen theme, if it has one. */
+export function mapTheme(map: WorldMap): string | undefined {
+  const t = map.settings.rpgdcTheme;
+  return typeof t === 'string' && t !== '' ? t : undefined;
+}
+
+/** How a dungeon floor looks: its theme, or without one the sewers if it has water, else the crypt. */
+export function dungeonTheme(map: WorldMap): string {
+  return mapTheme(map) ?? (map.layers.terrain.includes(T.WATER) ? 'sewer' : 'crypt');
+}
+
 /** The whole-map zone of a dungeon floor. */
 export function mapZone(map: WorldMap): ZoneDef | undefined {
   return zoneByKey(map.settings.rpgdcZone);
@@ -361,6 +381,10 @@ export const MONSTER_KINDS: { key: string; name: string; range: number }[] = [
   { key: 'slime', name: 'Slime', range: 5 },
   { key: 'beetle', name: 'Sewer beetle', range: 7 },
   { key: 'rat_king', name: 'Rat King', range: 6 },
+  { key: 'fire_ant', name: 'Fire ant', range: 7 },
+  { key: 'hobgoblin', name: 'Hobgoblin', range: 8 },
+  { key: 'fire_wyvern', name: 'Fire wyvern', range: 8 },
+  { key: 'cinder_wyrm', name: 'Cinder Wyrm', range: 7 },
 ];
 
 /** A monster's normal roaming range in tiles: the radius a new spawn of it starts with. */

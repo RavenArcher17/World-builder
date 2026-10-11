@@ -60,6 +60,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
 | `kind` | `"overworld"` \| `"dungeon"` \| `"interior"` | One overworld. Dungeon floors are dark (braziers light them); interiors are a building's inside, lit. Both use one zone for the whole map. In World Builder an interior is a dungeon-kind map with `settings.rpgdcKind` `"interior"`. |
 | `width`, `height` | integers | Size in tiles. The game needs 128×128 for the overworld, 16 to 64 a side for dungeon floors and 4 to 32 for insides. |
 | `zone` | string \| `null` | Dungeons and insides: the whole map's zone key from `zoneLegend`. Overworld: `null`. |
+| `theme` | string, optional | Dungeon floors only: how the floor looks in the game. `crypt` (dressed stone), `sewer` (damp stone; water is sewer water) or `cave` (rough rock; water is lava). Without it, a floor with water looks like the sewers, otherwise the crypt. In World Builder: `settings.rpgdcTheme`, set with **Looks like** in the Map panel; written only when chosen. |
 | `groundLegend` | string[] | Ground kinds; `ground` values index into it. Always all seven, even if unused. |
 | `ground` | integer[] (`width*height`) | Ground per tile. |
 | `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always all thirty-seven. |
@@ -139,7 +140,8 @@ a stone house or tower), again over the house, multiplied by the colour:
 
 Monster kinds, with their normal range in tiles: `rat` 6, `goblin` 7, `wolf` 8, `bandit` 8,
 `troll` 7, `skeleton` 8, `giant_spider` 8, `ghoul` 8, `bone_king` 7, `sewer_rat` 6, `slime` 5,
-`beetle` 7, `rat_king` 6. The game uses the normal range for a `monster_spawn` that has no `radius`.
+`beetle` 7, `rat_king` 6, `fire_ant` 7, `hobgoblin` 8, `fire_wyvern` 8, `cinder_wyrm` 7. The game uses
+the normal range for a `monster_spawn` that has no `radius`.
 Town guards and townspeople aren't monster kinds here: townspeople come from `npc` places, and the
 game posts guards itself, at each gate of the Safe zone: every walkable Safe tile beside a walkable
 tile outside it (north, south, east or west) is a gate, its guard stands one step further in (if
@@ -174,6 +176,7 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
   tiles of a tree (which hides them in the game); and a reminder that the game then stops
   scattering its own;
 - tiles using ground or objects the game doesn't have (a warning);
+- a look (theme) only on dungeon floors, and one of `crypt`, `sewer` or `cave`;
 - a Safe zone with no gate, so no town guards (a warning).
 
 ## Opening the game's maps

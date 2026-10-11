@@ -8,6 +8,7 @@ import { checkGameMaps, type GameIssue } from '../core/rpgdc/checks';
 import { RPGDC_EXPORT_NAME, toRpgdcMaps } from '../core/rpgdc/export';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
 import {
+  DUNGEON_THEMES,
   GAME_OBJECTS,
   GROUND_TILES,
   PLACE_FIELDS,
@@ -19,6 +20,7 @@ import {
   gameMapId,
   gameMaps,
   isWalkableAt,
+  mapTheme,
   mapZone,
   placeProps,
   withProp,
@@ -186,6 +188,19 @@ export function gameMapPanel(app: App, map: WorldMap): HTMLElement {
       h('label', {}, inside ? 'Zone for the whole building' : 'Zone for the whole floor', sel),
       h('p', { class: 'hint' }, z.rules),
     );
+    if (!inside) {
+      const look = h('select');
+      look.append(h('option', { value: '' }, 'Automatic (sewers if it has water, else crypt)'));
+      for (const t of DUNGEON_THEMES) look.append(h('option', { value: t.value }, t.label));
+      look.value = mapTheme(map) ?? '';
+      look.onchange = () => {
+        app.pushUndo();
+        if (look.value) map.settings.rpgdcTheme = look.value;
+        else delete map.settings.rpgdcTheme;
+        app.changed();
+      };
+      box.append(h('label', {}, 'Looks like', look));
+    }
   } else {
     const toggle = h('input', { type: 'checkbox', checked: app.view.zones });
     toggle.onchange = () => app.setView('zones', toggle.checked);
