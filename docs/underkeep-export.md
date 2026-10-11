@@ -21,6 +21,25 @@ a facing, props and rooms.
 To edit a map made in the game, copy its `.json` from that folder and **Open…** it. It joins the
 open project as a 3D map.
 
+## Generating a keep
+
+**Generate → Keep in storeys (3D)** (or the dungeon style **Keep in storeys**, on a square or
+isometric grid) makes a whole keep in Underkeep's shape:
+
+- a walled keep of rooms on the ground storey, with a Great Hall, an open courtyard and rooms such
+  as a chapel, kitchens, barracks and an armoury, each named and furnished for what it is;
+- a tower of up to three storeys over one room (the top one an open belfry) and a crypt of up to
+  two storeys under the halls, joined by staircases of three cells climbing 0, 2 and 4 m;
+- the Great Stair, a hearth, lights in every room, and enemies, chests and traps whose tier rises
+  with the distance from the Great Stair, and a boss with the best chest: the Castellan at the
+  top of the tower, or with no tower the Sacristan deep in the crypt (the Warden or the
+  Kennel-master when there is neither).
+
+Tower storeys, crypt storeys and the courtyard are in the generator's settings. Tick
+**🗝 Underkeep map** and export: generated keeps pass the game's checks (hundreds of seeds and
+sizes were tried) and play in the game as they are. On a hex grid this style makes an ordinary
+dungeon of rooms instead.
+
 ## The file (version 2)
 
 ```json
@@ -62,8 +81,9 @@ open project as a 3D map.
 | Height (half metres), Sky / roof | `height`, `roof`; a map with no 3D data is covered everywhere |
 | Props | their Underkeep objects (pillar, statue, rubble, locked door, pew, chair, desk, wardrobe, shelf, altar, rug, banner, dummy, gravestone, hay, cauldron, fountain, great bell, brazier, torch, candelabra, standing torch, hearth, campfire, bonfire, chest, pot, rack, trap) |
 | Objects: door, table, counter, bed, bench, bookshelf, barrel, crate, lectern, trees, boulder, well, lamp post, cooking fire | door, table, table, bed, bench, bookshelf, barrel, crate, desk, tree, rubble, fountain, standing torch, campfire |
+| Door tiles with nothing else on them | `door` (a doorway: lintel and torch) |
 | Places: Great Stair, Way out, Enemy, the clapper | `stair`, `rope` / `grate` / `lift` / `postern`, the enemy kind, `clapper`, with their tier and facing |
-| Places from World Builder's dungeons: entrance, monsters, boss, treasure, trap, altar | `stair` (unless there is a Great Stair), `shieldman`, `castellan`, `chest` (tier 2), `trap`, `altar` |
+| Places from World Builder's dungeons: entrance, monsters, boss, treasure, trap, altar | `stair` (unless there is a Great Stair), the enemy named by the place's `kind` (keeps name one) or else `shieldman` / `castellan`, `chest` (tier 2), `trap`, `altar` |
 | Rooms | `regions` |
 
 If a cell holds more than one thing, the place wins over a prop and a prop over an object. Things

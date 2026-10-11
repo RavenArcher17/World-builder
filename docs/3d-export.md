@@ -35,6 +35,10 @@ Maps with 3D on get these tools (after Underkeep's map editor). Plain maps never
 
 The 3D view hides ceilings so you can see in; **🏠** shows them. The export always has them.
 
+**Generate → Keep in storeys (3D)** (square or isometric grids) makes a 3D map with all of
+this already built: rooms, a tower above and a crypt below joined by stairs, props and named
+rooms. See [`underkeep-export.md`](underkeep-export.md#generating-a-keep).
+
 ## Options (Map panel)
 
 They are saved in the map's settings:

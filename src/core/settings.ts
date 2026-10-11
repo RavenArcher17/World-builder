@@ -110,6 +110,7 @@ export const SETTING_SCHEMAS: Record<MapKind, SettingSchema[]> = {
       ['rooms', 'Rooms & corridors'],
       ['caves', 'Natural caves'],
       ['mixed', 'Mixed'],
+      ['keep', 'Keep in storeys (3D, square grids)'],
     ]),
     range('roomDensity', 'Room count', 'Layout'),
     range('roomSize', 'Room size', 'Layout'),
@@ -122,6 +123,9 @@ export const SETTING_SCHEMAS: Record<MapKind, SettingSchema[]> = {
     range('monsters', 'Monsters', 'Contents'),
     range('treasure', 'Treasure', 'Contents'),
     range('traps', 'Traps', 'Contents'),
+    range('towerStoreys', 'Tower storeys', 'Keep in storeys', 0, 3, 1, 'Storeys of the tower above the halls (the top one is the open belfry)'),
+    range('cryptStoreys', 'Crypt storeys', 'Keep in storeys', 0, 2, 1, 'Storeys of crypt below the halls'),
+    bool('courtyard', 'Courtyard open to the sky', 'Keep in storeys'),
   ],
 };
 
@@ -180,7 +184,7 @@ export function defaultSettings(kind: MapKind, scaleId: string): Settings {
     });
   } else {
     Object.assign(s, {
-      style: scaleId === 'cave' ? 'caves' : 'rooms',
+      style: scaleId === 'cave' ? 'caves' : scaleId === 'keep' ? 'keep' : 'rooms',
       roomDensity: 0.55,
       roomSize: 0.45,
       winding: 0.4,
@@ -192,6 +196,9 @@ export function defaultSettings(kind: MapKind, scaleId: string): Settings {
       monsters: 0.5,
       treasure: 0.4,
       traps: 0.35,
+      towerStoreys: 2,
+      cryptStoreys: 1,
+      courtyard: true,
     });
   }
   return s;

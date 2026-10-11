@@ -6,7 +6,7 @@ import { propDef } from '../scene3d/props';
 import { featureStorey, storey3d, storeyLayers, storeyNumbers } from '../scene3d/storeys';
 import { T, tile } from '../tiles';
 import type { Feature, WorldMap } from '../types';
-import { OBJECT_TO_UK, PLACE_TO_UK, PROP_TO_UK, STAIR_CHARS, UK, UK_PLACE, type UkMap, type UkObject, type UkStorey } from './format';
+import { ENEMY_TYPES, OBJECT_TO_UK, PLACE_TO_UK, PROP_TO_UK, STAIR_CHARS, UK, UK_PLACE, type UkMap, type UkObject, type UkStorey } from './format';
 
 /** Maps made for Underkeep carry this settings key. */
 export const UNDERKEEP_KEY = 'underkeep';
@@ -128,6 +128,8 @@ export function toUnderkeep(map: WorldMap): UnderkeepExport {
         if (!t) drop(obj.name);
         else put({ t, x, y, z: z - z0, r: facing >= 0 ? facing : 0, tier: -1 }, obj.name);
       }
+      // A door tile with nothing else on it is one of Underkeep's doorways (a lintel and a torch).
+      if (L.terrain[i] === T.DOOR && !taken.has(`${x},${y},${z - z0}`)) put({ t: 'door', x, y, z: z - z0, r: 0, tier: -1 }, 'a doorway');
     }
   }
 
@@ -159,6 +161,10 @@ function placeType(f: Feature, hasStair: boolean): string | null {
       return 'clapper';
     case 'entrance':
       return hasStair ? null : 'stair';
+    case 'monster':
+    case 'boss':
+      // Generated keeps say which enemy; other maps get the garrison's shieldman or the Castellan.
+      return ENEMY_TYPES.includes(kind) ? kind : PLACE_TO_UK[f.type];
   }
   return PLACE_TO_UK[f.type] ?? null;
 }

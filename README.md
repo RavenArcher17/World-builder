@@ -44,7 +44,7 @@ preview links) must be added under Authentication → Settings → Authorised do
 
 | Step | How |
 | --- | --- |
-| **Generate** | Pick a **scale** (World, Continent, Kingdom, County, Local area, City / Town / Village layout, Dungeon, Cave), a **grid** (square, pointy hex, flat hex, isometric), size and seed. Toggle what goes on the map — terrain types, rivers, lakes, roads, capitals, cities, towns, villages, hamlets, farms, castles, dungeons, ruins, caves, towers, temples, shrines, mines, lairs, camps, landmarks, inns — and tune sea coverage, mountains, moisture, temperature and density sliders. |
+| **Generate** | Pick a **scale** (World, Continent, Kingdom, County, Local area, City / Town / Village layout, Dungeon, Keep in storeys (3D), Cave), a **grid** (square, pointy hex, flat hex, isometric), size and seed. Toggle what goes on the map — terrain types, rivers, lakes, roads, capitals, cities, towns, villages, hamlets, farms, castles, dungeons, ruins, caves, towers, temples, shrines, mines, lairs, camps, landmarks, inns — and tune sea coverage, mountains, moisture, temperature and density sliders. |
 | **Re-roll an area** | Drag a box with the Select tool → **Re-roll area**. Only that area is regenerated; the edges are blended, and rivers, roads, streets and corridors are reconnected across the seam. |
 | **Zoom in / detail map** | Drag a box → **Zoom in**. Overland children inherit the parent's coastline, elevation, climate, rivers, roads and named places and add finer detail. Select a town, castle or ruin and you get a street-level layout (walls, gates, keep, market, temple, taverns, docks, farmland — taking river / coast / surroundings from the parent). Select a dungeon, cave, lair or mine for a room-and-corridor or cavern level. Maps link both ways: the **Atlas** shows the hierarchy, and you double-click an outlined region (or a place with a gold dot) to open it. |
 | **Edit** | Paint terrain / roads / rivers, place, drag, rename and annotate places. Full undo/redo. |
@@ -97,7 +97,9 @@ touch on a phone: one finger paints or places, two fingers pinch and pan.
 game. Place gets the game's Great Stair, ways out, enemies (with tiers) and the bell's clapper.
 **✓ Check for Underkeep** runs the game's own checks, and **Export → Underkeep map** writes the
 `.json` its map editor saves. Put that file in `%APPDATA%\Godot\app_userdata\Underkeep\maps\`
-and the game plays it. See [`docs/underkeep-export.md`](docs/underkeep-export.md).
+and the game plays it. **Generate → Keep in storeys (3D)** makes a whole keep for it: rooms over
+rooms, a tower and a crypt joined by stairs, lights, a hearth, and enemies and loot that get
+tougher the further you go. See [`docs/underkeep-export.md`](docs/underkeep-export.md).
 
 ## Export formats
 
