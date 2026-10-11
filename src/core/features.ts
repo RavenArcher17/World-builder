@@ -72,6 +72,11 @@ export const FEATURE_DEFS: FeatureDef[] = [
   f('link', 'Link (stairs, door)', '🔗', 'game', 6),
   f('building', 'Building', '🏠', 'game', 7),
   f('npc', 'Townsperson', '🧑', 'game', 5),
+  // Underkeep maps (settings.underkeep; see underkeep/)
+  f('uk_stair', 'Great Stair (entry and exit)', '🪜', 'game', 8),
+  f('uk_exit', 'Way out', '🚪', 'game', 6),
+  f('uk_enemy', 'Enemy', '⚔️', 'game', 4),
+  f('uk_clapper', "The great bell's clapper", '🔔', 'game', 5),
 ];
 
 const BY_TYPE = new Map(FEATURE_DEFS.map((d) => [d.type, d]));

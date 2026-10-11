@@ -25,6 +25,8 @@ import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, ob
 import { map3dPanel, sync3d } from './map3dUi';
 import { afterTilePaint, draw3dOverlay, is3dMode, modeOptions3d, paint3dAt, paint3dOptions, roomButton, status3d } from './build3dUi';
 import { is3d } from '../core/scene3d/options';
+import { fromUnderkeep, isUnderkeepFile } from '../core/underkeep/import';
+import { isUnderkeep, underkeepNewPlace, underkeepPlaceFields, underkeepPlaceOptions } from './underkeepUi';
 import { storeyLayers, storeyNumbers, storeyView } from '../core/scene3d/storeys';
 import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
 
@@ -553,6 +555,14 @@ export class App {
         const text = await file.text();
         // The game's own map file (rpg-dc.maps.json) opens as an RPG-DC project.
         const data = JSON.parse(text);
+        if (isUnderkeepFile(data)) {
+          // An Underkeep map (from the game's maps folder) joins the open project as a 3D map.
+          this.pushUndo();
+          const m = fromUnderkeep(data);
+          this.addMap(m);
+          toast(`Opened the Underkeep map ${m.name} (${m.width}×${m.height}, ${1 + (m.storeys?.length ?? 0)} storeys)`);
+          return;
+        }
         if (isRpgdcMapsFile(data)) {
           const p = fromRpgdcMaps(data);
           this.replaceProject(p);
@@ -702,6 +712,8 @@ export class App {
       }
     } else if (tool === 'feature' && game) {
       opts.append(...gamePlaceOptions(this));
+    } else if (tool === 'feature' && isUnderkeep(map)) {
+      opts.append(...underkeepPlaceOptions(this));
     } else if (tool === 'feature') {
       const sel = h('select', { 'aria-label': 'Place type' });
       const scopes: Record<string, HTMLOptGroupElement> = {};
@@ -988,7 +1000,7 @@ export class App {
       sheetHeader(`${featureDef(f.type).icon} Place at (${f.c}, ${f.r})`, () => this.selectFeature(null)),
       h('label', {}, 'Type', typeSel),
       h('label', {}, 'Name', name),
-      game ? gameFeatureFields(this, map, f) : '',
+      game ? gameFeatureFields(this, map, f) : isUnderkeep(map) ? underkeepPlaceFields(this, f) : '',
       h('label', {}, 'Notes', notes),
       f.tags?.length ? h('p', { class: 'hint' }, `Tags: ${f.tags.join(', ')}`) : '',
       h(
@@ -1522,15 +1534,16 @@ export class App {
         return existing;
       }
     }
+    const uk = isUnderkeep(map) ? underkeepNewPlace(type) : null;
     const f: Feature = {
       id: newId('f'),
       type,
-      name: game ? featureDef(type).label : featureName(new Rng(randomSeed()), type) || featureDef(type).label,
+      name: uk?.name ?? (game ? featureDef(type).label : featureName(new Rng(randomSeed()), type) || featureDef(type).label),
       c: g.col(cell),
       r: g.row(cell),
       ...(this.storey && { z: this.storey }),
     };
-    const props = game ? defaultProps(type) : undefined;
+    const props = game ? defaultProps(type) : uk?.props;
     if (props) f.props = props;
     map.features.push(f);
     this.selectedFeature = f.id;

@@ -35,6 +35,10 @@ npm run build
   documented in `docs/3d-export.md`. Maps without the key show only the switch and load none of it.
   3D maps keep their extra data (`layers3d`, `storeys`, `rooms`, `feature.z`) only when used; the
   3D props registry (`src/core/scene3d/props.ts`) is append-only like tiles and objects.
+- Underkeep (RavenArcher17/Underkeep, a Godot game) is the second game: key `settings.underkeep`,
+  code in `src/core/underkeep/` and `src/ui/underkeepUi.ts`, doc `docs/underkeep-export.md`. It
+  reads the export from its `user://maps/` folder with no changes to the game; the checks are a
+  port of its `Maps.validate`, so keep them in step if the game's rules change.
 - Projects are saved in each user's browser and in Firestore, not in this repo. When the meaning of
   saved data changes, upgrade it when the project opens, once, behind a version kept in the map's
   settings (see `PLACES_VERSION` in `src/core/rpgdc/migrate.ts`).

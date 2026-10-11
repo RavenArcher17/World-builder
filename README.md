@@ -90,6 +90,15 @@ game mode; every other map behaves as above.
 Projects from the game's exporter are converted to this form when opened. Everything works by
 touch on a phone: one finger paints or places, two fingers pinch and pan.
 
+## Game maps: Underkeep
+
+3D maps on a square grid can be made for [Underkeep](https://github.com/RavenArcher17/Underkeep)
+(`settings.underkeep`): tick **🗝 Underkeep map** in the Map panel or **Open…** a map file from the
+game. Place gets the game's Great Stair, ways out, enemies (with tiers) and the bell's clapper.
+**✓ Check for Underkeep** runs the game's own checks, and **Export → Underkeep map** writes the
+`.json` its map editor saves. Put that file in `%APPDATA%\Godot\app_userdata\Underkeep\maps\`
+and the game plays it. See [`docs/underkeep-export.md`](docs/underkeep-export.md).
+
 ## Export formats
 
 **Game JSON** (`*.map.json`) — everything an engine needs:
@@ -136,7 +145,8 @@ src/core/            pure TypeScript, no DOM — usable from Node scripts too
   objects.ts         object layer registry (ids are stable — append only)
   brushes.ts         grove and ore-cluster brushes
   rpgdc/             RPG-DC game mode: rules, migration, checks, export
-  scene3d/           3D option: map → 3D scene (meshes + markers), .glb writer
+  scene3d/           3D option: map → 3D scene (meshes + markers), .glb writer, storeys, props
+  underkeep/         Underkeep maps: file format, import, export, the game's checks
 src/cloud/           Firebase config, Google sign-in, Firestore project storage (lazy-loaded)
   tiles.ts           shared tile registry (ids are stable — append only)
   features.ts        place types and icons

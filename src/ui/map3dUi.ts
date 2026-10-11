@@ -7,6 +7,7 @@ import { MAP3D_KEYS, RELIEF_RANGE, TILE_RANGE, WALL_RANGE, is3d, options3d, set3
 import type { WorldMap } from '../core/types';
 import type { App } from './app';
 import { storeyControls, storeyPanel } from './build3dUi';
+import { underkeepPanel } from './underkeepUi';
 import { byId, downloadBlob, h, slug, toast } from './dom';
 import type { View3d } from './view3d';
 import './view3d.css';
@@ -70,6 +71,7 @@ export function map3dPanel(app: App, map: WorldMap): HTMLElement {
       h('button', { onclick: () => void export3dModel(map) }, '⬇ 3D model (.glb)'),
     ),
     storeyPanel(app, map),
+    underkeepPanel(app, map),
   );
   return box;
 }

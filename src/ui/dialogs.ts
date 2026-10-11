@@ -15,6 +15,7 @@ import type { App } from './app';
 import { downloadCanvas, downloadText, h, settingsForm, showDialog, slug, toast } from './dom';
 import { exportRpgdc, gameExportSummary, openCheckDialog } from './gameUi';
 import { export3dModel } from './map3dUi';
+import { exportUnderkeep, isUnderkeep } from './underkeepUi';
 import { DEFAULT_VIEW, baseUnitPx, renderMapCanvas, renderTileset, safeScale } from './render';
 
 function gridSelect(value: string, includeKeep = false): HTMLSelectElement {
@@ -112,6 +113,7 @@ export function openExportDialog(app: App, map: WorldMap): void {
     format.append(h('option', { value: 'glb' }, '3D model (.glb for Godot, Unity, Blender)'));
     void import('../core/scene3d/glb');
   }
+  if (isUnderkeep(map)) format.append(h('option', { value: 'underkeep' }, 'Underkeep map (.json for the game’s maps folder)'));
   const grid = gridSelect('', true);
   const w = h('input', { type: 'number', min: 8, max: 512, placeholder: 'auto' });
   const hh = h('input', { type: 'number', min: 8, max: 512, placeholder: 'auto' });
@@ -135,11 +137,13 @@ export function openExportDialog(app: App, map: WorldMap): void {
   const checkBtn = h('button', { onclick: () => openCheckDialog(app) }, '✓ Check for game');
   const update = () => {
     pngOpts.style.display = format.value === 'png' ? '' : 'none';
-    convert.style.display = format.value === 'rpgdc' || format.value === 'project' ? 'none' : '';
+    convert.style.display = format.value === 'rpgdc' || format.value === 'project' || format.value === 'underkeep' ? 'none' : '';
     checkBtn.style.display = format.value === 'rpgdc' ? '' : 'none';
     note.textContent =
       format.value === 'rpgdc'
         ? `Every RPG-DC map in the project in one file for the game (format: docs/rpgdc-export.md). ${gameExportSummary(app)}`
+        : format.value === 'underkeep'
+        ? 'The file Underkeep’s map editor saves: storeys, heights, roofs, stairs, objects, enemies and rooms. Put it in %APPDATA%\\Godot\\app_userdata\\Underkeep\\maps\\ on your PC. Check for Underkeep first: the game refuses maps with errors.'
         : format.value === 'glb'
         ? 'The map in 3D, in metres (see the 3D options in the Map panel). Ground, walls and objects get collision when Godot imports it; places are named marker nodes carrying their data.'
         : format.value === 'tiled'
@@ -194,6 +198,9 @@ export function openExportDialog(app: App, map: WorldMap): void {
           }
           case 'glb':
             await export3dModel(out);
+            return;
+          case 'underkeep':
+            exportUnderkeep(out);
             return;
           case 'csv':
             downloadText(`${base}.csv`, toCsv(out), 'text/csv');
