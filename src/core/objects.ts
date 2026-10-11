@@ -20,7 +20,7 @@ export interface ObjectDef {
   blocks: boolean;
   /** Used by standing next to it (a station, fishing spot or staircase) rather than on it. */
   useFromNeighbour: boolean;
-  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture';
+  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street';
 }
 
 const o = (
@@ -74,6 +74,14 @@ export const OBJECTS: ObjectDef[] = [
   o(34, 'barrel', 'Barrel', '#8a5a2a', '🛢️', 'icon', 'furniture'),
   o(35, 'crate', 'Crate', '#a87a4a', '📦', 'icon', 'furniture'),
   o(36, 'lectern', 'Lectern', '#7a5a3a', '📖', 'icon', 'furniture'),
+  // Things in the streets.
+  o(37, 'well', 'Well', '#7a8a9a', '⛲', 'icon', 'street'),
+  o(38, 'lamp_post', 'Lamp post', '#3a3a3a', '🏮', 'icon', 'street'),
+  o(39, 'market_stall', 'Market stall', '#c04a4a', '🎪', 'icon', 'street'),
+  o(40, 'flower_bed', 'Flower bed', '#d86aa0', '🌷', 'icon', 'street'),
+  o(41, 'bench', 'Bench', '#8a6a3a', '🪑', 'icon', 'street'),
+  o(42, 'signpost', 'Signpost', '#9a7a4a', '🪧', 'icon', 'street'),
+  o(43, 'notice_board', 'Notice board', '#a88a5a', '📜', 'icon', 'street'),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -112,7 +120,14 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'BED'
   | 'BARREL'
   | 'CRATE'
-  | 'LECTERN',
+  | 'LECTERN'
+  | 'WELL'
+  | 'LAMP_POST'
+  | 'MARKET_STALL'
+  | 'FLOWER_BED'
+  | 'BENCH'
+  | 'SIGNPOST'
+  | 'NOTICE_BOARD',
   number
 >;
 

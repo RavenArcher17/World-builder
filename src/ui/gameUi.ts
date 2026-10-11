@@ -36,6 +36,7 @@ const GROVE_OBJECTS = [O.TREE, O.OAK, O.WILLOW];
 const OBJECT_GROUPS: [string, string[]][] = [
   ['Nature', ['tree', 'rock', 'ore', 'fishing', 'herb']],
   ['Town', ['wall', 'station', 'door', 'stairs']],
+  ['Streets', ['street']],
   ['Indoors', ['furniture']],
 ];
 const ORE_OBJECTS = [O.COPPER_ROCK, O.TIN_ROCK, O.IRON_ROCK];

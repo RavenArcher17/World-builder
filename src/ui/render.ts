@@ -7,6 +7,7 @@ import { SEA_LEVEL, WorldMap } from '../core/types';
 import { TILESET_COLUMNS, tilePixels } from '../core/export/formats';
 import { cellMetrics, drawObject, drawPattern, paintOrder } from './drawObjects';
 import { drawGameArt } from './gameArt';
+import { gameKind, guardPosts, isRpgdc } from '../core/rpgdc/game';
 
 export interface ViewOptions {
   grid: boolean;
@@ -270,6 +271,21 @@ export function drawFeatures(
   const labelMinRank = cellPx > 22 ? 0 : cellPx > 12 ? 3 : 5;
   // Labels are placed most-important first and skipped when they would overlap.
   const labels: { x: number; y: number; text: string; size: number; bold: boolean }[] = [];
+  // The game's own town guards and where criminals come back, so moving a gate shows its guard.
+  if (isRpgdc(map) && gameKind(map) === 'overworld') {
+    const { posts, outside } = guardPosts(map);
+    const marks = posts.map((p) => ({ ...p, icon: '💂', text: 'Guard' }));
+    if (outside) marks.push({ ...outside, icon: '⛓️', text: 'Criminals return' });
+    const fs = size * 0.8;
+    ctx.globalAlpha = 0.85;
+    ctx.font = `${fs}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+    for (const m of marks) {
+      const [x, y] = g.centerCR(m.x, m.y);
+      ctx.fillText(m.icon, ox + x * s, oy + y * s);
+      if (view.labels && labelMinRank <= 3) labels.push({ x: ox + x * s, y: oy + y * s + fs * 0.75 + 4, text: m.text, size: Math.max(10, fs * 0.5), bold: false });
+    }
+    ctx.globalAlpha = 1;
+  }
   for (const f of sorted) {
     const def = featureDef(f.type);
     const [x, y] = g.centerCR(f.c, f.r);

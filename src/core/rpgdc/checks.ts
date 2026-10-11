@@ -11,6 +11,8 @@ import {
   MONSTER_KINDS,
   NEIGHBOURS,
   NPC_ROLES,
+  ROOF_COLOURS,
+  WALL_COLOURS,
   buildingSizeOk,
   buildings,
   doorFace,
@@ -21,6 +23,7 @@ import {
   gameMapId,
   gameMaps,
   gameObject,
+  guardPosts,
   isGameGround,
   isWalkable,
   isWalkableAt,
@@ -182,6 +185,8 @@ export function checkGameMaps(project: Project): GameIssue[] {
         add('error', m, b.x, b.y, b.style === 'tower' ? `${name}: towers are square, ${towerMin} to ${towerMax} tiles a side.` : `${name}: buildings are ${min} to ${max} tiles a side.`);
       }
       if (b.x + b.w > w || b.y + b.h > m.height) add('error', m, b.x, b.y, `${name} runs off the map.`);
+      if (b.roof && !ROOF_COLOURS.some((c) => c.value === b.roof)) add('error', m, b.x, b.y, `${name} has an unknown roof colour "${b.roof}".`);
+      if (b.walls && !WALL_COLOURS.some((c) => c.value === b.walls)) add('error', m, b.x, b.y, `${name} has an unknown wall colour "${b.walls}".`);
       let doors = 0;
       for (let y = b.y; y < Math.min(b.y + b.h, m.height); y++) {
         for (let x = b.x; x < Math.min(b.x + b.w, w); x++) {
@@ -219,6 +224,12 @@ export function checkGameMaps(project: Project): GameIssue[] {
         }
         if (tree) add('warning', m, x, y, `${herb.name} (${x}, ${y}) is within 2 tiles of a tree, which hides it in the game.`);
       }
+    }
+
+    // Town guards stand at the gates of the Safe zone; without a gate there are none.
+    if (m === overworld && owSpawns.length && !guardPosts(m).posts.length) {
+      const s = owSpawns[0].f;
+      add('warning', m, s.c, s.r, "The Safe zone has no gate (a walkable Safe tile beside a walkable tile outside it), so the game posts no town guards, and criminals come back at the spawn point.");
     }
 
     // Monsters: never in the Safe zone, never on a tile you can't walk on.

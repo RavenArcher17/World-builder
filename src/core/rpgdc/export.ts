@@ -23,7 +23,7 @@ export type RpgdcPlace =
   | { type: 'boss'; x: number; y: number; kind: string }
   | { type: 'brazier'; x: number; y: number }
   | { type: 'link'; x: number; y: number; toMap: string; toX: number; toY: number }
-  | { type: 'building'; x: number; y: number; w: number; h: number; style: string; sign?: string }
+  | { type: 'building'; x: number; y: number; w: number; h: number; style: string; sign?: string; roof?: string; walls?: string }
   | { type: 'npc'; x: number; y: number; role: string };
 
 export interface RpgdcMap {
@@ -104,7 +104,19 @@ function exportPlaces(map: WorldMap): RpgdcPlace[] {
         break;
       case 'building': {
         const sign = String(p.sign ?? '').trim();
-        out.push({ type: 'building', x, y, w: Math.round(Number(p.w)), h: Math.round(Number(p.h)), style: String(p.style), ...(sign && { sign }) });
+        const roof = String(p.roof ?? '');
+        const walls = String(p.walls ?? '');
+        out.push({
+          type: 'building',
+          x,
+          y,
+          w: Math.round(Number(p.w)),
+          h: Math.round(Number(p.h)),
+          style: String(p.style),
+          ...(sign && { sign }),
+          ...(roof && { roof }),
+          ...(walls && { walls }),
+        });
         break;
       }
       case 'npc':
