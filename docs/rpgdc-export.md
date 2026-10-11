@@ -40,7 +40,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zone": null,
   "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks"],
   "ground": [0, 0, 1, ...],
-  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern"],
+  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board"],
   "objects": [0, 4, 0, ...],
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
@@ -48,7 +48,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
     { "type": "spawn_point", "x": 64, "y": 65 },
     { "type": "monster_spawn", "x": 70, "y": 52, "kind": "goblin", "count": 1, "radius": 7 },
     { "type": "link", "x": 36, "y": 44, "toMap": "crypt1", "toX": 19, "toY": 7 },
-    { "type": "building", "x": 57, "y": 58, "w": 6, "h": 5, "style": "stone", "sign": "Bank" }
+    { "type": "building", "x": 57, "y": 58, "w": 6, "h": 5, "style": "stone", "sign": "Bank", "roof": "slate", "walls": "grey" }
   ]
 }
 ```
@@ -105,6 +105,7 @@ entrance are used from a neighbouring tile (any of the 8 around it).
 | 26 | `sewer_grate` | A way down, like stairs: needs a `link` to a map with stairs up leading back. |
 | 27–29 | `alchemy_table`, `sewing_table`, `fletching_bench` | Workshop stations. |
 | 30–36 | `counter`, `bookshelf`, `table`, `bed`, `barrel`, `crate`, `lectern` | Furniture. Players talk to townspeople across a `counter`. Indoors, a `bookshelf` stands in the line of the wall. |
+| 37–43 | `well`, `lamp_post`, `market_stall`, `flower_bed`, `bench`, `signpost`, `notice_board` | Things in the streets (indoors too, if you like). Tapping the `notice_board` in the game shows tips for new players. |
 
 ### Zones
 
@@ -126,14 +127,26 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `boss` | `x`, `y`, `kind` | A boss. |
 | `brazier` | `x`, `y` | A light (crypt floors). |
 | `link` | `x`, `y`, `toMap`, `toX`, `toY` | On a `crypt_entrance`, `stairs_down`, `stairs_up`, `door` or `sewer_grate` tile. Using it moves the player to tile (`toX`, `toY`) of map `toMap`, which is walkable. |
-| `building` | `x`, `y`, `w`, `h`, `style`, `sign` (optional) | A house on the overworld: `w`×`h` tiles of wall with its north-west corner at (`x`, `y`), in `style` `timber`, `stone` or `tower`; `sign` is its name. Houses are 3 to 8 tiles a side, towers square and 3 to 5 (the sizes the game has art for). Its walls block walking, except where an object (its door) stands. |
-| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, or a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`). A door's sign shows the trade of the first townsperson inside. |
+| `building` | `x`, `y`, `w`, `h`, `style`, `sign`, `roof`, `walls` (the last three optional) | A house on the overworld: `w`×`h` tiles of wall with its north-west corner at (`x`, `y`), in `style` `timber`, `stone` or `tower`; `sign` is its name. Houses are 3 to 8 tiles a side, towers square and 3 to 5 (the sizes the game has art for). Its walls block walking, except where an object (its door) stands. `roof` and `walls` colour it (below); without them it keeps its style's own colours. |
+| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip). A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
+
+Building colours. The game draws the roof, and the walls (the plaster of a timber house, the stone of
+a stone house or tower), again over the house, multiplied by the colour:
+
+| `roof` | `brown` `#8c5e3d`, `red` `#b8563c`, `slate` `#4f5662`, `blue` `#4c56a0`, `green` `#5f7a4a`, `dark` `#3c3836` |
+|---|---|
+| **`walls`** | `cream` `#eedebd`, `white` `#fbf8f2`, `ochre` `#e8c27e`, `rose` `#ecc0b0`, `sage` `#cfd8b8`, `grey` `#ccc2b0`, `sand` `#e6cfa0`, `dark` `#8e8a84`, `brick` `#c08870` |
 
 Monster kinds, with their normal range in tiles: `rat` 6, `goblin` 7, `wolf` 8, `bandit` 8,
 `troll` 7, `skeleton` 8, `giant_spider` 8, `ghoul` 8, `bone_king` 7, `sewer_rat` 6, `slime` 5,
 `beetle` 7, `rat_king` 6. The game uses the normal range for a `monster_spawn` that has no `radius`.
-Town guards and townspeople aren't monster kinds here: the game places guards at the town's gates
-itself, and townspeople come from `npc` places.
+Town guards and townspeople aren't monster kinds here: townspeople come from `npc` places, and the
+game posts guards itself, at each gate of the Safe zone: every walkable Safe tile beside a walkable
+tile outside it (north, south, east or west) is a gate, its guard stands one step further in (if
+that's open Safe ground), and there's only one guard within 2 tiles. Criminals and murderers who
+die come back 3 tiles out of the first gate found (scanning rows from the top), or just outside it.
+World Builder shows the guards (💂) and that spot (⛓️) on the overworld, so moving a gate shows
+where its guard goes.
 
 Maps saved before radius 0 meant "stays put" (settings without `rpgdcPlaces: 2`) used 0 for the
 normal range; World Builder writes the normal range into those spawns when the project is opened.
@@ -152,15 +165,16 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
   past blocked tiles;
 - every entrance, staircase, door and grate has a link to an existing map and a walkable target
   tile, and links come in pairs;
-- every building is a size there's art for and has a door in its south or east wall (not a
-  corner); every townsperson stands on open floor players can reach, or talk to across a counter;
+- every building is a size there's art for, in colours the game has, and has a door in its south
+  or east wall (not a corner); every townsperson stands on open floor players can reach, or talk to across a counter;
 - no monster spawn or boss in the Safe zone or on a tile you can't walk on;
 - every overworld tile has a zone, and every dungeon floor and inside has its zone;
 - there's one overworld, 128×128; dungeon floors are 16 to 64 tiles a side, insides 4 to 32;
 - herb patches (warnings): out of their zones, unreachable, next to a blocked tile, or within 2
   tiles of a tree (which hides them in the game); and a reminder that the game then stops
   scattering its own;
-- tiles using ground or objects the game doesn't have (a warning).
+- tiles using ground or objects the game doesn't have (a warning);
+- a Safe zone with no gate, so no town guards (a warning).
 
 ## Opening the game's maps
 

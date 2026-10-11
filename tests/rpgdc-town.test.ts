@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { O } from '../src/core/objects';
 import { checkGameMaps } from '../src/core/rpgdc/checks';
 import { toRpgdcMaps, type RpgdcMapsFile } from '../src/core/rpgdc/export';
-import { buildingMask, gameKind, isWalkableAt, OBJECT_LEGEND } from '../src/core/rpgdc/game';
+import { buildingMask, buildings, gameKind, guardPosts, isWalkableAt, OBJECT_LEGEND } from '../src/core/rpgdc/game';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import type { Project, WorldMap } from '../src/core/types';
 
@@ -66,7 +66,27 @@ describe('opening the game’s map file', () => {
       'herb_sunleaf', 'herb_silverweed', 'herb_thornberry', 'herb_nightshade', 'herb_emberbloom',
       'door', 'sewer_grate', 'alchemy_table', 'sewing_table', 'fletching_bench',
       'counter', 'bookshelf', 'table', 'bed', 'barrel', 'crate', 'lectern',
+      'well', 'lamp_post', 'market_stall', 'flower_bed', 'bench', 'signpost', 'notice_board',
     ]);
+  });
+
+  it('reads each building’s roof and wall colours, and the street decorations', () => {
+    const world = byGameId(project(), 'overworld');
+    const bank = buildings(world).find((b) => b.sign === 'Bank')!;
+    expect([bank.roof, bank.walls]).toEqual(['slate', 'grey']);
+    expect(world.layers.object.filter((o) => o === O.LAMP_POST).length).toBeGreaterThan(4);
+    expect(world.layers.object.filter((o) => o === O.WELL).length).toBe(1);
+    // Townspeople who just talk.
+    const roles = Object.values(project().maps).flatMap((m) => m.features.filter((f) => f.type === 'npc').map((f) => f.props?.role));
+    expect(roles).toEqual(expect.arrayContaining(['mayor', 'captain', 'villager']));
+  });
+
+  it('posts town guards where the game does, one at each gate', () => {
+    // RPG-DC's server, on this file: guards at these tiles, and criminals come back at (63, 47).
+    const { posts, outside } = guardPosts(byGameId(project(), 'overworld'));
+    expect(posts.map((p) => [p.x, p.y])).toEqual([[63, 51], [51, 63], [77, 63], [63, 77]]);
+    expect(outside).toEqual({ x: 63, y: 47 });
+    expect(guardPosts(byGameId(project(), 'bank')).posts).toEqual([]);
   });
 
   it('treats a building’s walls as blocked, except its door', () => {
@@ -123,6 +143,17 @@ describe('game checks for the town', () => {
         bank.layers.terrain[i] = byGameId(p, 'bank').layers.terrain[0];
       }
     }).some((m) => /can't reach townsperson \(3, 1\)/.test(m))).toBe(true);
+  });
+
+  it('catches colours the game doesn’t have', () => {
+    expect(edit((p) => { building(byGameId(p, 'overworld'), 'Bank').props!.roof = 'pink'; }).some((m) => /Bank \(57, 58\) has an unknown roof colour "pink"/.test(m))).toBe(true);
+    expect(edit((p) => { building(byGameId(p, 'overworld'), 'Bank').props!.walls = 'plaid'; }).some((m) => /unknown wall colour "plaid"/.test(m))).toBe(true);
+  });
+
+  it('warns when the town has no gate, so no guards', () => {
+    const p = project();
+    byGameId(p, 'overworld').layers.zone.fill(1);
+    expect(checkGameMaps(p).some((i) => i.severity === 'warning' && /no gate/.test(i.message))).toBe(true);
   });
 
   it('catches insides and dungeon floors of the wrong size', () => {

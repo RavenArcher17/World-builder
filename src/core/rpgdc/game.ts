@@ -42,7 +42,7 @@ export const GROUND_TILES = [T.GRASS, T.PATH, T.WATER, T.TOWN_FLOOR, T.CRYPT_FLO
 const GROUND_WALKABLE = [true, true, false, true, true, false, true];
 
 /** How many objects the game knows: World Builder's first ones, in the same order. */
-const GAME_OBJECT_COUNT = 37;
+const GAME_OBJECT_COUNT = 44;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
 export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
 export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
@@ -84,12 +84,37 @@ export interface GameBuilding {
   h: number;
   style: string;
   sign: string;
+  /** Roof and wall colours (keys of ROOF_COLOURS and WALL_COLOURS); '' keeps the style's own. */
+  roof: string;
+  walls: string;
 }
 
 export const BUILDING_STYLES = [
   { value: 'timber', label: 'Timber and plaster' },
   { value: 'stone', label: 'Stone' },
   { value: 'tower', label: 'Tower' },
+];
+
+/** Roof colours the game knows, with the tint it multiplies the roof by (client and shared/src/map.ts). */
+export const ROOF_COLOURS = [
+  { value: 'brown', label: 'Brown thatch', hex: '#8c5e3d' },
+  { value: 'red', label: 'Red tiles', hex: '#b8563c' },
+  { value: 'slate', label: 'Slate', hex: '#4f5662' },
+  { value: 'blue', label: 'Blue', hex: '#4c56a0' },
+  { value: 'green', label: 'Green', hex: '#5f7a4a' },
+  { value: 'dark', label: 'Dark', hex: '#3c3836' },
+];
+/** Wall colours: the plaster of timber houses, the stone of stone houses and towers. */
+export const WALL_COLOURS = [
+  { value: 'cream', label: 'Cream', hex: '#eedebd' },
+  { value: 'white', label: 'White', hex: '#fbf8f2' },
+  { value: 'ochre', label: 'Ochre', hex: '#e8c27e' },
+  { value: 'rose', label: 'Rose', hex: '#ecc0b0' },
+  { value: 'sage', label: 'Sage', hex: '#cfd8b8' },
+  { value: 'grey', label: 'Grey', hex: '#ccc2b0' },
+  { value: 'sand', label: 'Sand', hex: '#e6cfa0' },
+  { value: 'dark', label: 'Dark', hex: '#8e8a84' },
+  { value: 'brick', label: 'Brick', hex: '#c08870' },
 ];
 
 /** The sizes there's art for: houses 3 to 8 tiles a side, towers square and 3 to 5. */
@@ -106,7 +131,16 @@ export function buildings(map: WorldMap): GameBuilding[] {
     .filter((f) => f.type === 'building')
     .map((f) => {
       const p = placeProps(f);
-      return { x: f.c, y: f.r, w: Math.round(Number(p.w)), h: Math.round(Number(p.h)), style: String(p.style), sign: String(p.sign ?? '') };
+      return {
+        x: f.c,
+        y: f.r,
+        w: Math.round(Number(p.w)),
+        h: Math.round(Number(p.h)),
+        style: String(p.style),
+        sign: String(p.sign ?? ''),
+        roof: String(p.roof ?? ''),
+        walls: String(p.walls ?? ''),
+      };
     });
 }
 
@@ -151,6 +185,9 @@ export const NPC_ROLES = [
   { value: 'tailor', label: 'Tailor' },
   { value: 'fletcher', label: 'Fletcher' },
   { value: 'inn', label: 'Innkeeper' },
+  { value: 'mayor', label: 'Mayor' },
+  { value: 'captain', label: 'Guard captain' },
+  { value: 'villager', label: 'Villager' },
 ];
 
 /** Whether someone at (fx, fy) can talk to a townsperson at (x, y): next to them, or across a counter. */
@@ -222,6 +259,41 @@ export function reachable(map: WorldMap, starts: { x: number; y: number }[]): Ui
   }
   return seen;
 }
+
+// ---- town guards -------------------------------------------------------------------------
+
+/**
+ * Where the game posts its town guards, as its server does: at each gate of the Safe zone (a
+ * walkable Safe tile beside a walkable tile outside it), one step further in where that's open
+ * Safe ground too, and only one guard within 2 tiles. `outside` is where criminals and murderers
+ * come back after dying: 3 tiles out of the first gate (or just outside it), or null with no gate.
+ */
+export function guardPosts(map: WorldMap): { posts: { x: number; y: number }[]; outside: { x: number; y: number } | null } {
+  const posts: { x: number; y: number }[] = [];
+  let outside: { x: number; y: number } | null = null;
+  if (gameKind(map) !== 'overworld') return { posts, outside };
+  const mask = buildingMask(map);
+  const open = (x: number, y: number) => isWalkableAt(map, x, y, mask);
+  const safe = (x: number, y: number) => zoneAt(map, y * map.width + x)?.key === 'safe';
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      if (!open(x, y) || !safe(x, y)) continue;
+      for (const [dx, dy] of STRAIGHT) {
+        const ox = x + dx;
+        const oy = y + dy;
+        if (!open(ox, oy) || safe(ox, oy)) continue;
+        const post = open(x - dx, y - dy) && safe(x - dx, y - dy) ? { x: x - dx, y: y - dy } : { x, y };
+        if (posts.some((p) => Math.max(Math.abs(p.x - post.x), Math.abs(p.y - post.y)) <= 2)) continue;
+        posts.push(post);
+        const far = { x: x + dx * 3, y: y + dy * 3 };
+        outside ??= open(far.x, far.y) && !safe(far.x, far.y) ? far : { x: ox, y: oy };
+      }
+    }
+  }
+  return { posts, outside };
+}
+/** The game's order for the four straight neighbours when posting guards. */
+const STRAIGHT = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 
 // ---- zones -------------------------------------------------------------------------------
 
@@ -335,6 +407,8 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
     { key: 'w', label: 'Width (tiles, along x)', type: 'number', min: BUILDING_SIZES.min, max: BUILDING_SIZES.max, default: 5 },
     { key: 'h', label: 'Depth (tiles, along y)', type: 'number', min: BUILDING_SIZES.min, max: BUILDING_SIZES.max, default: 4 },
     { key: 'sign', label: 'Name (on its sign)', type: 'text', default: '' },
+    { key: 'roof', label: 'Roof colour', type: 'select', options: [{ value: '', label: "The style's own" }, ...ROOF_COLOURS], default: '' },
+    { key: 'walls', label: 'Wall colour', type: 'select', options: [{ value: '', label: "The style's own" }, ...WALL_COLOURS], default: '' },
   ],
   npc: [{ key: 'role', label: 'Who', type: 'select', options: NPC_ROLES, default: 'general' }],
 };
@@ -348,7 +422,7 @@ export const PLACE_HELP: Record<string, string> = {
   link: 'Put it on a crypt entrance, stairs, a door or a sewer grate. Players using it arrive on the chosen tile of the target map. Stairs down (and grates) need stairs up leading back; a door needs a door back.',
   building:
     'A house: this tile is its north-west (top) corner, and its walls fill Width × Depth tiles. Houses are 3 to 8 tiles a side; towers are square, 3 to 5. Put a Door object in its south or east wall (not a corner) and a link on the door to the inside.',
-  npc: 'A townsperson who stands here all day: tap them in the game to bank or trade. Put a Counter in front of them; players talk across it.',
+  npc: 'A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk. Put a Counter in front of a banker or shopkeeper; players talk across it.',
 };
 
 /** A place's props with defaults filled in. */

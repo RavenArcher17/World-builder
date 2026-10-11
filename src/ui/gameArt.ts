@@ -5,7 +5,7 @@
  */
 import { Grid } from '../core/grid';
 import { O } from '../core/objects';
-import { buildings, doorFace, gameKind, type GameBuilding } from '../core/rpgdc/game';
+import { ROOF_COLOURS, WALL_COLOURS, buildings, doorFace, gameKind, type GameBuilding } from '../core/rpgdc/game';
 import { T } from '../core/tiles';
 import type { WorldMap } from '../core/types';
 import { paintOrder } from './drawObjects';
@@ -147,6 +147,18 @@ const INDOOR_ART: Partial<Record<number, string>> = {
   [O.LECTERN]: 'lectern',
   [O.BOOKSHELF]: 'crate',
 };
+/** Things in the streets, from the world sheet wherever they stand (indoors too). */
+const DECOR_ART: Partial<Record<number, string>> = {
+  [O.WELL]: 'well',
+  [O.LAMP_POST]: 'lamp_post',
+  [O.MARKET_STALL]: 'market_stall',
+  [O.FLOWER_BED]: 'flower_bed',
+  [O.BENCH]: 'bench',
+  [O.SIGNPOST]: 'signpost',
+  [O.NOTICE_BOARD]: 'notice_board',
+};
+/** Sewer stone is damp and greenish (the game tints it so). */
+const SEWER_TINT = '#c4cdb4';
 /** Herb patches: the game's leafier plants, tinted per herb and drawn a little larger. */
 const HERB_ART: Partial<Record<number, { frame: string; tint: string }>> = {
   [O.HERB_SUNLEAF]: { frame: 'plant/6', tint: '#e8ff9a' },
@@ -208,7 +220,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     const [cx, cy] = g.center(i);
     drawAt(sheetName, frame, cx, cy, opts);
   };
-  const put = (frame: string, i: number) => putFrom(home, frame, i);
+  const put = (frame: string, i: number, opts?: { tint?: string }) => putFrom(home, frame, i, opts);
   const count = (sheetName: string, what: string) => art.sheets[sheetName]?.counts?.[what] ?? 1;
   const variant = (what: string, x: number, y: number, salt = 0, sheetName = home) => `${what}/${Math.floor(tileHash(x, y, salt) * count(sheetName, what))}`;
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < map.height ? y * w + x : -1);
@@ -224,8 +236,15 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     const lights = new Set(map.features.filter((f) => f.type === 'brazier').map((f) => f.r * w + f.c));
     const pieces = new Map<number, string>();
     const anyPlanks = L.terrain.includes(T.PLANKS);
+    // A dungeon with water in it is a sewer: damp, mossy stone, with drains in the walls.
+    const sewer = !inside && L.terrain.includes(T.WATER);
+    const damp = sewer ? { tint: SEWER_TINT } : undefined;
     const floor = (i: number, x: number, y: number) => {
-      if (!inside) return put(tileHash(x, y, 2) < 0.2 ? variant('cobble', x, y) : variant('floor', x, y), i);
+      if (!inside) {
+        put(tileHash(x, y, 2) < 0.2 ? variant('cobble', x, y) : variant('floor', x, y), i, damp);
+        if (sewer && L.terrain[i] === T.CRYPT_FLOOR && !pieces.has(i) && tileHash(x, y, 11) < 0.14) put(variant('moss', x, y, 12), i);
+        return;
+      }
       const near = [at(x - 1, y), at(x, y - 1), at(x + 1, y), at(x, y + 1)].map((n) => (n < 0 ? -1 : L.terrain[n]));
       const t = L.terrain[i];
       const kindOf = t === T.PLANKS ? 'planks' : t === T.TOWN_FLOOR ? 'stone' : near.includes(T.PLANKS) || anyPlanks ? 'planks' : 'stone';
@@ -263,7 +282,12 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         const face = piece === 'e' || piece === 's';
         if (face && L.object[i] === O.BOOKSHELF) putFrom('indoor', `wall-${piece}-books`, i);
         else if (face && inside && tileHash(x, y, 4) < 0.2) putFrom('indoor', `wall-${piece}-hanging`, i);
-        else put(variant(face && !inside && tileHash(x, y, 4) < 0.12 ? `wall-${piece}-deco` : `wall-${piece}`, x, y, 5), i);
+        else {
+          put(variant(face && !inside && !sewer && tileHash(x, y, 4) < 0.12 ? `wall-${piece}-deco` : `wall-${piece}`, x, y, 5), i, damp);
+          if (sewer && face && tileHash(x, y, 13) < 0.2) put(`drain-${piece}`, i);
+        }
+      } else if (DECOR_ART[L.object[i]]) {
+        putFrom('world', DECOR_ART[L.object[i]]!, i);
       } else if (L.object[i] !== O.DOOR && INDOOR_ART[L.object[i]]) {
         putFrom('indoor', INDOOR_ART[L.object[i]]!, i);
       }
@@ -306,6 +330,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     if (TREES[o]) put(variant(TREES[o]!, x, y, 3), i);
     else if (o === O.BOULDER) put(variant('rock', x, y), i);
     else if (HERB_ART[o]) putFrom('world', HERB_ART[o]!.frame, i, { tint: HERB_ART[o]!.tint, scale: 1.3 });
+    else if (DECOR_ART[o]) put(DECOR_ART[o]!, i);
     else if (o === O.DOOR) {
       if (!inHouse(x, y)) put('door-timber-s', i);
     } else if (o !== O.SEWER_GRATE && ART_FOR[o]) put(ART_FOR[o]!, i);
@@ -325,7 +350,14 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     if (haveSheet(sheet)) {
       const [ax, ay] = g.center(b.y * w + b.x);
       const [bx, by] = g.center((b.y + b.h - 1) * w + b.x + b.w - 1);
-      drawAt(sheet, 'house', (ax + bx) / 2, (ay + by) / 2);
+      const cx = (ax + bx) / 2;
+      const cy = (ay + by) / 2;
+      drawAt(sheet, 'house', cx, cy);
+      // Its colours: the walls and the roof drawn again over it, tinted.
+      const walls = WALL_COLOURS.find((c) => c.value === b.walls)?.hex;
+      const roof = ROOF_COLOURS.find((c) => c.value === b.roof)?.hex;
+      if (walls) drawAt(sheet, 'walls', cx, cy, { tint: walls });
+      if (roof) drawAt(sheet, 'roof', cx, cy, { tint: roof });
     }
     for (let y = b.y; y < b.y + b.h; y++) {
       for (let x = b.x; x < b.x + b.w; x++) {
