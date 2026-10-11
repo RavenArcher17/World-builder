@@ -9,10 +9,12 @@ import { SCALES, getScale } from '../core/scales';
 import type { Placement, WorldMap } from '../core/types';
 import { gameMaps } from '../core/rpgdc/game';
 import { RPGDC_EXPORT_NAME } from '../core/rpgdc/export';
+import { is3d } from '../core/scene3d/options';
 import { createChildMap, suggestSize, suggestZoom } from '../core/zoom';
 import type { App } from './app';
 import { downloadCanvas, downloadText, h, settingsForm, showDialog, slug, toast } from './dom';
 import { exportRpgdc, gameExportSummary, openCheckDialog } from './gameUi';
+import { export3dModel } from './map3dUi';
 import { DEFAULT_VIEW, baseUnitPx, renderMapCanvas, renderTileset, safeScale } from './render';
 
 function gridSelect(value: string, includeKeep = false): HTMLSelectElement {
@@ -106,6 +108,10 @@ export function openExportDialog(app: App, map: WorldMap): void {
     ['csv', 'CSV tile grid + legend'],
     ['project', 'Whole project (.world.json)'],
   ]) format.append(h('option', { value: v }, l));
+  if (is3d(map)) {
+    format.append(h('option', { value: 'glb' }, '3D model (.glb for Godot, Unity, Blender)'));
+    void import('../core/scene3d/glb');
+  }
   const grid = gridSelect('', true);
   const w = h('input', { type: 'number', min: 8, max: 512, placeholder: 'auto' });
   const hh = h('input', { type: 'number', min: 8, max: 512, placeholder: 'auto' });
@@ -134,6 +140,8 @@ export function openExportDialog(app: App, map: WorldMap): void {
     note.textContent =
       format.value === 'rpgdc'
         ? `Every RPG-DC map in the project in one file for the game (format: docs/rpgdc-export.md). ${gameExportSummary(app)}`
+        : format.value === 'glb'
+        ? 'The map in 3D, in metres (see the 3D options in the Map panel). Ground, walls and objects get collision when Godot imports it; places are named marker nodes carrying their data.'
         : format.value === 'tiled'
         ? 'Opens in the Tiled editor and imports into Godot, Unity (SuperTiled2Unity), GameMaker, Phaser, Defold and more. Roads, rivers and places are object layers.'
         : format.value === 'json'
@@ -184,6 +192,9 @@ export function openExportDialog(app: App, map: WorldMap): void {
             await downloadCanvas(img, renderTileset(out.grid));
             break;
           }
+          case 'glb':
+            await export3dModel(out);
+            return;
           case 'csv':
             downloadText(`${base}.csv`, toCsv(out), 'text/csv');
             downloadText('legend.csv', legendCsv(), 'text/csv');
@@ -360,6 +371,7 @@ export function openHelpDialog(): void {
         li('Edit', 'Paint terrain, roads and rivers; Place, drag, rename and annotate places. Ctrl+Z undoes anything.'),
         li('Stitch', 'combine several maps onto a larger board, fill the gaps and connect them with roads.'),
         li('Export', 'PNG, Tiled (.tmj + tileset), game JSON or CSV — optionally converting hex ↔ square ↔ isometric.'),
+        li('3D', 'tick “3D map” in the Map panel to view the map in 3D and export it as a 3D model (.glb) for Godot, Unity or Blender. Maps without it stay plain 2D.'),
       ),
       h('h3', {}, 'RPG-DC maps'),
       h(

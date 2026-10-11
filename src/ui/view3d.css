@@ -1,0 +1,68 @@
+/* The 3D view sits over the 2D map area while it is open. */
+.view3d {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #0e1014;
+}
+.view3d-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.view3d-bar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 6px;
+}
+.view3d-bar button {
+  min-height: 44px;
+  min-width: 44px;
+  background: rgba(29, 34, 43, 0.88);
+}
+.view3d-hint {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(20, 23, 29, 0.75);
+  pointer-events: none;
+}
+.view3d-loading {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 16px;
+  pointer-events: none;
+}
+.view3d.busy .view3d-loading {
+  display: flex;
+}
+.canvas-wrap.is-3d .zoom-buttons,
+.canvas-wrap.is-3d .pick-banner {
+  display: none;
+}
+.map3d-panel {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+.map3d-panel .cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.map3d-panel .cols label:first-child:nth-last-child(3) {
+  grid-column: 1 / -1;
+}

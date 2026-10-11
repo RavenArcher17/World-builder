@@ -49,6 +49,7 @@ preview links) must be added under Authentication → Settings → Authorised do
 | **Zoom in / detail map** | Drag a box → **Zoom in**. Overland children inherit the parent's coastline, elevation, climate, rivers, roads and named places and add finer detail. Select a town, castle or ruin and you get a street-level layout (walls, gates, keep, market, temple, taverns, docks, farmland — taking river / coast / surroundings from the parent). Select a dungeon, cave, lair or mine for a room-and-corridor or cavern level. Maps link both ways: the **Atlas** shows the hierarchy, and you double-click an outlined region (or a place with a gold dot) to open it. |
 | **Edit** | Paint terrain / roads / rivers, place, drag, rename and annotate places. Full undo/redo. |
 | **Stitch** | **Stitch maps** places several maps on one bigger board (auto-arrange or exact offsets), fills the gaps with blended terrain and joins settlements with roads. Maps on other grids are converted automatically. |
+| **3D** | Tick **🧊 3D map** in the Map panel to see the map in 3D (turn, move and zoom by touch or mouse) and export it as a **3D model (.glb)** for Godot, Unity or Blender: ground, walls, buildings, objects, water and roads in metres, with collision set up for Godot and marker nodes carrying each place's data. Smooth hills or stepped blocks. Maps without it stay 2D. See [`docs/3d-export.md`](docs/3d-export.md). |
 | **Export** | PNG image, **Tiled** map (`.tmj` + generated tileset PNG; opens in Tiled and imports into Godot, Unity via SuperTiled2Unity, GameMaker, Phaser, Defold…), **game JSON**, or **CSV**. Any map can be converted to another grid on export (e.g. hex → square tiles). |
 
 Projects autosave in the browser; **Save** downloads a `.world.json` you can re-open anywhere.
@@ -109,6 +110,9 @@ isometric map with a `terrain` tile layer, `rivers` and `roads` polyline object 
 
 **CSV** — one line of tile ids per row, plus `legend.csv`.
 
+**3D model** (`*.glb`, maps with 3D on) — binary glTF 2.0 with vertex colours, Godot collision
+names and marker nodes; documented in [`docs/3d-export.md`](docs/3d-export.md).
+
 ### Grid conventions
 
 | Grid | Storage | Neighbour directions |
@@ -132,12 +136,13 @@ src/core/            pure TypeScript, no DOM — usable from Node scripts too
   objects.ts         object layer registry (ids are stable — append only)
   brushes.ts         grove and ore-cluster brushes
   rpgdc/             RPG-DC game mode: rules, migration, checks, export
+  scene3d/           3D option: map → 3D scene (meshes + markers), .glb writer
 src/cloud/           Firebase config, Google sign-in, Firestore project storage (lazy-loaded)
   tiles.ts           shared tile registry (ids are stable — append only)
   features.ts        place types and icons
   scales.ts          scale presets
   settings.ts        generator options (the UI forms are built from these schemas)
-src/ui/              canvas renderer, editor, dialogs
+src/ui/              canvas renderer, editor, dialogs; map3dUi.ts and view3d.ts (three.js, lazy-loaded)
 tests/               vitest suite
 ```
 

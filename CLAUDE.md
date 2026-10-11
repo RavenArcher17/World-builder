@@ -29,6 +29,10 @@ npm run build
   RPG-DC's key is `settings.rpgdcMapId`; its code is in `src/core/rpgdc/` and `src/ui/gameUi.ts`.
   Maps without the key behave as plain World Builder maps. Another game would get its own key,
   module, export and doc in the same way.
+- 3D is the same kind of opt-in, but for any map: `settings.map3d` switches it on (Map panel →
+  🧊 3D map). Its code is `src/core/scene3d/` (map → meshes and markers, the `.glb` writer),
+  `src/ui/map3dUi.ts` and the lazily loaded `src/ui/view3d.ts` (three.js); the export is
+  documented in `docs/3d-export.md`. Maps without the key show only the switch and load none of it.
 - Projects are saved in each user's browser and in Firestore, not in this repo. When the meaning of
   saved data changes, upgrade it when the project opens, once, behind a version kept in the map's
   settings (see `PLACES_VERSION` in `src/core/rpgdc/migrate.ts`).

@@ -22,6 +22,7 @@ import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } f
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
 import { artBase, gameArtReady, loadGameArt, onGameArtChange } from './gameArt';
 import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectLegendEntries } from './gameUi';
+import { map3dPanel, sync3d } from './map3dUi';
 import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
 
 type Tool = 'select' | 'pan' | 'paint' | 'feature';
@@ -786,6 +787,7 @@ export class App {
       if (active?.closest('.panel')) active.blur();
       byId('empty-state').style.display = this.map ? 'none' : 'flex';
       this.refreshAtlas();
+      sync3d(this);
       this.refreshMapInfo();
       this.refreshSelection();
       this.refreshFeature();
@@ -882,6 +884,7 @@ export class App {
         ),
       ),
       isRpgdc(map) ? gameMapPanel(this, map) : '',
+      map3dPanel(this, map),
     );
   }
 
