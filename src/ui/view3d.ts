@@ -10,6 +10,8 @@ import { linearColors } from '../core/scene3d/mesh';
 export interface View3d {
   show(scene: Scene3D): void;
   reset(): void;
+  /** Show or hide roofs and ceilings (hidden, you can see into buildings and dungeons). */
+  setRoofs(visible: boolean): void;
   dispose(): void;
 }
 
@@ -44,6 +46,7 @@ export function createView3d(host: HTMLElement): View3d {
   scene.add(content);
   let home: { target: THREE.Vector3; position: THREE.Vector3 } | null = null;
   let dirty = true;
+  let roofs = false;
   controls.addEventListener('change', () => (dirty = true));
 
   const resize = () => {
@@ -102,6 +105,8 @@ export function createView3d(host: HTMLElement): View3d {
         const mesh = new THREE.Mesh(geo, mat);
         mesh.name = part.name;
         if (water) mesh.renderOrder = 1;
+        if (part.kind === 'roofs') mesh.visible = roofs;
+        mesh.userData.kind = part.kind;
         content.add(mesh);
       }
       const [x0, y0, z0] = s.bounds.min;
@@ -124,6 +129,11 @@ export function createView3d(host: HTMLElement): View3d {
       const angle = 0.85; // radians above the horizon
       home = { target, position: new THREE.Vector3(target.x, target.y + dist * Math.sin(angle), target.z + dist * Math.cos(angle)) };
       this.reset();
+    },
+    setRoofs(visible: boolean) {
+      roofs = visible;
+      for (const child of content.children) if (child.userData.kind === 'roofs') child.visible = visible;
+      dirty = true;
     },
     reset() {
       if (!home) return;

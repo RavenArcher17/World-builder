@@ -1,4 +1,5 @@
 import { migrateRpgdcProject } from './rpgdc/migrate';
+import { sanitize3d } from './scene3d/storeys';
 import { emptyLayers, MapLayers, Project, WorldMap, newId } from './types';
 
 export function createProject(name = 'My World'): Project {
@@ -63,6 +64,7 @@ export function parseProjectReport(text: string): { project: Project; migrated: 
     m.features = m.features ?? [];
     m.children = (m.children ?? []).filter((c) => c in project.maps);
     m.settings = m.settings ?? {};
+    sanitize3d(m);
   }
   const migrated = migrateRpgdcProject(project);
   return { project, migrated };

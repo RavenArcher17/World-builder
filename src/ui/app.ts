@@ -23,10 +23,13 @@ import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
 import { artBase, gameArtReady, loadGameArt, onGameArtChange } from './gameArt';
 import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectLegendEntries } from './gameUi';
 import { map3dPanel, sync3d } from './map3dUi';
+import { afterTilePaint, draw3dOverlay, is3dMode, modeOptions3d, paint3dAt, paint3dOptions, roomButton, status3d } from './build3dUi';
+import { is3d } from '../core/scene3d/options';
+import { storeyLayers, storeyNumbers, storeyView } from '../core/scene3d/storeys';
 import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
 
 type Tool = 'select' | 'pan' | 'paint' | 'feature';
-type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines' | 'object' | 'grove' | 'ore' | 'zone';
+type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines' | 'object' | 'grove' | 'ore' | 'zone' | 'height' | 'roof' | 'turn' | 'prop';
 const GAME_PAINT_MODES: PaintMode[] = ['tile', 'object', 'grove', 'ore', 'zone'];
 const GENERIC_PAINT_MODES: PaintMode[] = ['tile', 'road', 'river', 'erase-lines', 'object'];
 /** Objects that clear away when a path, floor or water is painted over them. */
@@ -69,6 +72,8 @@ export class App {
   groveObject: number = O.TREE;
   oreObject: number = O.COPPER_ROCK;
   paintZone = 1;
+  /** Storey of a 3D map being edited (0 = the ground storey). */
+  storey = 0;
   /** Choosing the arrival tile of a stairs link: the link lives on `sourceId`, the tile on `targetId`. */
   private pick: { sourceId: string; featureId: string; targetId: string } | null = null;
   /** A tile to highlight after jumping to a problem from the checks. */
@@ -349,6 +354,7 @@ export class App {
   openMap(id: string, fit = true): void {
     if (!this.project.maps[id]) return;
     if (this.pick && id !== this.pick.targetId) this.cancelPick();
+    if (id !== this.currentId) this.storey = 0;
     this.currentId = id;
     this.selection = null;
     this.selectedFeature = null;
@@ -642,7 +648,7 @@ export class App {
       if (this.paintTile < T.GRASS) this.paintTile = T.GRASS;
       if (!(PLACE_TYPES as readonly string[]).includes(this.featureType)) this.featureType = 'monster_spawn';
     } else {
-      if (!GENERIC_PAINT_MODES.includes(this.paintMode)) this.paintMode = 'tile';
+      if (!GENERIC_PAINT_MODES.includes(this.paintMode) && !(is3d(map) && is3dMode(this.paintMode))) this.paintMode = 'tile';
       if (featureDef(this.featureType).scope === 'game') this.featureType = 'village';
     }
     if (tool === 'paint' && game && map) {
@@ -655,6 +661,7 @@ export class App {
         ['road', 'Road'],
         ['river', 'River'],
         ['erase-lines', 'Erase roads/rivers'],
+        ...(is3d(map) ? modeOptions3d() : []),
       ]) mode.append(h('option', { value: v }, l));
       mode.value = this.paintMode;
       mode.onchange = () => this.setPaint({ paintMode: mode.value as PaintMode });
@@ -685,7 +692,8 @@ export class App {
         lv.onchange = () => (this.roadLevel = Number(lv.value));
         opts.append(lv);
       }
-      if (this.paintMode === 'tile' || this.paintMode === 'erase-lines' || this.paintMode === 'object') {
+      if (is3d(map)) opts.append(...paint3dOptions(this, this.paintMode, this.paintTile));
+      if (this.paintMode === 'tile' || this.paintMode === 'erase-lines' || this.paintMode === 'object' || this.paintMode === 'height' || this.paintMode === 'roof' || this.paintMode === 'prop') {
         const br = h('select', { title: 'Brush size', 'aria-label': 'Brush size' });
         for (const v of [0, 1, 2, 3]) br.append(h('option', { value: v }, `Brush ${v + 1}`));
         br.value = String(this.brush);
@@ -720,6 +728,16 @@ export class App {
   setPlaceType(type: string): void {
     this.featureType = type;
     this.setTool('feature');
+  }
+
+  /** Edit another storey of a 3D map. */
+  setStorey(z: number): void {
+    const map = this.map;
+    this.storey = map && storeyNumbers(map).includes(z) ? z : 0;
+    this.selectedFeature = null;
+    this.cache = null;
+    this.refreshPanels();
+    this.draw();
   }
 
   /** Draw game maps with the game's own art, loading it from the game server the first time. */
@@ -911,6 +929,7 @@ export class App {
         { class: 'btn-row' },
         h('button', { class: 'primary', title: 'Generate a detailed child map of this area', onclick: () => openZoomDialog(this, map, sel) }, '🔍 Zoom in / detail map'),
         isRpgdc(map) ? '' : h('button', { title: 'Regenerate just this area with a new seed, keeping the rest', onclick: () => this.rerollSelection() }, '🎲 Re-roll area'),
+        is3d(map) ? roomButton(this, map, sel) : '',
         h(
           'button',
           {
@@ -1100,7 +1119,7 @@ export class App {
 
   private ensureCache(map: WorldMap): void {
     const v = this.view;
-    const key = `${map.id}:${this.version}:${v.grid}:${v.hillshade}:${v.rivers}:${v.roads}:${v.objects}:${v.zones}:${v.gameArt && gameArtReady()}`;
+    const key = `${map.id}:${this.storey}:${this.version}:${v.grid}:${v.hillshade}:${v.rivers}:${v.roads}:${v.objects}:${v.zones}:${v.gameArt && gameArtReady()}`;
     const wanted = safeScale(map, Math.min(48, Math.max(baseUnitPx(map.grid), this.scale)));
     if (this.cache && this.cache.key === key) {
       if (wanted > this.cache.s * 1.4 || wanted < this.cache.s / 3) {
@@ -1112,7 +1131,23 @@ export class App {
       }
       return;
     }
-    this.cache = { canvas: renderMapCanvas(map, wanted, this.view), s: wanted, key };
+    this.cache = { canvas: this.renderStorey(map, wanted), s: wanted, key };
+  }
+
+  /** The map image for the storey being edited; on an upper or lower storey the one below shows through, dimmed. */
+  private renderStorey(map: WorldMap, s: number): HTMLCanvasElement {
+    const zs = storeyNumbers(map);
+    if (zs.length < 2) return renderMapCanvas(map, s, this.view);
+    const k = zs.indexOf(this.storey);
+    const top = renderMapCanvas(storeyView(map, this.storey), s, this.view, false, false);
+    const out = renderMapCanvas(k > 0 ? storeyView(map, zs[k - 1]) : storeyView(map, this.storey), s, this.view, false, true);
+    const ctx = out.getContext('2d')!;
+    if (k > 0) {
+      ctx.fillStyle = 'rgba(14,16,20,0.68)';
+      ctx.fillRect(0, 0, out.width, out.height);
+    }
+    ctx.drawImage(top, 0, 0);
+    return out;
   }
 
   draw(): void {
@@ -1195,7 +1230,8 @@ export class App {
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
-    drawFeatures(ctx, map, this.scale, this.ox, this.oy, this.view, this.selectedFeature);
+    if (is3d(map)) draw3dOverlay(ctx, this, map, this.storey);
+    drawFeatures(ctx, storeyView(map, this.storey), this.scale, this.ox, this.oy, this.view, this.selectedFeature);
   }
 
   private pathScreen(pts: [number, number][]): void {
@@ -1282,7 +1318,7 @@ export class App {
         this.drag = d;
         this.paintAt(map, g, cell, -1, d);
       } else if (this.tool === 'feature') {
-        const existing = featureAt(map, g, cell);
+        const existing = featureAt(storeyView(map, this.storey), g, cell);
         this.pushUndo();
         if (existing) {
           this.selectFeature(existing.id);
@@ -1380,7 +1416,7 @@ export class App {
           // A tap or click: inspect the place under it; a double tap opens its detail map.
           const g = new Grid(map.grid, map.width, map.height);
           const cell = g.idx(s.c0, s.r0);
-          const f = featureAt(map, g, cell);
+          const f = featureAt(storeyView(map, this.storey), g, cell);
           this.selection = null;
           this.selectedFeature = f?.id ?? null;
           this.flash = null;
@@ -1492,6 +1528,7 @@ export class App {
       name: game ? featureDef(type).label : featureName(new Rng(randomSeed()), type) || featureDef(type).label,
       c: g.col(cell),
       r: g.row(cell),
+      ...(this.storey && { z: this.storey }),
     };
     const props = game ? defaultProps(type) : undefined;
     if (props) f.props = props;
@@ -1502,9 +1539,12 @@ export class App {
   }
 
   private paintAt(map: WorldMap, g: Grid, cell: number, last: number, d: { buildingId: number; stamp: number }): void {
-    const L = map.layers;
+    const L = storeyLayers(map, this.storey);
     const game = isRpgdc(map);
-    if (this.paintMode === 'tile') {
+    if (is3dMode(this.paintMode)) {
+      paint3dAt(map, this.storey, this.paintMode, this.paintMode === 'turn' ? [cell] : this.brushCells(g, cell), last < 0, d);
+    } else if (this.paintMode === 'tile') {
+      if (is3d(map)) afterTilePaint(map, this.storey, this.brushCells(g, cell), this.paintTile);
       for (const i of this.brushCells(g, cell)) {
         L.terrain[i] = this.paintTile;
         L.building[i] = this.paintTile === T.BUILDING || this.paintTile === T.KEEP ? d.buildingId : 0;
@@ -1514,7 +1554,7 @@ export class App {
           if (o && NATURE_GROUPS.has(o.group)) L.object[i] = 0;
         }
         const e = PAINT_ELEVATION[this.paintTile];
-        if (map.kind === 'overland' && !game) {
+        if (map.kind === 'overland' && !game && this.storey === 0) {
           if (e !== undefined) L.elevation[i] = e;
           else if (L.elevation[i] < SEA_LEVEL && !tile(this.paintTile).category.includes('water')) L.elevation[i] = SEA_LEVEL + 0.03;
         }
@@ -1557,7 +1597,7 @@ export class App {
       el.textContent = `${map.name} · zoom ${Math.round(this.scale * 10)}%`;
       return;
     }
-    const L = map.layers;
+    const L = storeyLayers(map, this.storey);
     const parts = [`col ${g.col(cell)}, row ${g.row(cell)}`, tile(L.terrain[cell]).name];
     if (map.kind === 'overland' && !isRpgdc(map)) parts.push(`elev ${L.elevation[cell].toFixed(2)}`, `moist ${L.moisture[cell].toFixed(2)}`, `temp ${L.temperature[cell].toFixed(2)}`);
     if (L.river[cell]) parts.push('river');
@@ -1571,7 +1611,8 @@ export class App {
     } else if (L.zone[cell]) {
       parts.push(`zone ${L.zone[cell]}`);
     }
-    const f = featureAt(map, g, cell);
+    if (is3d(map)) parts.push(...status3d(map, this.storey, cell));
+    const f = featureAt(storeyView(map, this.storey), g, cell);
     if (f) parts.push(`${featureDef(f.type).icon} ${f.name}`);
     el.textContent = parts.join(' · ');
   }

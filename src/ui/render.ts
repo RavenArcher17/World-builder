@@ -111,6 +111,8 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
     return;
   }
   for (let i = 0; i < g.size; i++) {
+    // "Nothing" (3D maps' open air) is left clear, so a storey below can show through.
+    if (L.terrain[i] === T.VOID) continue;
     const c = cellColor(map, g, i, view.hillshade);
     polygon(ctx, g.corners(i), s);
     ctx.fillStyle = c;
@@ -228,15 +230,17 @@ function drawGridLines(ctx: CanvasRenderingContext2D, g: Grid, s: number): void 
 }
 
 /** Render a whole map to a new canvas (used for the viewport cache and PNG export). */
-export function renderMapCanvas(map: WorldMap, s: number, view: ViewOptions, withFeatures = false): HTMLCanvasElement {
+export function renderMapCanvas(map: WorldMap, s: number, view: ViewOptions, withFeatures = false, background = true): HTMLCanvasElement {
   const g = new Grid(map.grid, map.width, map.height);
   const b = g.renderBounds();
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(b.w * s);
   canvas.height = Math.ceil(b.h * s);
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#1b1f27';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (background) {
+    ctx.fillStyle = '#1b1f27';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
   drawBase(ctx, map, s, view);
   if (withFeatures) drawFeatures(ctx, map, s, 0, 0, view, null);
   return canvas;

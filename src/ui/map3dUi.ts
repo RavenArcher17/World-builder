@@ -6,6 +6,7 @@
 import { MAP3D_KEYS, RELIEF_RANGE, TILE_RANGE, WALL_RANGE, is3d, options3d, set3d } from '../core/scene3d/options';
 import type { WorldMap } from '../core/types';
 import type { App } from './app';
+import { storeyControls, storeyPanel } from './build3dUi';
 import { byId, downloadBlob, h, slug, toast } from './dom';
 import type { View3d } from './view3d';
 import './view3d.css';
@@ -68,6 +69,7 @@ export function map3dPanel(app: App, map: WorldMap): HTMLElement {
       h('button', { class: 'primary', onclick: () => (open?.map === map ? close3d(app) : void show3d(app, map)) }, open?.map === map ? '🗺️ Back to 2D' : '🧊 View in 3D'),
       h('button', { onclick: () => void export3dModel(map) }, '⬇ 3D model (.glb)'),
     ),
+    storeyPanel(app, map),
   );
   return box;
 }
@@ -85,6 +87,7 @@ export function sync3d(app: App): void {
   btn.style.display = is3d(map) ? '' : 'none';
   btn.classList.toggle('active', !!open);
   btn.onclick = () => (open ? close3d(app) : map && void show3d(app, map));
+  storeyControls(app, is3d(map) ? map : null);
 }
 
 export async function show3d(app: App, map: WorldMap): Promise<void> {
@@ -97,6 +100,20 @@ export async function show3d(app: App, map: WorldMap): Promise<void> {
       { class: 'view3d-bar' },
       h('button', { onclick: () => close3d(app) }, '🗺️ 2D'),
       h('button', { title: 'Back to the starting view', onclick: () => open?.view?.reset() }, '⟲'),
+      h(
+        'button',
+        {
+          class: 'roofs-toggle',
+          title: 'Show or hide roofs and ceilings',
+          onclick: (e: Event) => {
+            const b = e.currentTarget as HTMLButtonElement;
+            const on = !b.classList.contains('active');
+            b.classList.toggle('active', on);
+            open?.view?.setRoofs(on);
+          },
+        },
+        '🏠',
+      ),
       h('button', { onclick: () => open && void export3dModel(open.map) }, '⬇ .glb'),
     );
     host.append(bar, h('div', { class: 'view3d-hint' }, 'Drag to turn · two fingers to move and zoom'), h('div', { class: 'view3d-loading' }, 'Building 3D…'));
@@ -114,6 +131,7 @@ export async function show3d(app: App, map: WorldMap): Promise<void> {
     const scene = buildScene(map);
     open.view ??= createView3d(open.host);
     open.view.show(scene);
+    open.host.querySelector('.roofs-toggle')?.toggleAttribute('hidden', !scene.parts.some((p) => p.kind === 'roofs'));
   } catch (e) {
     toast(`Couldn't show 3D: ${(e as Error).message}`);
     close3d(app);

@@ -67,6 +67,8 @@ export const T = {
   CRYPT_FLOOR: 41,
   CRYPT_WALL: 42,
   PLANKS: 43,
+  // 3D maps: no floor here (the upper storeys' default, stairwells, open drops).
+  VOID: 44,
 } as const;
 
 const def = (
@@ -125,6 +127,7 @@ export const TILES: TileDef[] = [
   def(T.CRYPT_FLOOR, 'crypt_floor', 'Crypt floor', '#8f877a', 'dungeon', true, 1, 'flags'),
   def(T.CRYPT_WALL, 'crypt_wall', 'Crypt wall', '#3b3640', 'dungeon', false, Infinity, 'bricks'),
   def(T.PLANKS, 'planks', 'Wooden floor', '#a8794a', 'urban', true, 0.5, 'boards'),
+  def(T.VOID, 'void', 'Nothing (open air)', '#0b0c10', 'dungeon', false, Infinity),
 ];
 
 export function tile(id: number): TileDef {

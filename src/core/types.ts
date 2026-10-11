@@ -17,6 +17,8 @@ export interface Feature {
   childMapId?: string;
   /** Typed fields for place types that define them (e.g. a monster spawn's kind and count). */
   props?: Record<string, string | number | boolean>;
+  /** Storey of a 3D map the place is on (absent = the ground storey, 0). */
+  z?: number;
 }
 
 /**
@@ -44,6 +46,38 @@ export interface MapLayers {
   object: number[];
   /** Rules zone per cell (0 = none; game maps use 1 safe, 2 frontier, 3 wilderness, 4 deep). */
   zone: number[];
+}
+
+/**
+ * Per-cell 3D data, kept only on maps with 3D on (see scene3d/). Row-major like MapLayers.
+ */
+export interface Layers3d {
+  /** Floor height in half metres above the storey's floor level (negative: a pit). */
+  height: number[];
+  /** 1 = covered (a roof or ceiling over it), 0 = open sky. */
+  roof: number[];
+  /** Which way the stairs or thing on the cell faces: 0 north, 1 east, 2 south, 3 west; -1 automatic. */
+  facing: number[];
+  /** A 3D prop standing on the cell (id in scene3d/props.ts, 0 = none). */
+  prop: number[];
+}
+
+/** A storey of a 3D map other than the ground storey (which is the map's own layers). */
+export interface Storey {
+  /** 1 is the storey above the ground storey, -1 the one below, … */
+  z: number;
+  layers: MapLayers;
+  layers3d: Layers3d;
+}
+
+/** A named area of a 3D map (a room), on one storey. */
+export interface Room {
+  name: string;
+  z: number;
+  c0: number;
+  r0: number;
+  c1: number;
+  r1: number;
 }
 
 export interface ParentLink {
@@ -79,6 +113,12 @@ export interface WorldMap extends MapSpec {
   parent?: ParentLink;
   children: string[];
   composedFrom?: Placement[];
+  /** 3D maps: heights, roofs, facing and props of the ground storey. */
+  layers3d?: Layers3d;
+  /** 3D maps: storeys above and below the ground storey. */
+  storeys?: Storey[];
+  /** 3D maps: named rooms. */
+  rooms?: Room[];
 }
 
 export interface Project {

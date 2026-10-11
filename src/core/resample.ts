@@ -4,7 +4,7 @@
  */
 import { Grid, GridType } from './grid';
 import { linkPath, linkedNeighbors, traceLine } from './links';
-import { WorldMap, emptyLayers, newId } from './types';
+import { type Layers3d, WorldMap, emptyLayers, newId } from './types';
 
 const S3 = Math.sqrt(3);
 
@@ -34,9 +34,11 @@ export function resampleMap(src: WorldMap, grid: GridType, width?: number, heigh
   const toDst = (x: number, y: number): [number, number] => [x / kx, y / ky];
   const S = src.layers;
   const D = emptyLayers(dg.size);
+  const from = new Int32Array(dg.size);
   for (let i = 0; i < dg.size; i++) {
     const [x, y] = dg.pos(i);
     const j = toSrc(x, y);
+    from[i] = j;
     D.terrain[i] = S.terrain[j];
     D.elevation[i] = S.elevation[j];
     D.moisture[i] = S.moisture[j];
@@ -69,6 +71,32 @@ export function resampleMap(src: WorldMap, grid: GridType, width?: number, heigh
     const k = dg.posToCellClamped(dx, dy);
     return { ...f, c: dg.col(k), r: dg.row(k) };
   });
+  // 3D maps: storeys, heights, roofs, facing and props follow the same cells; rooms their corners.
+  const pick = (a: number[]) => Array.from(from, (j) => a[j]);
+  const pick3d = (l: Layers3d): Layers3d => ({ height: pick(l.height), roof: pick(l.roof), facing: pick(l.facing), prop: pick(l.prop) });
+  /** The cell under a point just inside a source cell's corner (k = −1 top-left, +1 bottom-right). */
+  const cornerCell = (c: number, r: number, k: number) => {
+    const [x, y] = sg.posCR(c, r);
+    const [dx, dy] = toDst(x + k * 0.49, y + k * 0.49);
+    return dg.posToCellClamped(dx, dy);
+  };
+  const extra3d: Partial<WorldMap> = {
+    ...(src.layers3d && { layers3d: pick3d(src.layers3d) }),
+    ...(src.storeys && {
+      storeys: src.storeys.map((s) => ({
+        z: s.z,
+        layers: { ...emptyLayers(dg.size), terrain: pick(s.layers.terrain), object: pick(s.layers.object), building: pick(s.layers.building), zone: pick(s.layers.zone) },
+        layers3d: pick3d(s.layers3d),
+      })),
+    }),
+    ...(src.rooms && {
+      rooms: src.rooms.map((room) => {
+        const a = cornerCell(room.c0, room.r0, -1);
+        const b = cornerCell(room.c1, room.r1, 1);
+        return { ...room, c0: dg.col(a), r0: dg.row(a), c1: dg.col(b), r1: dg.row(b) };
+      }),
+    }),
+  };
   return {
     ...src,
     id: newId('map'),
@@ -79,5 +107,6 @@ export function resampleMap(src: WorldMap, grid: GridType, width?: number, heigh
     features,
     children: [],
     parent: undefined,
+    ...extra3d,
   };
 }

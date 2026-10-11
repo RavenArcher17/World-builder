@@ -33,6 +33,8 @@ npm run build
   🧊 3D map). Its code is `src/core/scene3d/` (map → meshes and markers, the `.glb` writer),
   `src/ui/map3dUi.ts` and the lazily loaded `src/ui/view3d.ts` (three.js); the export is
   documented in `docs/3d-export.md`. Maps without the key show only the switch and load none of it.
+  3D maps keep their extra data (`layers3d`, `storeys`, `rooms`, `feature.z`) only when used; the
+  3D props registry (`src/core/scene3d/props.ts`) is append-only like tiles and objects.
 - Projects are saved in each user's browser and in Firestore, not in this repo. When the meaning of
   saved data changes, upgrade it when the project opens, once, behind a version kept in the map's
   settings (see `PLACES_VERSION` in `src/core/rpgdc/migrate.ts`).

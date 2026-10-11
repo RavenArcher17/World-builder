@@ -15,8 +15,10 @@ import { T, isSea, isWater, tile } from '../tiles';
 import { SEA_LEVEL, type WorldMap } from '../types';
 import { MeshBuilder, type MeshData, type RGBA, type V3, cross, hash01, mix, rgba, shade } from './mesh';
 import { type Map3dOptions, options3d } from './options';
+import { type PropDef, propDef } from './props';
+import { FACING_STEP, facingAngle as angleOfFacing, featureStorey, storey3d, storeyLayers, storeyNumbers } from './storeys';
 
-export type PartKind = 'ground' | 'structures' | 'objects' | 'places' | 'roads' | 'water';
+export type PartKind = 'ground' | 'structures' | 'roofs' | 'objects' | 'places' | 'roads' | 'water';
 
 export interface ScenePart {
   /** Node name in the .glb ("-col" asks Godot to give it collision on import). */
@@ -121,6 +123,9 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
       }
     } else if (t === T.PIT) {
       ground[i] = base - 4;
+    } else if (t === T.VOID) {
+      // Nothing here: a hole down to the storey below (or the map's base).
+      ground[i] = base - 6;
     } else {
       ground[i] = base;
     }
@@ -140,6 +145,16 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
       soft[i] = Math.max(0, sum / n);
     }
     ground.set(soft);
+  }
+  // Heights set by hand (3D maps) raise or lower the ground in half metres.
+  const ext0 = map.layers3d;
+  if (ext0) {
+    for (let i = 0; i < N; i++) {
+      const dh = ext0.height[i] * 0.5;
+      if (!dh) continue;
+      ground[i] += dh;
+      if (!Number.isNaN(water[i])) water[i] += dh;
+    }
   }
   if (blocks) {
     for (let i = 0; i < N; i++) {
@@ -221,7 +236,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
       const side = mix(shade(top, 0.78), EARTH, 0.35);
       const p = polys[i];
       const y = ground[i];
-      groundMesh.face(p.map(([x, z]): V3 => [x * S, y, z * S]), top, [0, 1, 0]);
+      if (L.terrain[i] !== T.VOID) groundMesh.face(p.map(([x, z]): V3 => [x * S, y, z * S]), top, [0, 1, 0]);
       for (let k = 0; k < p.length; k++) {
         const n = across[i][k];
         const lower = n < 0 ? baseY : ground[n];
@@ -309,48 +324,8 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
 
   // ---- structures: walls, buildings, gates, bridges, stairs -----------------------------------
   const structMesh = new MeshBuilder();
-  const solidH = new Float64Array(N).fill(NaN);
-  const solidTop: RGBA[] = new Array(N);
-  const solidSide: RGBA[] = new Array(N);
-  const buildingCells = new Map<number, number[]>();
-  for (let i = 0; i < N; i++) {
-    const t = L.terrain[i];
-    switch (t) {
-      case T.ROCK:
-        solidH[i] = opts.wall;
-        solidTop[i] = rgba('#34323b');
-        solidSide[i] = STONE;
-        break;
-      case T.CRYPT_WALL:
-        solidH[i] = opts.wall;
-        solidTop[i] = rgba(tile(t).color);
-        solidSide[i] = rgba('#5c5462');
-        break;
-      case T.WALL:
-        solidH[i] = map.kind === 'dungeon' ? opts.wall : 6;
-        solidTop[i] = shade(rgba(tile(t).color), 1.15);
-        solidSide[i] = rgba('#8a8580');
-        break;
-      case T.KEEP:
-        solidH[i] = 14;
-        solidTop[i] = rgba(tile(t).color);
-        solidSide[i] = rgba('#9a9aa6');
-        break;
-      case T.BUILDING: {
-        const id = L.building[i] || i + 1;
-        const storeys = 1 + Math.floor(hash01(id * 7 + 3) * (hash01(id) < 0.15 ? 3 : 2));
-        solidH[i] = storeys * 3.2 + 0.4;
-        solidTop[i] = ROOF_PALETTE[Math.floor(hash01(id * 13) * ROOF_PALETTE.length)];
-        solidSide[i] = WALL_PALETTE[Math.floor(hash01(id * 5 + 1) * WALL_PALETTE.length)];
-        if (L.building[i]) {
-          const list = buildingCells.get(L.building[i]) ?? [];
-          list.push(i);
-          buildingCells.set(L.building[i], list);
-        }
-        break;
-      }
-    }
-  }
+  const roofMesh = new MeshBuilder();
+  const { h: solidH, top: solidTop, side: solidSide, buildings: buildingCells } = solidsOf(L, map.kind, opts.wall);
   const baseOf = (i: number) => (blocks ? ground[i] : Math.min(ground[i], ...cornerHeights(i)));
   const topOf = (i: number) => ground[i] + solidH[i];
   for (let i = 0; i < N; i++) {
@@ -396,6 +371,48 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
       structMesh.gable(((c0 + c1 + 1) / 2) * S, eaves, ((r0 + r1 + 1) / 2) * S, sx, sz, Math.min(sz * 0.45, 5), solidTop[cells[0]], along ? 0 : Math.PI / 2);
     }
   }
+
+  // ---- storeys (3D maps) ---------------------------------------------------------------------
+  const storeyH = opts.wall + 0.5;
+  const zs = storeyNumbers(map);
+  const levelBase = (z: number) => z * storeyH;
+  const levelSolids = new Map<number, Float64Array>([[0, solidH]]);
+  for (const z of zs) if (z !== 0) levelSolids.set(z, solidsOf(storeyLayers(map, z), 'dungeon', opts.wall).h);
+  /** Surface height of the floor on cell i of storey z, or null where there is no floor. */
+  const floorAt = (z: number, i: number): number | null => {
+    if (!zs.includes(z)) return null;
+    const t = storeyLayers(map, z).terrain[i];
+    if (t === T.VOID || !Number.isNaN(levelSolids.get(z)![i])) return null;
+    if (z === 0) return centreY(i);
+    return levelBase(z) + (storey3d(map, z)?.height[i] ?? 0) * 0.5;
+  };
+  /** Stairs on a square grid with a set facing climb towards the floor they point at (Underkeep's rule). */
+  const rampStairs = (z: number, i: number, facing: number, own: number, up: boolean) => {
+    const dir = up ? facing : (facing + 2) % 4;
+    const [dc, dr] = FACING_STEP[dir];
+    const c = g.col(i) + dc;
+    const r = g.row(i) + dr;
+    let high = own;
+    if (g.inBounds(c, r)) {
+      const j = g.idx(c, r);
+      const same = floorAt(z, j);
+      const above = same === null ? floorAt(z + 1, j) : null;
+      high = Math.max(own, same ?? above ?? own);
+    }
+    const ang = angleOfFacing(dir);
+    const [cx, cz] = centres[i];
+    const color = rgba('#a49c90');
+    const rise = high - own;
+    if (rise < 0.05) {
+      structMesh.box(cx * S, own, cz * S, S * 0.9, 0.08, S * 0.9, color, ang);
+      return;
+    }
+    const n = Math.max(2, Math.min(12, Math.round(rise / 0.25)));
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n - 0.5;
+      structMesh.box(cx * S + Math.cos(ang) * t * S, own, cz * S + Math.sin(ang) * t * S, S / n, (rise * (k + 1)) / n, S * 0.92, shade(color, 0.92 + 0.08 * (k % 2)), ang);
+    }
+  };
   for (let i = 0; i < N; i++) {
     const t = L.terrain[i];
     const p = polys[i].map(([x, z]): [number, number] => [x * S, z * S]);
@@ -409,8 +426,51 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
       const deck = Number.isNaN(water[i]) ? y : water[i];
       structMesh.prism(p, deck + 0.15, deck + 0.45, rgba(tile(t).color), shade(rgba(tile(t).color), 0.75));
     } else if (t === T.STAIRS_UP || t === T.STAIRS_DOWN) {
-      // Stairs climb towards the walls around them (the stairwell's back).
-      stairs(structMesh, centres[i], facingAngle(i, centres, across, solidH) + Math.PI, S, y, t === T.STAIRS_UP ? 1 : -1);
+      const f = ext0?.facing[i] ?? -1;
+      if (f >= 0 && !g.isHex) rampStairs(0, i, f, y, t === T.STAIRS_UP);
+      // Without a set facing, stairs climb towards the walls around them (the stairwell's back).
+      else stairs(structMesh, centres[i], facingAngle(i, centres, across, solidH) + Math.PI, S, y, t === T.STAIRS_UP ? 1 : -1);
+    }
+  }
+  // A storey under the ground needs the ground's underside as its ceiling.
+  if (zs[0] < 0) {
+    for (let i = 0; i < N; i++) {
+      if (L.terrain[i] === T.VOID) continue;
+      structMesh.face(polys[i].map(([x, z]): V3 => [x * S, -0.5, z * S]), rgba('#3a3630'), [0, -1, 0]);
+    }
+  }
+  // The other storeys: floor slabs, walls, stairs.
+  for (const z of zs) {
+    if (z === 0) continue;
+    const Lz = storeyLayers(map, z);
+    const Ez = storey3d(map, z)!;
+    const base = levelBase(z);
+    const sol = solidsOf(Lz, 'dungeon', opts.wall);
+    for (let i = 0; i < N; i++) {
+      const t = Lz.terrain[i];
+      if (t === T.VOID) continue;
+      const solid = !Number.isNaN(sol.h[i]);
+      const top = solid ? base + sol.h[i] : (floorAt(z, i) as number);
+      const nbTop = (n: number): number | null => {
+        if (n < 0 || Lz.terrain[n] === T.VOID) return null;
+        return Number.isNaN(sol.h[n]) ? (floorAt(z, n) as number) : base + sol.h[n];
+      };
+      column(structMesh, polys[i], centres[i], across[i], S, base - 0.5, top, solid ? sol.top[i] : colorOfTile(t, i), solid ? sol.side[i] : shade(colorOfTile(t, i), 0.75), nbTop, true);
+      if (!solid && (t === T.STAIRS_UP || t === T.STAIRS_DOWN) && Ez.facing[i] >= 0 && !g.isHex) rampStairs(z, i, Ez.facing[i], top, t === T.STAIRS_UP);
+    }
+  }
+  // Ceilings: a covered floor with nothing built over it gets a roof slab at the top of its storey.
+  for (const z of zs) {
+    const Ez = storey3d(map, z);
+    if (!Ez) continue;
+    const top = levelBase(z) + opts.wall;
+    for (let i = 0; i < N; i++) {
+      if (!Ez.roof[i] || floorAt(z, i) === null) continue;
+      if (zs.includes(z + 1) && storeyLayers(map, z + 1).terrain[i] !== T.VOID) continue;
+      const y = Math.max(top, (floorAt(z, i) as number) + 2.4);
+      const poly = polys[i].map(([x, zz]): [number, number] => [x * S, zz * S]);
+      roofMesh.prism(poly, y, y + 0.5, rgba('#5e5650'), rgba('#4e4842'));
+      roofMesh.face(poly.map(([x, zz]): V3 => [x, y, zz]), rgba('#3c3833'), [0, -1, 0]);
     }
   }
 
@@ -451,7 +511,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
     blocks ? 0.06 : 0.12,
   );
 
-  // ---- objects -------------------------------------------------------------------------------
+  // ---- objects and props ---------------------------------------------------------------------
   const objMesh = new MeshBuilder();
   const markers: SceneMarker[] = [];
   const names = new Map<string, number>();
@@ -461,27 +521,59 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
     names.set(clean, n);
     return n === 1 ? clean : `${clean} ${n}`;
   };
-  for (let i = 0; i < N; i++) {
-    const def = objectDef(L.object[i]);
-    if (!def) continue;
-    const [cx, cz] = centres[i];
-    const y = centreY(i);
-    const facing = facingAngle(i, centres, across, solidH);
-    objectModel(objMesh, def, cx * S, y, cz * S, S, i, facing, (dir) => {
-      // Fence rails run to neighbouring fences.
-      const out: [number, number][] = [];
-      for (const n of g.neighbors(i, !g.isHex ? false : true)) {
-        const nd = objectDef(L.object[n]);
-        if (nd && nd.group === dir) out.push([(centres[n][0] - cx) * S, (centres[n][1] - cz) * S]);
+  const storeyTag = (z: number) => (z ? { storey: z } : {});
+  for (const z of zs) {
+    const Lz = storeyLayers(map, z);
+    const Ez = storey3d(map, z);
+    const sol = levelSolids.get(z)!;
+    for (let i = 0; i < N; i++) {
+      const def = objectDef(Lz.object[i]);
+      const prop = Ez ? propDef(Ez.prop[i]) : undefined;
+      if (!def && !prop) continue;
+      const y = floorAt(z, i) ?? (z === 0 ? centreY(i) : levelBase(z));
+      const [cx, cz] = centres[i];
+      const set = Ez && Ez.facing[i] >= 0 ? Ez.facing[i] : -1;
+      const facing = set >= 0 ? angleOfFacing(set) : facingAngle(i, centres, across, sol);
+      if (def) {
+        objectModel(objMesh, def, cx * S, y, cz * S, S, i, facing, (dir) => {
+          // Fence rails run to neighbouring fences.
+          const out: [number, number][] = [];
+          for (const n of g.neighbors(i, !g.isHex ? false : true)) {
+            const nd = objectDef(Lz.object[n]);
+            if (nd && nd.group === dir) out.push([(centres[n][0] - cx) * S, (centres[n][1] - cz) * S]);
+          }
+          return out;
+        });
+        if (['station', 'fishing', 'stairs', 'door', 'herb'].includes(def.group)) {
+          markers.push({
+            name: uniqueName(`${def.key} ${g.col(i)},${g.row(i)}`),
+            position: [cx * S, y, cz * S],
+            data: { kind: 'object', key: def.key, id: def.id, name: def.name, group: def.group, col: g.col(i), row: g.row(i), ...storeyTag(z) },
+          });
+        }
       }
-      return out;
-    });
-    if (['station', 'fishing', 'stairs', 'door', 'herb'].includes(def.group)) {
-      markers.push({
-        name: uniqueName(`${def.key} ${g.col(i)},${g.row(i)}`),
-        position: [cx * S, y, cz * S],
-        data: { kind: 'object', key: def.key, id: def.id, name: def.name, group: def.group, col: g.col(i), row: g.row(i) },
-      });
+      if (prop) {
+        propModel(objMesh, prop, cx * S, y, cz * S, S, i, facing);
+        if (prop.group === 'light' || prop.group === 'loot' || prop.group === 'danger' || prop.light) {
+          markers.push({
+            name: uniqueName(`${prop.key} ${g.col(i)},${g.row(i)}`),
+            position: [cx * S, y, cz * S],
+            data: {
+              kind: 'prop',
+              key: prop.key,
+              id: prop.id,
+              name: prop.name,
+              group: prop.group,
+              col: g.col(i),
+              row: g.row(i),
+              ...storeyTag(z),
+              ...(set >= 0 && { facing: ['north', 'east', 'south', 'west'][set] }),
+              ...(prop.light && { lightRadius: prop.light }),
+              ...(prop.sanctuary && { sanctuary: true }),
+            },
+          });
+        }
+      }
     }
   }
 
@@ -490,10 +582,11 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
   for (const f of map.features) {
     if (!g.inBounds(f.c, f.r)) continue;
     const i = g.idx(f.c, f.r);
+    const z = featureStorey(f);
     const [cx, cz] = centres[i];
-    const y = centreY(i);
+    const y = floorAt(z, i) ?? (z === 0 ? centreY(i) : levelBase(z));
     const def = featureDef(f.type);
-    if (overland) placeModel(placeMesh, f.type, cx * S, y, cz * S, S, hashString(f.id));
+    if (overland && z === 0) placeModel(placeMesh, f.type, cx * S, y, cz * S, S, hashString(f.id));
     markers.push({
       name: uniqueName(f.name ? `${def.label}: ${f.name}` : def.label),
       position: [cx * S, y, cz * S],
@@ -505,11 +598,24 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
         name: f.name,
         col: f.c,
         row: f.r,
+        ...storeyTag(z),
         ...(f.tags?.length && { tags: f.tags }),
         ...(f.notes && { notes: f.notes }),
         ...(f.props && Object.keys(f.props).length && { props: f.props }),
         ...(f.childMapId && { detailMapId: f.childMapId }),
       },
+    });
+  }
+  // Named rooms: a marker at each room's middle carrying its outline.
+  for (const room of map.rooms ?? []) {
+    const c = clampInt((room.c0 + room.c1) / 2, 0, g.width - 1);
+    const r = clampInt((room.r0 + room.r1) / 2, 0, g.height - 1);
+    const i = g.idx(c, r);
+    const y = floorAt(room.z, i) ?? levelBase(room.z);
+    markers.push({
+      name: uniqueName(`Room: ${room.name}`),
+      position: [centres[i][0] * S, y, centres[i][1] * S],
+      data: { kind: 'room', name: room.name, storey: room.z, c0: room.c0, r0: room.r0, c1: room.c1, r1: room.r1 },
     });
   }
 
@@ -520,6 +626,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
   };
   add('Ground-col', 'ground', true, groundMesh);
   add('Structures-col', 'structures', true, structMesh);
+  add('Roofs-col', 'roofs', true, roofMesh);
   add('Objects-col', 'objects', true, objMesh);
   add('Places-col', 'places', true, placeMesh);
   add('Roads', 'roads', false, roadMesh);
@@ -661,6 +768,229 @@ function smoothGround(
       else out.tri(centre, ring[k], ring[k2]);
     }
   }
+}
+
+/** Height and colours of the solid things (walls, rock, buildings, the keep) on a storey's cells. */
+function solidsOf(L: { terrain: number[]; building: number[] }, kind: WorldMap['kind'], wall: number) {
+  const N = L.terrain.length;
+  const h = new Float64Array(N).fill(NaN);
+  const top: RGBA[] = new Array(N);
+  const side: RGBA[] = new Array(N);
+  const buildings = new Map<number, number[]>();
+  for (let i = 0; i < N; i++) {
+    const t = L.terrain[i];
+    switch (t) {
+      case T.ROCK:
+        h[i] = wall;
+        top[i] = rgba('#34323b');
+        side[i] = STONE;
+        break;
+      case T.CRYPT_WALL:
+        h[i] = wall;
+        top[i] = rgba(tile(t).color);
+        side[i] = rgba('#5c5462');
+        break;
+      case T.WALL:
+        h[i] = kind === 'dungeon' ? wall : 6;
+        top[i] = shade(rgba(tile(t).color), 1.15);
+        side[i] = rgba('#8a8580');
+        break;
+      case T.KEEP:
+        h[i] = 14;
+        top[i] = rgba(tile(t).color);
+        side[i] = rgba('#9a9aa6');
+        break;
+      case T.BUILDING: {
+        const id = L.building[i] || i + 1;
+        const storeys = 1 + Math.floor(hash01(id * 7 + 3) * (hash01(id) < 0.15 ? 3 : 2));
+        h[i] = storeys * 3.2 + 0.4;
+        top[i] = ROOF_PALETTE[Math.floor(hash01(id * 13) * ROOF_PALETTE.length)];
+        side[i] = WALL_PALETTE[Math.floor(hash01(id * 5 + 1) * WALL_PALETTE.length)];
+        if (L.building[i]) {
+          const list = buildings.get(L.building[i]) ?? [];
+          list.push(i);
+          buildings.set(L.building[i], list);
+        }
+        break;
+      }
+    }
+  }
+  return { h, top, side, buildings };
+}
+
+function colorOfTile(t: number, i: number): RGBA {
+  return shade(rgba(tile(t).color), 0.96 + 0.08 * hash01(i));
+}
+
+function clampInt(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, Math.round(v)));
+}
+
+/**
+ * A flat-topped column over a cell from y0 to y1: the top, the sides that show (where the
+ * neighbour's top is lower, or there is no neighbour), and optionally the underside.
+ */
+function column(
+  out: MeshBuilder,
+  poly: [number, number][],
+  centre: [number, number],
+  across: number[],
+  S: number,
+  y0: number,
+  y1: number,
+  top: RGBA,
+  side: RGBA,
+  nbTop: (n: number) => number | null,
+  bottom = false,
+): void {
+  out.face(poly.map(([x, z]): V3 => [x * S, y1, z * S]), top, [0, 1, 0]);
+  if (bottom) out.face(poly.map(([x, z]): V3 => [x * S, y0, z * S]), shade(side, 0.6), [0, -1, 0]);
+  for (let k = 0; k < poly.length; k++) {
+    const t = nbTop(across[k]);
+    const lower = t === null ? y0 : Math.max(y0, t);
+    if (lower >= y1 - 1e-6) continue;
+    const a = poly[k];
+    const b = poly[(k + 1) % poly.length];
+    out.face(
+      [[a[0] * S, lower, a[1] * S], [b[0] * S, lower, b[1] * S], [b[0] * S, y1, b[1] * S], [a[0] * S, y1, a[1] * S]],
+      side,
+      [(a[0] + b[0]) / 2 - centre[0], 0, (a[1] + b[1]) / 2 - centre[1]],
+    );
+  }
+}
+
+/** A primitive model for a 3D prop standing on (x, y, z), its front towards `facing`. */
+function propModel(out: MeshBuilder, def: PropDef, x: number, y: number, z: number, S: number, seed: number, facing: number): void {
+  const c = rgba(def.color);
+  const fx = Math.cos(facing);
+  const fz = Math.sin(facing);
+  // Wall things stand at the back of their cell, against the wall behind them.
+  const back = def.wall ? S * 0.38 : 0;
+  const bx = x - fx * back;
+  const bz = z - fz * back;
+  const turn = facing + Math.PI / 2;
+  const wood = rgba('#7a5a3a');
+  const stone = rgba('#8a857c');
+  const flame = rgba('#ffb040');
+  switch (def.key) {
+    case 'pillar':
+      out.cylinder(x, y, z, S * 0.22, S * 0.2, 4.2, 10, c);
+      return;
+    case 'statue':
+      out.box(x, y, z, 0.9, 0.5, 0.9, stone, turn);
+      out.cylinder(x, y + 0.5, z, 0.28, 0.22, 1.5, 8, c);
+      out.blob(x, y + 2.2, z, 0.22, 0.26, 0.22, c, seed);
+      return;
+    case 'rubble':
+      for (let k = 0; k < 4; k++) out.blob(x + (hash01(seed + k) - 0.5) * S * 0.5, y + 0.2, z + (hash01(seed + k * 7) - 0.5) * S * 0.5, 0.35, 0.25, 0.3, c, seed + k);
+      return;
+    case 'locked_door':
+      out.box(bx, y, bz, S * 0.9, 2.4, 0.18, c, turn);
+      out.box(bx + fx * 0.1, y + 1.1, bz + fz * 0.1, 0.18, 0.22, 0.06, rgba('#d8c060'), turn);
+      return;
+    case 'pew':
+      out.box(x, y, z, S * 0.8, 0.45, 0.45, c, turn);
+      out.box(x - fx * 0.2, y + 0.45, z - fz * 0.2, S * 0.8, 0.5, 0.08, c, turn);
+      return;
+    case 'chair':
+      out.box(x, y, z, 0.5, 0.45, 0.5, c, turn);
+      out.box(x - fx * 0.22, y + 0.45, z - fz * 0.22, 0.5, 0.55, 0.06, c, turn);
+      return;
+    case 'desk':
+      out.box(x, y, z, 1.2, 0.8, 0.6, c, turn);
+      out.cylinder(x + 0.3, y + 0.8, z, 0.04, 0.04, 0.2, 6, rgba('#f0e8c8'));
+      return;
+    case 'wardrobe':
+      out.box(bx, y, bz, 1.2, 2.1, 0.6, c, turn);
+      return;
+    case 'shelf':
+      out.box(bx, y, bz, 1.2, 1.8, 0.35, c, turn);
+      for (let k = 0; k < 3; k++) out.cylinder(bx + fx * 0.1 + (k - 1) * 0.3 * Math.cos(turn), y + 1.0, bz + fz * 0.1 + (k - 1) * 0.3 * Math.sin(turn), 0.08, 0.08, 0.2, 6, rgba('#9ac0b0'));
+      return;
+    case 'altar':
+      out.box(x, y, z, 1.6, 1.0, 0.8, c, turn);
+      out.cylinder(x - 0.5 * Math.cos(turn), y + 1.0, z - 0.5 * Math.sin(turn), 0.04, 0.04, 0.25, 6, rgba('#f8f0d8'));
+      out.cylinder(x + 0.5 * Math.cos(turn), y + 1.0, z + 0.5 * Math.sin(turn), 0.04, 0.04, 0.25, 6, rgba('#f8f0d8'));
+      return;
+    case 'rug':
+      out.box(x, y + 0.01, z, S * 0.8, 0.03, S * 0.6, c, turn);
+      return;
+    case 'banner':
+      out.box(bx, y + 1.4, bz, 0.8, 1.8, 0.05, c, turn);
+      return;
+    case 'training_dummy':
+      out.cylinder(x, y, z, 0.06, 0.06, 1.0, 6, wood);
+      out.cylinder(x, y + 1.0, z, 0.25, 0.2, 0.7, 8, c);
+      out.blob(x, y + 1.9, z, 0.18, 0.2, 0.18, c, seed);
+      return;
+    case 'gravestone':
+      out.box(x, y, z, 0.7, 1.0, 0.18, c, turn);
+      return;
+    case 'hay':
+      out.box(x - 0.3, y, z, 0.9, 0.5, 0.6, c, turn);
+      out.box(x + 0.3, y, z + 0.1, 0.9, 0.5, 0.6, c, turn + 0.4);
+      return;
+    case 'cauldron':
+      out.cylinder(x, y, z, 0.35, 0.45, 0.6, 10, c);
+      out.cylinder(x, y + 0.6, z, 0.38, 0.38, 0.02, 10, rgba('#6ab060'));
+      return;
+    case 'fountain':
+      out.cylinder(x, y, z, S * 0.42, S * 0.42, 0.5, 12, stone);
+      out.cylinder(x, y + 0.5, z, S * 0.36, S * 0.36, 0.02, 12, rgba('#5a9ac8'));
+      out.cylinder(x, y, z, 0.15, 0.12, 1.4, 8, stone);
+      return;
+    case 'great_bell':
+      out.cylinder(x, y + 1.0, z, 0.9, 0.45, 1.3, 12, c);
+      return;
+    case 'brazier':
+      out.cylinder(x, y, z, 0.12, 0.2, 0.9, 6, rgba('#4a4440'));
+      out.cylinder(x, y + 0.9, z, 0.25, 0.45, 0.3, 8, rgba('#4a4440'));
+      out.cylinder(x, y + 1.2, z, 0.3, 0, 0.5, 6, flame);
+      return;
+    case 'wall_torch':
+      out.box(bx, y + 1.8, bz, 0.1, 0.5, 0.1, wood, turn);
+      out.cylinder(bx + fx * 0.06, y + 2.3, bz + fz * 0.06, 0.1, 0, 0.3, 6, flame);
+      return;
+    case 'candelabra':
+      out.cylinder(x, y, z, 0.2, 0.05, 1.4, 6, rgba('#c8a040'));
+      for (let k = -1; k <= 1; k++) out.cylinder(x + k * 0.2 * Math.cos(turn), y + 1.4, z + k * 0.2 * Math.sin(turn), 0.035, 0.035, 0.25, 6, rgba('#f8f0d8'));
+      return;
+    case 'standing_torch':
+      out.cylinder(x, y, z, 0.06, 0.05, 2.2, 6, wood);
+      out.cylinder(x, y + 2.2, z, 0.14, 0, 0.4, 6, flame);
+      return;
+    case 'hearth':
+      out.box(bx, y, bz, S * 0.9, 1.4, 0.7, stone, turn);
+      out.box(bx + fx * 0.2, y + 0.1, bz + fz * 0.2, S * 0.5, 0.7, 0.4, rgba('#2a2420'), turn);
+      out.cylinder(bx + fx * 0.25, y + 0.1, bz + fz * 0.25, 0.25, 0, 0.5, 6, flame);
+      return;
+    case 'campfire':
+    case 'bonfire': {
+      const k = def.key === 'bonfire' ? 1.8 : 1;
+      for (let n = 0; n < 7; n++) {
+        const a = (n / 7) * Math.PI * 2;
+        out.blob(x + Math.cos(a) * 0.45 * k, y + 0.1, z + Math.sin(a) * 0.45 * k, 0.13 * k, 0.1 * k, 0.13 * k, stone, seed + n);
+      }
+      out.cylinder(x, y, z, 0.3 * k, 0, 0.8 * k, 6, flame);
+      return;
+    }
+    case 'chest':
+      out.box(x, y, z, 0.9, 0.55, 0.55, c, turn);
+      out.box(x, y + 0.55, z, 0.9, 0.15, 0.55, shade(c, 0.85), turn);
+      return;
+    case 'pots':
+      for (let k = 0; k < 3; k++) out.cylinder(x + (k - 1) * 0.35, y, z + (k % 2) * 0.25, 0.16, 0.12, 0.5, 8, c);
+      return;
+    case 'weapon_rack':
+      out.box(bx, y, bz, 1.4, 1.6, 0.3, wood, turn);
+      for (let k = -1; k <= 1; k++) out.box(bx + fx * 0.15 + k * 0.4 * Math.cos(turn), y + 0.3, bz + fz * 0.15 + k * 0.4 * Math.sin(turn), 0.06, 1.3, 0.06, c, turn);
+      return;
+    case 'spike_trap':
+      out.box(x, y + 0.01, z, S * 0.8, 0.05, S * 0.8, rgba('#3a3634'), turn);
+      for (let k = 0; k < 9; k++) out.cylinder(x + ((k % 3) - 1) * S * 0.22, y, z + (Math.floor(k / 3) - 1) * S * 0.22, 0.05, 0, 0.3, 4, c);
+      return;
+  }
+  out.box(x, y, z, 0.7, 0.9, 0.7, c, turn);
 }
 
 /** Which way a thing on cell i faces: towards open floor, away from the walls around it. */
