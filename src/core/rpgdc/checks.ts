@@ -3,6 +3,7 @@
  * Every issue names a tile so the editor can jump to it.
  */
 import { O, objectDef } from '../objects';
+import { T } from '../tiles';
 import type { Feature, Project, WorldMap } from '../types';
 import {
   BACK,
@@ -147,12 +148,27 @@ export function checkGameMaps(project: Project): GameIssue[] {
       }
     }
 
-    // Stations and fishing spots must be usable from a tile you can walk to.
+    // Stairs are drawn on the floor, so a wall just in front of them on screen (east, south or
+    // south-east), even a low one, hides them; the game's own tests refuse that.
+    if (gameKind(m) === 'dungeon') {
+      for (const f of linksOf(m)) {
+        for (const [dx, dy] of [[1, 0], [0, 1], [1, 1]]) {
+          const x = f.c + dx;
+          const y = f.r + dy;
+          if (x < w && y < m.height && L.terrain[y * w + x] === T.CRYPT_WALL) {
+            add('error', m, f.c, f.r, `The stairs ${at(f)} are hidden behind the wall at (${x}, ${y}): the game draws stairs on the floor, so a wall east, south or south-east of them covers them. Move the stairs or the wall.`);
+            break;
+          }
+        }
+      }
+    }
+
+    // Stations, altars and fishing spots must be usable from a tile you can walk to.
     const starts = m === overworld ? owSpawns.map((s) => ({ x: s.f.c, y: s.f.r })) : arrivals.get(m) ?? [];
     const reached = reachable(m, starts);
     for (let i = 0; i < L.object.length; i++) {
       const d = objectDef(L.object[i]);
-      if (!d || (d.group !== 'station' && d.group !== 'fishing')) continue;
+      if (!d || (d.group !== 'station' && d.group !== 'fishing' && d.group !== 'altar')) continue;
       const x = i % w;
       const y = Math.floor(i / w);
       const usable = NEIGHBOURS.some(([dx, dy]) => {
@@ -226,6 +242,29 @@ export function checkGameMaps(project: Project): GameIssue[] {
         }
         if (tree) add('warning', m, x, y, `${herb.name} (${x}, ${y}) is within 2 tiles of a tree, which hides it in the game.`);
       }
+    }
+
+    // Runecrafting altars and essence rocks (warnings): out of town, and not hidden by trees, which
+    // stand in front of them on screen and take the taps meant for them. Runite belongs in the Deep.
+    for (let i = 0; i < L.object.length; i++) {
+      const o = L.object[i];
+      const d = objectDef(o);
+      if (!d || (d.group !== 'altar' && o !== O.ESSENCE_ROCK && o !== O.RUNITE_ROCK)) continue;
+      const x = i % w;
+      const y = Math.floor(i / w);
+      const zone = zoneAt(m, i)?.key ?? '';
+      if (o === O.RUNITE_ROCK) {
+        if (zone !== 'deep') add('warning', m, x, y, `${d.name} (${x}, ${y}) is in the ${zone || 'no'} zone; the game keeps runite in the Deep.`);
+        continue;
+      }
+      if (d.group === 'altar' && zone === 'safe') add('warning', m, x, y, `${d.name} (${x}, ${y}) is in the Safe zone; altars stand out in the wild, the better runes further out.`);
+      let tree = false;
+      for (let dy = -2; dy <= 2 && !tree; dy++) for (let dx = -2; dx <= 2 && !tree; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        tree = nx >= 0 && ny >= 0 && nx < w && ny < m.height && TREES.has(L.object[ny * w + nx]);
+      }
+      if (tree) add('warning', m, x, y, `${d.name} (${x}, ${y}) is within 2 tiles of a tree, which can hide it in the game and take the taps meant for it.`);
     }
 
     // Town guards stand at the gates of the Safe zone; without a gate there are none.

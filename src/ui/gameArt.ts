@@ -118,10 +118,19 @@ const EDGE_NEIGHBOURS = [[-1, 0], [0, -1], [1, 0], [0, 1]] as const;
 type Ground = 'grass' | 'path' | 'floor' | 'water';
 const GROUND_OF: Partial<Record<number, Ground>> = { [T.PATH]: 'path', [T.WATER]: 'water', [T.TOWN_FLOOR]: 'floor', [T.CRYPT_FLOOR]: 'floor', [T.PLANKS]: 'floor' };
 const TREES: Partial<Record<number, string>> = { [O.TREE]: 'tree', [O.OAK]: 'oak', [O.WILLOW]: 'willow' };
-const ART_FOR: Partial<Record<number, string>> = {
+/** Ore rocks: Flare's boulder with veins, from the world sheet wherever they are (the caverns too). */
+const ORE_ART: Partial<Record<number, string>> = {
   [O.COPPER_ROCK]: 'ore-copper',
   [O.TIN_ROCK]: 'ore-tin',
   [O.IRON_ROCK]: 'ore-iron',
+  [O.GOLD_ROCK]: 'ore-gold',
+  [O.MITHRIL_ROCK]: 'ore-mithril',
+  [O.ADAMANT_ROCK]: 'ore-adamant',
+  [O.RUNITE_ROCK]: 'ore-runite',
+  [O.ESSENCE_ROCK]: 'ore-essence',
+};
+const ART_FOR: Partial<Record<number, string>> = {
+  ...ORE_ART,
   [O.BANK]: 'bank',
   [O.SHOP]: 'shop',
   [O.FURNACE]: 'furnace',
@@ -156,6 +165,14 @@ const DECOR_ART: Partial<Record<number, string>> = {
   [O.BENCH]: 'bench',
   [O.SIGNPOST]: 'signpost',
   [O.NOTICE_BOARD]: 'notice_board',
+  // Runecrafting altars, glowing in their rune's colour.
+  [O.AIR_ALTAR]: 'altar-air',
+  [O.MIND_ALTAR]: 'altar-mind',
+  [O.WATER_ALTAR]: 'altar-water',
+  [O.EARTH_ALTAR]: 'altar-earth',
+  [O.FIRE_ALTAR]: 'altar-fire',
+  [O.CHAOS_ALTAR]: 'altar-chaos',
+  [O.LAW_ALTAR]: 'altar-law',
 };
 /** Sewer stone is damp and greenish (the game tints it so). */
 const SEWER_TINT = '#c4cdb4';
@@ -294,6 +311,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         }
       } else if (DECOR_ART[L.object[i]]) {
         putFrom('world', DECOR_ART[L.object[i]]!, i);
+      } else if (ORE_ART[L.object[i]]) {
+        putFrom('world', ORE_ART[L.object[i]]!, i);
       } else if (L.object[i] !== O.DOOR && INDOOR_ART[L.object[i]]) {
         putFrom('indoor', INDOOR_ART[L.object[i]]!, i);
       }

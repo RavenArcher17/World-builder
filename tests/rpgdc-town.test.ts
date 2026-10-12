@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { O } from '../src/core/objects';
 import { checkGameMaps } from '../src/core/rpgdc/checks';
 import { toRpgdcMaps, type RpgdcMapsFile } from '../src/core/rpgdc/export';
-import { buildingMask, buildings, dungeonTheme, gameKind, guardPosts, isWalkableAt, mapTheme, OBJECT_LEGEND } from '../src/core/rpgdc/game';
+import { buildingMask, buildings, dungeonTheme, gameKind, guardPosts, isWalkableAt, mapTheme, OBJECT_LEGEND, ZONES } from '../src/core/rpgdc/game';
+import { T } from '../src/core/tiles';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import type { Project, WorldMap } from '../src/core/types';
 
@@ -67,6 +68,8 @@ describe('opening the game’s map file', () => {
       'door', 'sewer_grate', 'alchemy_table', 'sewing_table', 'fletching_bench',
       'counter', 'bookshelf', 'table', 'bed', 'barrel', 'crate', 'lectern',
       'well', 'lamp_post', 'market_stall', 'flower_bed', 'bench', 'signpost', 'notice_board',
+      'gold_rock', 'mithril_rock', 'adamant_rock', 'runite_rock',
+      'essence_rock', 'air_altar', 'mind_altar', 'water_altar', 'earth_altar', 'fire_altar', 'chaos_altar', 'law_altar',
     ]);
   });
 
@@ -183,5 +186,63 @@ describe('game checks for the town', () => {
       const m = byGameId(p, 'home1');
       m.width = 3;
     }).some((m) => /buildings' insides to be 4 to 32 tiles a side/.test(m))).toBe(true);
+  });
+});
+
+describe('the rarer ores and Runecrafting', () => {
+  const count = (m: WorldMap, id: number) => m.layers.object.filter((o) => o === id).length;
+  const where = (m: WorldMap, id: number) => {
+    const i = m.layers.object.indexOf(id);
+    return { i, x: i % m.width, y: Math.floor(i / m.width) };
+  };
+  const issues = (fn: (p: Project) => void) => {
+    const p = project();
+    fn(p);
+    return checkGameMaps(p);
+  };
+  const ALTARS = [O.AIR_ALTAR, O.MIND_ALTAR, O.WATER_ALTAR, O.EARTH_ALTAR, O.FIRE_ALTAR, O.CHAOS_ALTAR, O.LAW_ALTAR];
+
+  it('opens the rocks and altars the game placed', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    expect(count(world, O.ESSENCE_ROCK)).toBe(4);
+    for (const a of ALTARS) expect(count(world, a)).toBe(1);
+    expect(count(world, O.RUNITE_ROCK)).toBe(3);
+    expect(count(byGameId(p, 'caves1'), O.GOLD_ROCK)).toBe(4);
+    expect(count(byGameId(p, 'caves2'), O.MITHRIL_ROCK)).toBe(4);
+    expect(count(byGameId(p, 'caves3'), O.ADAMANT_ROCK)).toBe(3);
+  });
+
+  it('catches stairs hidden behind a wall', () => {
+    const found = issues((p) => {
+      const m = byGameId(p, 'crypt2');
+      const link = m.features.find((f) => f.type === 'link')!;
+      m.layers.terrain[(link.r + 1) * m.width + link.c + 1] = T.CRYPT_WALL;
+    });
+    expect(found.some((i) => i.severity === 'error' && /are hidden behind the wall/.test(i.message))).toBe(true);
+  });
+
+  it('warns about an altar in town or beside a tree, and runite outside the Deep', () => {
+    const warnings = issues((p) => {
+      const world = byGameId(p, 'overworld');
+      const air = where(world, O.AIR_ALTAR);
+      world.layers.zone[air.i] = ZONES.find((z) => z.key === 'safe')!.id;
+      world.layers.object[(air.y + 2) * world.width + air.x] = O.TREE;
+      world.layers.object[where(world, O.ESSENCE_ROCK).i] = O.RUNITE_ROCK;
+    }).filter((i) => i.severity === 'warning').map((i) => i.message);
+    expect(warnings.some((m) => /Altar: air .* is in the Safe zone/.test(m))).toBe(true);
+    expect(warnings.some((m) => /Altar: air .* is within 2 tiles of a tree/.test(m))).toBe(true);
+    expect(warnings.some((m) => /Runite rock .* is in the frontier zone; the game keeps runite in the Deep/.test(m))).toBe(true);
+  });
+
+  it('an altar nobody can reach is an error', () => {
+    const found = issues((p) => {
+      const world = byGameId(p, 'overworld');
+      const law = where(world, O.LAW_ALTAR);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (dx || dy) world.layers.object[(law.y + dy) * world.width + law.x + dx] = O.BOULDER;
+      }
+    });
+    expect(found.some((i) => i.severity === 'error' && /Altar: law .* has no walkable neighbour/.test(i.message))).toBe(true);
   });
 });

@@ -65,7 +65,8 @@ game mode; every other map behaves as above.
   overworld, the crypt, the sewers and the inside of every building in town.
 - **Ground and objects:** paint the game's seven grounds (grass, path, water, town cobbles, crypt
   floor and wall, wooden floors) and what stands on each tile, in groups: Nature (trees by species,
-  boulders, ore, fishing spots, herbs), Town (fences, stations, workbenches, doors, stairs, the
+  boulders, ore from copper to runite and rune essence, fishing spots, herbs), Runecrafting altars
+  (air, mind, water, earth, fire, chaos, law), Town (fences, stations, workbenches, doors, stairs, the
   sewer grate), Streets (well, lamp posts, market stalls, flower beds, benches, signposts, the notice
   board) and Indoors (counters, bookshelves, tables, beds, barrels, crates, lecterns). Grove
   and Ore brushes scatter one species or ore at a time.

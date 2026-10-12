@@ -40,7 +40,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zone": null,
   "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks"],
   "ground": [0, 0, 1, ...],
-  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board"],
+  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar"],
   "objects": [0, 4, 0, ...],
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
@@ -107,6 +107,9 @@ entrance are used from a neighbouring tile (any of the 8 around it).
 | 27–29 | `alchemy_table`, `sewing_table`, `fletching_bench` | Workshop stations. |
 | 30–36 | `counter`, `bookshelf`, `table`, `bed`, `barrel`, `crate`, `lectern` | Furniture. Players talk to townspeople across a `counter`. Indoors, a `bookshelf` stands in the line of the wall. |
 | 37–43 | `well`, `lamp_post`, `market_stall`, `flower_bed`, `bench`, `signpost`, `notice_board` | Things in the streets (indoors too, if you like). Tapping the `notice_board` in the game shows tips for new players. |
+| 44–47 | `gold_rock`, `mithril_rock`, `adamant_rock`, `runite_rock` | The rarer ores (Mining 40, 50, 65, 80). The game has gold and mithril in the caverns' first two floors, adamant in the Wyrm's Lair, and runite out in the Deep. |
+| 48 | `essence_rock` | Rune essence for Runecrafting (Mining 1). Never runs out, and holds no gems. |
+| 49–55 | `air_altar`, `mind_altar`, `water_altar`, `earth_altar`, `fire_altar`, `chaos_altar`, `law_altar` | Runecrafting altars, used from any of the 8 tiles around them: tap one with essence to bind it all into that rune. The game has air, mind, water and earth in the Frontier, fire and chaos in the Wilderness, law in the Deep. |
 
 ### Zones
 
@@ -162,11 +165,13 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 **Check for game** reports each problem with its map and tile (tap one to jump there):
 
 - exactly one spawn point, on the overworld, on walkable ground in the Safe zone;
-- every station and fishing spot has a walkable neighbour reachable on foot from the spawn point
+- every station, altar and fishing spot has a walkable neighbour reachable on foot from the spawn point
   (on dungeon floors: from where links arrive), moving in 8 directions without cutting corners
   past blocked tiles;
 - every entrance, staircase, door and grate has a link to an existing map and a walkable target
   tile, and links come in pairs;
+- no stairs on a dungeon floor with a wall just east, south or south-east of them: the game draws
+  stairs on the floor, so that wall hides them (the game's own tests refuse it);
 - every building is a size there's art for, in colours the game has, and has a door in its south
   or east wall (not a corner); every townsperson stands on open floor players can reach, or talk to across a counter;
 - no monster spawn or boss in the Safe zone or on a tile you can't walk on;
@@ -177,7 +182,9 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
   scattering its own;
 - tiles using ground or objects the game doesn't have (a warning);
 - a look (theme) only on dungeon floors, and one of `crypt`, `sewer` or `cave`;
-- a Safe zone with no gate, so no town guards (a warning).
+- a Safe zone with no gate, so no town guards (a warning);
+- altars and essence rocks (warnings): an altar in the Safe zone, or either within 2 tiles of a
+  tree, which can hide it and take the taps meant for it; and runite outside the Deep.
 
 ## Opening the game's maps
 

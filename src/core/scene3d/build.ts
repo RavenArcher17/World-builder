@@ -544,7 +544,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
           }
           return out;
         });
-        if (['station', 'fishing', 'stairs', 'door', 'herb'].includes(def.group)) {
+        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar'].includes(def.group)) {
           markers.push({
             name: uniqueName(`${def.key} ${g.col(i)},${g.row(i)}`),
             position: [cx * S, y, cz * S],
@@ -1176,6 +1176,11 @@ function objectModel(
       return;
     case 'station':
       out.box(x, y, z, 1.1, 0.9, 0.8, c, facing);
+      return;
+    case 'altar':
+      // A stone block with an orb in the rune's colour over it.
+      out.box(x, y, z, 1.0, 0.8, 1.0, rgba('#6a6a70'), facing);
+      out.blob(x, y + 1.25, z, 0.22, 0.22, 0.22, c, seed);
       return;
   }
   out.box(x, y, z, 0.7, 0.9, 0.7, c, facing);

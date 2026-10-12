@@ -20,7 +20,7 @@ export interface ObjectDef {
   blocks: boolean;
   /** Used by standing next to it (a station, fishing spot or staircase) rather than on it. */
   useFromNeighbour: boolean;
-  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street';
+  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar';
 }
 
 const o = (
@@ -82,6 +82,20 @@ export const OBJECTS: ObjectDef[] = [
   o(41, 'bench', 'Bench', '#8a6a3a', '🪑', 'icon', 'street'),
   o(42, 'signpost', 'Signpost', '#9a7a4a', '🪧', 'icon', 'street'),
   o(43, 'notice_board', 'Notice board', '#a88a5a', '📜', 'icon', 'street'),
+  // The rarer ores (RPG-DC: gold and mithril in the caverns, adamant in the Wyrm's Lair, runite in the Deep).
+  o(44, 'gold_rock', 'Gold rock', '#e0b840', '🟡', 'ore', 'ore'),
+  o(45, 'mithril_rock', 'Mithril rock', '#7f9fe0', '🔵', 'ore', 'ore'),
+  o(46, 'adamant_rock', 'Adamant rock', '#4f9a5f', '🟢', 'ore', 'ore'),
+  o(47, 'runite_rock', 'Runite rock', '#3fb4c8', '💠', 'ore', 'ore'),
+  // Runecrafting: essence that never runs out, and altars that bind it into runes, used from beside them.
+  o(48, 'essence_rock', 'Essence rock', '#d6a8ff', '🟣', 'ore', 'ore'),
+  o(49, 'air_altar', 'Altar: air', '#dfeaf2', '🌀', 'icon', 'altar', true),
+  o(50, 'mind_altar', 'Altar: mind', '#e8a040', '🧠', 'icon', 'altar', true),
+  o(51, 'water_altar', 'Altar: water', '#4a8fd8', '💧', 'icon', 'altar', true),
+  o(52, 'earth_altar', 'Altar: earth', '#a07a40', '⛰️', 'icon', 'altar', true),
+  o(53, 'fire_altar', 'Altar: fire', '#e0552e', '☄️', 'icon', 'altar', true),
+  o(54, 'chaos_altar', 'Altar: chaos', '#c040c0', '💥', 'icon', 'altar', true),
+  o(55, 'law_altar', 'Altar: law', '#4060e0', '⚖️', 'icon', 'altar', true),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -127,7 +141,19 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'FLOWER_BED'
   | 'BENCH'
   | 'SIGNPOST'
-  | 'NOTICE_BOARD',
+  | 'NOTICE_BOARD'
+  | 'GOLD_ROCK'
+  | 'MITHRIL_ROCK'
+  | 'ADAMANT_ROCK'
+  | 'RUNITE_ROCK'
+  | 'ESSENCE_ROCK'
+  | 'AIR_ALTAR'
+  | 'MIND_ALTAR'
+  | 'WATER_ALTAR'
+  | 'EARTH_ALTAR'
+  | 'FIRE_ALTAR'
+  | 'CHAOS_ALTAR'
+  | 'LAW_ALTAR',
   number
 >;
 

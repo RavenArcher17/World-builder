@@ -37,11 +37,12 @@ export type GamePaintMode = 'tile' | 'object' | 'grove' | 'ore' | 'zone';
 const GROVE_OBJECTS = [O.TREE, O.OAK, O.WILLOW];
 const OBJECT_GROUPS: [string, string[]][] = [
   ['Nature', ['tree', 'rock', 'ore', 'fishing', 'herb']],
+  ['Runecrafting altars', ['altar']],
   ['Town', ['wall', 'station', 'door', 'stairs']],
   ['Streets', ['street']],
   ['Indoors', ['furniture']],
 ];
-const ORE_OBJECTS = [O.COPPER_ROCK, O.TIN_ROCK, O.IRON_ROCK];
+const ORE_OBJECTS = [O.COPPER_ROCK, O.TIN_ROCK, O.IRON_ROCK, O.GOLD_ROCK, O.MITHRIL_ROCK, O.ADAMANT_ROCK, O.RUNITE_ROCK, O.ESSENCE_ROCK];
 
 function palButton(label: string, icon: HTMLElement | string, active: boolean, onclick: () => void, title?: string): HTMLButtonElement {
   return h('button', { class: `pal${active ? ' active' : ''}`, title: title ?? label, onclick }, typeof icon === 'string' ? h('span', { class: 'pal-icon' }, icon) : icon, h('span', { class: 'pal-label' }, label));
