@@ -20,7 +20,7 @@ export interface ObjectDef {
   blocks: boolean;
   /** Used by standing next to it (a station, fishing spot or staircase) rather than on it. */
   useFromNeighbour: boolean;
-  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar';
+  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar' | 'travel';
 }
 
 const o = (
@@ -106,6 +106,9 @@ export const OBJECTS: ObjectDef[] = [
   o(61, 'herb_duneflower', 'Herb: duneflower', '#f0b840', '🌼', 'icon', 'herb', true),
   o(62, 'herb_bogmyrtle', 'Herb: bog myrtle', '#8a5aa0', '🪻', 'icon', 'herb', true),
   o(63, 'herb_frostcap', 'Herb: frostcap', '#a8e0f8', '🍃', 'icon', 'herb', true),
+  // RPG-DC's fast travel: a standing stone with glowing runes, tapped from beside it to travel to
+  // another (each stands in a landmark place).
+  o(64, 'waystone', 'Waystone', '#7fb2e5', '🧭', 'icon', 'travel', true),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -171,7 +174,8 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'FISHING_LOBSTER'
   | 'HERB_DUNEFLOWER'
   | 'HERB_BOGMYRTLE'
-  | 'HERB_FROSTCAP',
+  | 'HERB_FROSTCAP'
+  | 'WAYSTONE',
   number
 >;
 

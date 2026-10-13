@@ -11,7 +11,7 @@ import { createProject, deleteMap, parseProjectReport, rootMaps, serializeProjec
 import { restoreSnapshot, snapshotProject, snapshotsBytes, type PackedLayer, type ProjectSnapshot } from '../core/snapshot';
 import { Autosave, AutosaveError, browserTextStore, indexedDbStore } from './autosave';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
-import { OPEN_GROUND, PLACE_TYPES, defaultProps, gameKind, gameMapId, isGameGround, isRpgdc, isWalkableAt, placeProps, zoneAt } from '../core/rpgdc/game';
+import { NAMED_PLACES, OPEN_GROUND, PLACE_TYPES, gameKind, gameMapId, isGameGround, isRpgdc, isWalkableAt, newPlaceProps, placeProps, zoneAt } from '../core/rpgdc/game';
 import { cloneMap, regenerateRegion } from '../core/region';
 import { Rng, parseSeed, randomSeed } from '../core/rng';
 import { SCALES, getScale } from '../core/scales';
@@ -79,6 +79,8 @@ export class App {
   brush = 0;
   roadLevel = 2;
   featureType = 'village';
+  /** Which palette the tool options show (tool and paint mode), so rebuilding it can keep its scroll. */
+  private paletteKey = '';
   paintObject: number = O.TREE;
   groveObject: number = O.TREE;
   oreObject: number = O.COPPER_ROCK;
@@ -746,6 +748,11 @@ export class App {
     this.tool = tool;
     document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
     const opts = byId('tool-options');
+    // Rebuilding the same palette (picking another thing in it) keeps where it was scrolled to.
+    const paletteKey = `${tool}:${this.paintMode}`;
+    const before = opts.querySelector<HTMLElement>('.palette');
+    const scrolled = before && this.paletteKey === paletteKey ? [before.scrollLeft, before.scrollTop] : null;
+    this.paletteKey = paletteKey;
     opts.replaceChildren();
     const map = this.map;
     const game = isRpgdc(map);
@@ -824,6 +831,8 @@ export class App {
       opts.append(sel);
     }
     this.canvas.style.cursor = tool === 'pan' ? 'grab' : tool === 'select' ? 'crosshair' : 'cell';
+    const palette = opts.querySelector<HTMLElement>('.palette');
+    if (palette && scrolled) [palette.scrollLeft, palette.scrollTop] = scrolled;
   }
 
   /** Change paint settings (mode, tile, object, zone, brush) and refresh the palette. */
@@ -1079,7 +1088,7 @@ export class App {
     typeSel.onchange = () => {
       this.pushUndo();
       f.type = typeSel.value;
-      if (game) f.props = { ...(defaultProps(f.type) ?? {}), ...(f.props ?? {}) };
+      if (game) f.props = { ...(newPlaceProps(map, f.type) ?? {}), ...(f.props ?? {}) };
       this.changed();
     };
     const name = h('input', { value: f.name });
@@ -1746,8 +1755,10 @@ export class App {
       r: g.row(cell),
       ...(this.storey && { z: this.storey }),
     };
-    const props = game ? defaultProps(type) : uk?.props;
+    const props = game ? newPlaceProps(map, type) : uk?.props;
     if (props) f.props = props;
+    // A new landmark (or fort) is labelled with its name.
+    if (game && NAMED_PLACES.has(type) && props?.name) f.name = String(props.name);
     map.features.push(f);
     this.selectedFeature = f.id;
     this.changed();

@@ -11,6 +11,11 @@ import {
   BUILDING_SIZES,
   FORT_ID,
   FORT_RADIUS,
+  LANDMARK_ID,
+  LANDMARK_NAME_MAX,
+  LANDMARK_RADIUS,
+  landmarkAt,
+  landmarks,
   GROUND_LEGEND,
   GROUND_TILES,
   fortChest,
@@ -185,14 +190,14 @@ export function checkGameMaps(project: Project): GameIssue[] {
       }
     }
 
-    // Stations, altars and fishing spots must be usable from a tile you can walk to.
+    // Stations, altars, waystones and fishing spots must be usable from a tile you can walk to.
     const starts = m === overworld ? owSpawns.map((s) => ({ x: s.f.c, y: s.f.r })) : arrivals.get(m) ?? [];
     const walk = walkableTiles(m);
     const walkAt = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < m.height && walk[y * w + x] === 1;
     const reached = reachable(m, starts, walk);
     for (const i of things) {
       const d = objectDef(L.object[i]);
-      if (!d || (d.group !== 'station' && d.group !== 'fishing' && d.group !== 'altar')) continue;
+      if (!d || (d.group !== 'station' && d.group !== 'fishing' && d.group !== 'altar' && d.group !== 'travel')) continue;
       const x = i % w;
       const y = Math.floor(i / w);
       const usable = NEIGHBOURS.some(([dx, dy]) => {
@@ -265,6 +270,42 @@ export function checkGameMaps(project: Project): GameIssue[] {
       else if (!isWalkable(m, i)) add('error', m, f.c, f.r, `The travelling merchant ${at(f)} stands on a tile you can't walk on.`);
       else if (zoneAt(m, i)?.key !== 'safe') add('error', m, f.c, f.r, `The travelling merchant's spot ${at(f)} isn't in the Safe zone.`);
       else if (!talkSpots(m, f.c, f.r).some((t) => reached[t.y * w + t.x])) add('error', m, f.c, f.r, `Players can't reach the travelling merchant ${at(f)} from the spawn point.`);
+    }
+
+    // Landmarks (the game's landmarks.ts): on the overworld, with an id, a name and a radius the game
+    // takes (it won't load the maps otherwise).
+    const marks = landmarks(m);
+    marks.forEach((l, k) => {
+      const f = l.feature;
+      const label = `The landmark ${l.name || l.id || at(f)}`;
+      if (m !== overworld) {
+        add('error', m, f.c, f.r, `${label} isn't on the overworld: landmarks go on the overworld.`);
+        return;
+      }
+      const before = marks.slice(0, k).find((o) => o.id === l.id);
+      if (!LANDMARK_ID.test(l.id)) add('error', m, f.c, f.r, `${label} needs an id of lower-case letters, digits and _ (like hermit_lake).`);
+      else if (before) add('error', m, f.c, f.r, `${label} ${at(f)}: there's already a landmark called ${l.id}, at (${before.x}, ${before.y}).`);
+      if (!l.name || l.name.length > LANDMARK_NAME_MAX) add('error', m, f.c, f.r, `${label} needs a name of up to ${LANDMARK_NAME_MAX} letters.`);
+      const { min, max } = LANDMARK_RADIUS;
+      if (!Number.isInteger(l.radius) || l.radius < min || l.radius > max) add('error', m, f.c, f.r, `${label}'s radius must be a whole number from ${min} to ${max}.`);
+    });
+
+    // Waystones: on the overworld, each in a landmark (within its radius; where landmarks overlap,
+    // the one with the nearest middle) outside the Deep, and one to a landmark: the game uses the
+    // first it finds, scanning rows from the top.
+    const stones = new Map<string, { x: number; y: number }>();
+    for (const i of things) {
+      if (L.object[i] !== O.WAYSTONE) continue;
+      const x = i % w;
+      const y = Math.floor(i / w);
+      const l = m === overworld ? landmarkAt(marks, x, y) : null;
+      const first = l && stones.get(l.id);
+      const name = l && (l.name || l.id);
+      if (m !== overworld) add('error', m, x, y, `Waystone (${x}, ${y}) isn't on the overworld: waystones go on the overworld.`);
+      else if (!l) add('error', m, x, y, `Waystone (${x}, ${y}) isn't in a landmark: put a landmark place round it.`);
+      else if (first) add('error', m, x, y, `A second waystone in ${name} (${x}, ${y}): the first is at (${first.x}, ${first.y}).`);
+      else if (zoneAt(m, i)?.key === 'deep') add('error', m, x, y, `The waystone in ${name} (${x}, ${y}) is in the Deep, where waystones don't work.`);
+      if (l && !first) stones.set(l.id, { x, y });
     }
 
     // The Duel Arena: duellists fight in its pits, the places you can stand that can't be walked to

@@ -93,11 +93,12 @@ function importPlace(p: RpgdcMap['places'][number]): Feature {
   const props: Record<string, string | number> = {};
   for (const [k, v] of Object.entries(rest)) if (typeof v === 'string' || typeof v === 'number') props[k] = v;
   if (type === 'building') for (const k of ['sign', 'roof', 'walls']) props[k] ??= '';
-  // Buildings go by their sign and townspeople by their trade, so the map reads like the town.
+  // Buildings go by their sign, townspeople by their trade, forts and landmarks by their name, so
+  // the map reads like the game.
   const name =
     (type === 'building' && String(props.sign)) ||
     (type === 'npc' && NPC_ROLES.find((r) => r.value === props.role)?.label) ||
-    (type === 'fort' && String(props.name ?? '')) ||
+    ((type === 'fort' || type === 'landmark') && String(props.name ?? '')) ||
     featureDef(type).label;
   const f: Feature = { id: newId('f'), type, c: x, r: y, name };
   if (Object.keys(props).length) f.props = props;

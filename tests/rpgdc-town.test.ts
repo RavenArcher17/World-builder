@@ -15,9 +15,12 @@ import {
   houseGuards,
   isGameGround,
   isWalkableAt,
+  landmarkAt,
+  landmarks,
   mapTheme,
   MONSTER_KINDS,
   normalRange,
+  newPlaceProps,
   NPC_ROLES,
   OBJECT_LEGEND,
   reachable,
@@ -67,11 +70,10 @@ describe('opening the game’s map file', () => {
     expect(world.features.filter((f) => f.type === 'building').length).toBe(18);
   });
 
-  it('passes every game check (one warning: an essence rock in the quarry beside an oak)', () => {
-    expect(errors(project())).toEqual([]);
-    expect(checkGameMaps(project()).map((i) => i.message)).toEqual([
-      'Essence rock (331, 368) is within 2 tiles of a tree, which can hide it in the game and take the taps meant for it.',
-    ]);
+  it('passes every game check, with no warnings', () => {
+    // The game's tool keeps quarry rocks 2 tiles clear of trees now, so the essence rock that stood
+    // beside an oak has gone too.
+    expect(checkGameMaps(project()).map((i) => i.message)).toEqual([]);
   });
 
   it('exports exactly what it opened', () => {
@@ -95,6 +97,7 @@ describe('opening the game’s map file', () => {
       'gold_rock', 'mithril_rock', 'adamant_rock', 'runite_rock',
       'essence_rock', 'air_altar', 'mind_altar', 'water_altar', 'earth_altar', 'fire_altar', 'chaos_altar', 'law_altar',
       'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
+      'waystone',
     ]);
   });
 
@@ -431,7 +434,7 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
     const yew = world.layers.object.indexOf(O.YEW);
     expect(isWalkableAt(world, yew % world.width, Math.floor(yew / world.width))).toBe(false);
     const out = toRpgdcMaps(project()).maps.find((m) => m.id === 'overworld')!;
-    expect(out.objectLegend.slice(56)).toEqual(['cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap']);
+    expect(out.objectLegend.slice(56)).toEqual(['cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap', 'waystone']);
   });
 
   it('needs eel and lobster spots reachable, like every fishing spot', () => {
@@ -520,5 +523,171 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
       const r = cacheRegion(map, { x0: 0, y0: 0, x1: 2000 / scale, y1: 3000 / scale }, scale);
       expect((r.region.x1 - r.region.x0) * (r.region.y1 - r.region.y0) * r.s * r.s, `${scale}`).toBeLessThanOrEqual(MAX_CACHE_PIXELS + 1);
     }
+  });
+});
+
+describe('landmarks and waystones (fast travel)', () => {
+  const gameWorld = () => file().maps.find((m) => m.id === 'overworld')!;
+  /** Where a map in the file has waystones, [x, y] in row order. */
+  const stonesIn = (m: RpgdcMapsFile['maps'][number]) => {
+    const k = m.objectLegend.indexOf('waystone');
+    return m.objects.flatMap((v, i) => (v === k ? [[i % m.width, Math.floor(i / m.width)]] : []));
+  };
+
+  it('opens the game’s landmarks as places and its waystones as objects, and exports them as they were', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    const marks = world.features.filter((f) => f.type === 'landmark');
+    expect(marks).toHaveLength(16);
+    const town = marks.find((f) => f.props?.id === 'town')!;
+    expect([town.c, town.r, town.name, town.props]).toEqual([384, 384, 'the Town', { id: 'town', name: 'the Town', radius: 22 }]);
+    expect(marks.find((f) => f.props?.id === 'fisher_lake')!.name).toBe("Moira's Lake");
+    // Nine waystones, the town's in town, each in a landmark of its own (as the game finds them),
+    // standing in the way like any object.
+    const stones = stonesIn(gameWorld());
+    expect(stones).toHaveLength(9);
+    expect(world.layers.object.filter((o) => o === O.WAYSTONE).length).toBe(9);
+    expect(world.layers.object[382 * world.width + 387]).toBe(O.WAYSTONE);
+    expect(isWalkableAt(world, 387, 382)).toBe(false);
+    const list = landmarks(world);
+    expect(stones.map(([x, y]) => landmarkAt(list, x, y)?.id).sort()).toEqual([
+      'crypt', 'drowned_shrine', 'fisher_lake', 'frostmere', 'hermit_lake', 'oasis', 'town', 'trapper_lodge', 'westshore',
+    ]);
+    // Exported again: the same landmark places (id, name, radius), in the same order, and the same waystones.
+    const out = toRpgdcMaps(p).maps.find((m) => m.id === 'overworld')!;
+    expect(out.places.filter((pl) => pl.type === 'landmark')).toEqual(gameWorld().places.filter((pl) => pl.type === 'landmark'));
+    expect(out.places.find((pl) => pl.type === 'landmark')).toEqual({ type: 'landmark', x: 384, y: 384, id: 'town', name: 'the Town', radius: 22 });
+    expect(stonesIn(out)).toEqual(stones);
+    // And opened from that export, the same again.
+    const again = toRpgdcMaps(fromRpgdcMaps(toRpgdcMaps(p))).maps.find((m) => m.id === 'overworld')!;
+    expect(again.places.filter((pl) => pl.type === 'landmark')).toEqual(out.places.filter((pl) => pl.type === 'landmark'));
+    expect(stonesIn(again)).toEqual(stones);
+  });
+
+  /** A bare 128×128 overworld of grass: Safe round the spawn point (3, 3), the Deep from x = 100, Frontier between. */
+  const bare = () => {
+    const w = 128;
+    const p = createProject('fast travel');
+    const L = emptyLayers(w * w);
+    L.terrain.fill(T.GRASS);
+    for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) L.zone[y * w + x] = x < 8 && y < 8 ? 1 : x >= 100 ? 4 : 2;
+    const map: WorldMap = {
+      id: 'ow', name: 'World', kind: 'overland', scaleId: 'local', grid: 'iso', width: w, height: w, seed: 1,
+      settings: { rpgdcMapId: 'overworld' }, layers: L, children: [],
+      features: [{ id: 's', type: 'spawn_point', c: 3, r: 3, name: 'start' }],
+    };
+    p.maps[map.id] = map;
+    return { p, map };
+  };
+  const landmark = (id: string, name: string, c: number, r: number, radius?: number | string): Feature => ({
+    id: `l-${id}-${c}-${r}`, type: 'landmark', c, r, name, props: { id, name, ...(radius !== undefined && { radius }) },
+  });
+  const stone = (map: WorldMap, x: number, y: number) => (map.layers.object[y * map.width + x] = O.WAYSTONE);
+  const errs = (p: Project) => errors(p).map((i) => i.message);
+
+  it('passes a waystone in a landmark; a landmark without a radius reaches 10 tiles', () => {
+    const { p, map } = bare();
+    map.features.push(landmark('meadow', 'the Meadow', 40, 40, 10), landmark('glade', 'the Glade', 60, 60));
+    stone(map, 45, 40);
+    // Exactly 10 tiles from the Glade's middle: in it.
+    stone(map, 60, 70);
+    expect(errs(p)).toEqual([]);
+    expect(toRpgdcMaps(p).maps[0].places.filter((pl) => pl.type === 'landmark')).toEqual([
+      { type: 'landmark', x: 40, y: 40, id: 'meadow', name: 'the Meadow', radius: 10 },
+      { type: 'landmark', x: 60, y: 60, id: 'glade', name: 'the Glade', radius: 10 },
+    ]);
+    // Measured in a straight line, not a square: (67, 67) is 9.9 tiles off, (68, 67) 10.6.
+    map.layers.object[70 * map.width + 60] = 0;
+    stone(map, 67, 67);
+    expect(errs(p)).toEqual([]);
+    map.layers.object[67 * map.width + 67] = 0;
+    stone(map, 68, 67);
+    expect(errs(p)).toEqual(["Waystone (68, 67) isn't in a landmark: put a landmark place round it."]);
+  });
+
+  it('catches a waystone outside any landmark, two in one landmark, and one in the Deep', () => {
+    const { p, map } = bare();
+    map.features.push(landmark('meadow', 'the Meadow', 40, 40, 10), landmark('keep', 'the Keep', 110, 40, 8));
+    stone(map, 20, 20);
+    stone(map, 45, 40);
+    stone(map, 40, 45);
+    stone(map, 110, 44);
+    expect(errs(p)).toEqual([
+      "Waystone (20, 20) isn't in a landmark: put a landmark place round it.",
+      "The waystone in the Keep (110, 44) is in the Deep, where waystones don't work.",
+      'A second waystone in the Meadow (40, 45): the first is at (45, 40).',
+    ]);
+  });
+
+  it('puts a waystone where landmarks overlap in the one with the nearest middle', () => {
+    const { p, map } = bare();
+    map.features.push(landmark('east_wood', 'East Wood', 40, 40, 10), landmark('west_wood', 'West Wood', 50, 40, 10));
+    // 6 tiles from East Wood's middle, 4 from West Wood's: West Wood's, which has one already.
+    stone(map, 46, 40);
+    stone(map, 52, 40);
+    expect(errs(p)).toEqual(['A second waystone in West Wood (52, 40): the first is at (46, 40).']);
+    // Nearer East Wood's middle, it's East Wood's own.
+    map.layers.object[40 * map.width + 46] = 0;
+    stone(map, 44, 40);
+    expect(errs(p)).toEqual([]);
+  });
+
+  it('needs a waystone players can walk up to', () => {
+    const { p, map } = bare();
+    map.features.push(landmark('meadow', 'the Meadow', 40, 40, 10));
+    stone(map, 45, 40);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) map.layers.object[(40 + dy) * map.width + 45 + dx] = O.BOULDER;
+    expect(errs(p)).toEqual(['Waystone (45, 40) has no walkable neighbour that can be reached from the spawn point.']);
+  });
+
+  it('catches a landmark or a waystone off the overworld', () => {
+    const { p, map } = bare();
+    const L = emptyLayers(20 * 20);
+    L.terrain.fill(T.CRYPT_FLOOR);
+    const crypt: WorldMap = {
+      id: 'crypt', name: 'Crypt', kind: 'dungeon', scaleId: 'dungeon', grid: 'iso', width: 20, height: 20, seed: 1,
+      settings: { rpgdcMapId: 'crypt1', rpgdcZone: 'deep' }, layers: L, children: [],
+      features: [landmark('crypt_hall', 'the Crypt Hall', 10, 10, 5)],
+    };
+    stone(crypt, 12, 10);
+    p.maps[crypt.id] = crypt;
+    const found = errs(p);
+    expect(found).toContain("The landmark the Crypt Hall isn't on the overworld: landmarks go on the overworld.");
+    expect(found).toContain("Waystone (12, 10) isn't on the overworld: waystones go on the overworld.");
+    expect(map.features.some((f) => f.type === 'landmark')).toBe(false);
+  });
+
+  it('catches a bad id, name or radius, and two landmarks with one id', () => {
+    const { p, map } = bare();
+    map.features.push(
+      landmark('Bad Id', 'Somewhere', 20, 40, 5),
+      landmark('x', 'Too short an id', 20, 60, 5),
+      landmark('no_name', '   ', 40, 20, 5),
+      landmark('long_name', 'A name far too long for the banner the game shows', 40, 40, 5),
+      landmark('too_big', 'Too big', 60, 20, 41),
+      landmark('too_small', 'Too small', 60, 40, 1),
+      landmark('halfway', 'Halfway', 60, 60, 2.5),
+      landmark('twice', 'Twice', 80, 20, 5),
+      landmark('twice', 'Twice again', 80, 40, 5),
+    );
+    expect(errs(p)).toEqual([
+      'The landmark Somewhere needs an id of lower-case letters, digits and _ (like hermit_lake).',
+      'The landmark Too short an id needs an id of lower-case letters, digits and _ (like hermit_lake).',
+      'The landmark no_name needs a name of up to 40 letters.',
+      'The landmark A name far too long for the banner the game shows needs a name of up to 40 letters.',
+      "The landmark Too big's radius must be a whole number from 2 to 40.",
+      "The landmark Too small's radius must be a whole number from 2 to 40.",
+      "The landmark Halfway's radius must be a whole number from 2 to 40.",
+      "The landmark Twice again (80, 40): there's already a landmark called twice, at (80, 20).",
+    ]);
+  });
+
+  it('gives a new landmark an id and a name of its own, and the usual radius', () => {
+    const { map } = bare();
+    expect(newPlaceProps(map, 'landmark')).toEqual({ id: 'landmark_1', name: 'Landmark 1', radius: 10 });
+    map.features.push(landmark('landmark_1', 'Landmark 1', 40, 40), landmark('landmark_2', 'Somewhere', 60, 60));
+    expect(newPlaceProps(map, 'landmark')).toEqual({ id: 'landmark_3', name: 'Landmark 3', radius: 10 });
+    expect(newPlaceProps(map, 'fort')).toEqual({ id: '', name: '' });
+    expect(newPlaceProps(map, 'merchant')).toBeUndefined();
   });
 });

@@ -48,7 +48,7 @@ const GROUND_WALKABLE = [true, true, false, true, true, false, true, true, true,
 export const OPEN_GROUND = new Set<number>([T.GRASS, T.SAND, T.MUD, T.SNOW, T.STONE, T.ICE]);
 
 /** How many objects the game knows: World Builder's first ones, in the same order. */
-const GAME_OBJECT_COUNT = 64;
+const GAME_OBJECT_COUNT = 65;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
 export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
 export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
@@ -495,7 +495,7 @@ const kindField = (def: string): PlaceField => ({
   default: def,
 });
 
-export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant'] as const;
+export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant', 'landmark'] as const;
 
 /** A guild fort's yard: this far round its banner (the game's FORT_RADIUS); its palisade is one further out. */
 export const FORT_RADIUS = 4;
@@ -505,6 +505,71 @@ export const FORT_ID = /^[a-z][a-z0-9_]{1,30}$/;
 export const fortChest = (x: number, y: number) => ({ x: x + 1, y });
 /** The game's Duel Arena map: every place you can stand there that can't be walked to from its door is a pit. */
 export const ARENA_MAP_ID = 'arena';
+
+/** Landmark ids, as the game takes them (LANDMARK_ID in its landmarks.ts; players' finds are saved by id). */
+export const LANDMARK_ID = /^[a-z][a-z0-9_]{1,30}$/;
+/** How big a landmark can be (tiles from its middle), and how big one is when its place doesn't say. */
+export const LANDMARK_RADIUS = { min: 2, max: 40, default: 10 } as const;
+/** A landmark's name is up to this many letters. */
+export const LANDMARK_NAME_MAX = 40;
+
+/** A landmark place as the game reads it: its id and name (trimmed), middle and radius. */
+export interface GameLandmark {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  radius: number;
+  feature: Feature;
+}
+
+/** The landmark places on a map, in the order the game reads them. */
+export function landmarks(map: WorldMap): GameLandmark[] {
+  return map.features
+    .filter((f) => f.type === 'landmark')
+    .map((f) => {
+      const p = placeProps(f);
+      return { id: String(p.id).trim(), name: String(p.name).trim(), x: f.c, y: f.r, radius: Number(p.radius), feature: f };
+    });
+}
+
+/**
+ * The landmark tile (x, y) is in, as the game finds it (landmarkAt in its landmarks.ts): within a
+ * landmark's radius of its middle (straight-line distance), the nearest middle where several
+ * overlap, the first of those at the same distance. Null when it's in none.
+ */
+export function landmarkAt(list: readonly GameLandmark[], x: number, y: number): GameLandmark | null {
+  let best: GameLandmark | null = null;
+  let bestD = Infinity;
+  for (const l of list) {
+    const d = Math.hypot(l.x - x, l.y - y);
+    if (d > l.radius) continue;
+    if (!best || d < bestD) {
+      best = l;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Fields for a new place on `map`: the defaults, and for a landmark an id and a name not used on
+ * the map yet (landmark_2, "Landmark 2"), to change in its fields.
+ */
+export function newPlaceProps(map: WorldMap, type: string): Record<string, string | number> | undefined {
+  const props = defaultProps(type);
+  if (type === 'landmark' && props) {
+    const taken = new Set(landmarks(map).map((l) => l.id));
+    let n = taken.size + 1;
+    while (taken.has(`landmark_${n}`)) n++;
+    props.id = `landmark_${n}`;
+    props.name = `Landmark ${n}`;
+  }
+  return props;
+}
+
+/** Places whose `name` field is what the map shows as their label (the editor keeps the two together). */
+export const NAMED_PLACES = new Set(['fort', 'landmark']);
 
 export const PLACE_FIELDS: Record<string, PlaceField[]> = {
   spawn_point: [],
@@ -534,6 +599,11 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
     { key: 'name', label: 'Name (as in "taken the Deep Keep")', type: 'text', default: '' },
   ],
   merchant: [],
+  landmark: [
+    { key: 'id', label: 'Id (letters, digits, _; keep it once players have found it)', type: 'text', default: '' },
+    { key: 'name', label: "Name (shown as players arrive, like Moira's Lake)", type: 'text', default: '' },
+    { key: 'radius', label: 'Radius (tiles from here)', type: 'number', min: LANDMARK_RADIUS.min, max: LANDMARK_RADIUS.max, default: LANDMARK_RADIUS.default },
+  ],
 };
 
 export const PLACE_HELP: Record<string, string> = {
@@ -547,6 +617,7 @@ export const PLACE_HELP: Record<string, string> = {
     'A house: this tile is its north-west (top) corner, and its walls fill Width × Depth tiles. Houses are 3 to 8 tiles a side; towers are square, 3 to 5. Put a Door object in its south or east wall (not a corner) and a link on the door to the inside.',
   fort: `A guild fort, on its banner's tile: guilds take it by standing in its yard (${FORT_RADIUS} tiles round the banner) and its chest (just east of the banner) gives the holders a reward each day. Put it in the Deep, with a palisade of fences round the yard and a gate in each side.`,
   merchant: 'Where the travelling merchant stands when she visits (one, on the overworld, in the Safe zone, where players can walk up to her).',
+  landmark: `A named place on the overworld (the town, a lake, a keep), on its middle: walking within its radius (${LANDMARK_RADIUS.min} to ${LANDMARK_RADIUS.max} tiles, a circle) shows its name, and the first time counts as finding it. Put one Waystone object inside it (not in the Deep) for fast travel between the landmarks players have found.`,
   npc: "A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper and miner); the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
 };
 

@@ -7,7 +7,7 @@ import { SEA_LEVEL, WorldMap } from '../core/types';
 import { TILESET_COLUMNS, tilePixels } from '../core/export/formats';
 import { cellMetrics, drawObject, drawPattern, paintOrder } from './drawObjects';
 import { drawGameArt, gameArtColours, gameArtReady, townGuards } from './gameArt';
-import { gameKind, isRpgdc } from '../core/rpgdc/game';
+import { gameKind, isRpgdc, placeProps } from '../core/rpgdc/game';
 import { OVERVIEW_MIN_CELLS, cellsAbout, drawOverview, overviewWanted } from './overview';
 
 export interface ViewOptions {
@@ -453,10 +453,15 @@ export function drawFeatures(
   const size = Math.max(11, Math.min(30, cellPx * 1.05));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const sorted = [...map.features].sort((a, b) => featureDef(a.type).rank - featureDef(b.type).rank);
+  const game = isRpgdc(map);
+  // A game's landmark is a named area (its name shows as players arrive): its name is labelled
+  // like a building's, rather than a plain landmark's.
+  const rankOf = (type: string) => (game && type === 'landmark' ? 7 : featureDef(type).rank);
+  const sorted = [...map.features].sort((a, b) => rankOf(a.type) - rankOf(b.type));
   const labelMinRank = cellPx > 22 ? 0 : cellPx > 12 ? 3 : 5;
+  if (game) drawLandmarkAreas(ctx, map, g, s, ox, oy, selectedId);
   // Labels are placed most-important first and skipped when they would overlap.
-  const labels: { x: number; y: number; text: string; size: number; bold: boolean }[] = [];
+  const labels: { x: number; y: number; text: string; size: number; bold: boolean; selected?: boolean }[] = [];
   // The game's own town guards and where criminals come back, so moving a gate shows its guard;
   // indoors, the guard it keeps with a townsperson worth robbing (the mayor).
   if (isRpgdc(map) && gameKind(map) !== 'dungeon') {
@@ -475,10 +480,11 @@ export function drawFeatures(
   }
   for (const f of sorted) {
     const def = featureDef(f.type);
+    const rank = rankOf(f.type);
     const [x, y] = g.centerCR(f.c, f.r);
     const px = ox + x * s;
     const py = oy + y * s;
-    const fs = size * (def.rank >= 7 ? 1.15 : def.rank <= 2 ? 0.8 : 1);
+    const fs = size * (rank >= 7 ? 1.15 : rank <= 2 ? 0.8 : 1);
     if (f.id === selectedId) {
       ctx.beginPath();
       ctx.arc(px, py, fs * 0.75, 0, Math.PI * 2);
@@ -496,13 +502,15 @@ export function drawFeatures(
       ctx.fillStyle = '#ffcc33';
       ctx.fill();
     }
-    if (view.labels && f.name && (def.rank >= labelMinRank || f.id === selectedId)) {
-      const ls = Math.max(10, Math.min(16, fs * 0.55 + (def.rank >= 7 ? 2 : 0)));
-      labels.push({ x: px, y: py + fs * 0.75 + ls * 0.4, text: f.name, size: ls, bold: def.rank >= 7 });
+    if (view.labels && f.name && (rank >= labelMinRank || f.id === selectedId)) {
+      const ls = Math.max(10, Math.min(16, fs * 0.55 + (rank >= 7 ? 2 : 0)));
+      labels.push({ x: px, y: py + fs * 0.75 + ls * 0.4, text: f.name, size: ls, bold: rank >= 7, selected: f.id === selectedId });
     }
   }
   const placed: [number, number, number, number][] = [];
-  for (const l of labels.reverse()) {
+  // The selected place's label first, so it always shows; then the most important.
+  labels.reverse().sort((a, b) => Number(!!b.selected) - Number(!!a.selected));
+  for (const l of labels) {
     ctx.font = `${l.bold ? '600 ' : ''}${l.size}px Georgia, "Times New Roman", serif`;
     const w = ctx.measureText(l.text).width;
     const box: [number, number, number, number] = [l.x - w / 2 - 2, l.y - l.size / 2 - 1, l.x + w / 2 + 2, l.y + l.size / 2 + 1];
@@ -513,6 +521,48 @@ export function drawFeatures(
     ctx.strokeText(l.text, l.x, l.y);
     ctx.fillStyle = '#2a1d10';
     ctx.fillText(l.text, l.x, l.y);
+  }
+}
+
+/**
+ * Each landmark place's area on a game map, the circle of its radius round its middle (straight-line
+ * distance, as the game measures it; an ellipse on the isometric grid): a faint outline, and the
+ * selected one stronger and lightly filled.
+ */
+function drawLandmarkAreas(ctx: CanvasRenderingContext2D, map: WorldMap, g: Grid, s: number, ox: number, oy: number, selectedId: string | null): void {
+  for (const f of map.features) {
+    if (f.type !== 'landmark') continue;
+    const radius = Number(placeProps(f).radius);
+    if (!(radius > 0)) continue;
+    const selected = f.id === selectedId;
+    // Sides enough for a smooth curve at any zoom, without overdoing small ones.
+    const [cx, cy] = g.centerCR(f.c, f.r);
+    const [ex, ey] = g.centerCR(f.c + radius, f.r);
+    const n = Math.max(24, Math.min(160, Math.round(Math.hypot(ex - cx, ey - cy) * s * 0.5)));
+    ctx.beginPath();
+    for (let k = 0; k <= n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      const [x, y] = g.centerCR(f.c + radius * Math.cos(a), f.r + radius * Math.sin(a));
+      if (k) ctx.lineTo(ox + x * s, oy + y * s);
+      else ctx.moveTo(ox + x * s, oy + y * s);
+    }
+    ctx.closePath();
+    if (selected) {
+      ctx.fillStyle = 'rgba(255,215,110,0.1)';
+      ctx.fill();
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = 'rgba(255,215,110,0.95)';
+      ctx.lineWidth = 2;
+    } else {
+      // A light line with a dark edge, so it shows on snow and sand as well as grass.
+      ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+      ctx.lineWidth = 2.75;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,245,220,0.55)';
+      ctx.lineWidth = 1.25;
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 }
 

@@ -27,7 +27,8 @@ export type RpgdcPlace =
   | { type: 'building'; x: number; y: number; w: number; h: number; style: string; sign?: string; roof?: string; walls?: string }
   | { type: 'npc'; x: number; y: number; role: string }
   | { type: 'fort'; x: number; y: number; id: string; name: string }
-  | { type: 'merchant'; x: number; y: number };
+  | { type: 'merchant'; x: number; y: number }
+  | { type: 'landmark'; x: number; y: number; id: string; name: string; radius: number };
 
 export interface RpgdcMap {
   id: string;
@@ -86,7 +87,7 @@ function exportMap(map: WorldMap): RpgdcMap {
 
 function exportPlaces(map: WorldMap): RpgdcPlace[] {
   const out: RpgdcPlace[] = [];
-  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc', 'fort', 'merchant'];
+  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc', 'fort', 'merchant', 'landmark'];
   const features = map.features.filter((f) => order.includes(f.type)).sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
   for (const f of features) {
     const p = placeProps(f);
@@ -133,6 +134,9 @@ function exportPlaces(map: WorldMap): RpgdcPlace[] {
         break;
       case 'merchant':
         out.push({ type: 'merchant', x, y });
+        break;
+      case 'landmark':
+        out.push({ type: 'landmark', x, y, id: String(p.id).trim(), name: String(p.name).trim(), radius: Number(p.radius) });
         break;
     }
   }

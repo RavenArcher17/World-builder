@@ -544,7 +544,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
           }
           return out;
         });
-        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar'].includes(def.group)) {
+        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar', 'travel'].includes(def.group)) {
           markers.push({
             name: uniqueName(`${def.key} ${g.col(i)},${g.row(i)}`),
             position: [cx * S, y, cz * S],
@@ -1165,6 +1165,11 @@ function objectModel(
     case 'notice_board':
       for (const s of [-1, 1]) out.box(x + Math.cos(facing) * 0.5 * s, y, z + Math.sin(facing) * 0.5 * s, 0.1, 1.8, 0.1, wood, facing);
       out.box(x, y + 0.9, z, 1.1, 0.8, 0.08, c, facing);
+      return;
+    case 'waystone':
+      // A grey standing stone with a column of glowing runes down its face.
+      out.box(x, y, z, 0.7, 2.0, 0.45, STONE, facing);
+      out.box(x + Math.cos(facing + Math.PI / 2) * 0.23, y + 0.4, z + Math.sin(facing + Math.PI / 2) * 0.23, 0.14, 1.3, 0.02, c, facing);
       return;
     case 'cactus': {
       // A column with an arm either side, turned at random.

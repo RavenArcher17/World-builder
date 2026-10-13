@@ -11,6 +11,7 @@ import {
   DUNGEON_THEMES,
   GAME_OBJECTS,
   GROUND_TILES,
+  NAMED_PLACES,
   PLACE_FIELDS,
   PLACE_HELP,
   PLACE_TYPES,
@@ -44,6 +45,7 @@ const GROUND_GROUPS: [string, number[]][] = [
 const OBJECT_GROUPS: [string, string[]][] = [
   ['Nature', ['tree', 'rock', 'ore', 'fishing', 'herb']],
   ['Runecrafting altars', ['altar']],
+  ['Fast travel', ['travel']],
   ['Town', ['wall', 'station', 'door', 'stairs']],
   ['Streets', ['street']],
   ['Indoors', ['furniture']],
@@ -125,6 +127,9 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
   const props = placeProps(f);
   const set = (key: string, value: string | number) => {
     app.pushUndo();
+    // A fort's or landmark's label on the map is its name: renaming it renames the label too,
+    // unless the label was given a name of its own.
+    if (key === 'name' && NAMED_PLACES.has(f.type) && [String(placeProps(f).name), featureDef(f.type).label, ''].includes(f.name)) f.name = String(value);
     f.props = withProp(f, key, value);
     app.changed();
   };

@@ -22,7 +22,7 @@ import {
 } from '../core/rpgdc/game';
 import { T } from '../core/tiles';
 import type { WorldMap } from '../core/types';
-import { paintOrder } from './drawObjects';
+import { drawObject, paintOrder } from './drawObjects';
 import type { OverviewColours } from './overview';
 
 export const DEFAULT_ART_BASE = 'https://rpg-dc.onrender.com/art/';
@@ -255,6 +255,8 @@ const DECOR_ART: Partial<Record<number, string>> = {
   [O.FIRE_ALTAR]: 'altar-fire',
   [O.CHAOS_ALTAR]: 'altar-chaos',
   [O.LAW_ALTAR]: 'altar-law',
+  // Waystones: a grey standing stone with a column of glowing blue runes.
+  [O.WAYSTONE]: 'waystone',
 };
 /** Sewer stone is damp and greenish (the game tints it so). */
 const SEWER_TINT = '#c4cdb4';
@@ -388,6 +390,15 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     drawAt(sheetName, frame, cx, cy, opts);
   };
   const put = (frame: string, i: number, opts?: { tint?: string }) => putFrom(home, frame, i, opts);
+  /**
+   * A thing from the streets (or an altar, or a waystone), from the world sheet; an older game
+   * server without its art gets the plain symbol instead, so it doesn't vanish.
+   */
+  const putDecor = (o: number, i: number) => {
+    if (art.sheets.world?.frames[DECOR_ART[o]!]) return putFrom('world', DECOR_ART[o]!, i);
+    const [cx, cy] = g.center(i);
+    drawObject(ctx, o, cx * s, cy * s, s * 0.5);
+  };
   const count = (sheetName: string, what: string) => art.sheets[sheetName]?.counts?.[what] ?? 1;
   const variant = (what: string, x: number, y: number, salt = 0, sheetName = home) => `${what}/${Math.floor(tileHash(x, y, salt) * count(sheetName, what))}`;
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < map.height ? y * w + x : -1);
@@ -491,7 +502,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         if (fenced(x - 1, y)) putFrom('world', 'fence-w', i);
         if (!fenced(x, y - 1) && !fenced(x - 1, y)) putFrom('world', 'fence-post', i);
       } else if (DECOR_ART[L.object[i]]) {
-        putFrom('world', DECOR_ART[L.object[i]]!, i);
+        putDecor(L.object[i], i);
       } else if (ORE_ART[L.object[i]]) {
         putFrom('world', ORE_ART[L.object[i]]!, i);
       } else if (L.object[i] !== O.DOOR && INDOOR_ART[L.object[i]]) {
@@ -571,7 +582,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     else if (o === O.CACTUS) put(variant(either('cactus', 'rock'), x, y), i);
     else if (o === O.DEAD_TREE) put(variant(either('deadtree', 'tree'), x, y), i);
     else if (HERB_ART[o]) putFrom('world', HERB_ART[o]!.frame, i, { tint: HERB_ART[o]!.tint, scale: 1.3 });
-    else if (DECOR_ART[o]) put(DECOR_ART[o]!, i);
+    else if (DECOR_ART[o]) putDecor(o, i);
     else if (o === O.DOOR) {
       if (!inHouse(x, y)) put('door-timber-s', i);
     } else if (o !== O.SEWER_GRATE && ART_FOR[o]) put(ART_FOR[o]!, i);
