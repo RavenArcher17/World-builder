@@ -110,6 +110,19 @@ describe('autosave in this browser', () => {
     expect(again?.moveToDb).toBe(false);
   }, 30_000);
 
+  it('opens the database’s copy when it’s the newer one, even if an older copy was left in localStorage', async () => {
+    const older = small(), newer = small();
+    newer.name = 'Newer';
+    const local = fakeLocal();
+    const db = fakeDb();
+    await new Autosave(db, local).save(newer);
+    // Clearing the old copy failed when the newer one was saved.
+    local.setItem(STORAGE_KEY, serializeProject(older));
+    const loaded = await new Autosave(db, local).load();
+    expect(loaded?.project.name).toBe('Newer');
+    expect(loaded?.moveToDb).toBe(false);
+  }, 30_000);
+
   it('starts afresh with nothing kept, and pauses rather than overwrite a project it can’t read', async () => {
     expect(await new Autosave(fakeDb(), fakeLocal()).load()).toBeNull();
     expect(await new Autosave(fakeDb(false), fakeLocal()).load()).toBeNull();

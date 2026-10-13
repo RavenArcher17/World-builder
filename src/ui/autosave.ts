@@ -121,7 +121,9 @@ export class Autosave {
     } catch {
       pointer = {};
     }
-    const text = this.read(STORAGE_KEY);
+    // Left there by the fallback or an older version, unless the pointer says the database has a
+    // newer copy (saved there after, when clearing this one failed).
+    const text = pointer.in === 'db' ? null : this.read(STORAGE_KEY);
     if (text) {
       try {
         const { project, migrated } = upgradeProject(JSON.parse(text));
