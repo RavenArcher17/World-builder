@@ -36,19 +36,25 @@ export function findGameMap(project: Project, id: unknown): WorldMap | undefined
 
 // ---- ground and objects ------------------------------------------------------------------
 
-/** Export order of ground kinds; index = value in the exported `ground` layer. */
-export const GROUND_LEGEND = ['grass', 'path', 'water', 'town_floor', 'crypt_floor', 'crypt_wall', 'planks'] as const;
-export const GROUND_TILES = [T.GRASS, T.PATH, T.WATER, T.TOWN_FLOOR, T.CRYPT_FLOOR, T.CRYPT_WALL, T.PLANKS];
-const GROUND_WALKABLE = [true, true, false, true, true, false, true];
+/**
+ * Export order of ground kinds (the game's GROUND_KINDS); index = value in the exported `ground`
+ * layer. The last six are the new lands': sand, mud, snow, gravel ("stone") and ice are open ground
+ * to the game, like grass, and bog is water; they change only how a tile looks.
+ */
+export const GROUND_LEGEND = ['grass', 'path', 'water', 'town_floor', 'crypt_floor', 'crypt_wall', 'planks', 'sand', 'mud', 'bog', 'snow', 'stone', 'ice'] as const;
+export const GROUND_TILES = [T.GRASS, T.PATH, T.WATER, T.TOWN_FLOOR, T.CRYPT_FLOOR, T.CRYPT_WALL, T.PLANKS, T.SAND, T.MUD, T.BOG, T.SNOW, T.STONE, T.ICE];
+const GROUND_WALKABLE = [true, true, false, true, true, false, true, true, true, false, true, true, true];
+/** Grounds that are open land to the game, like grass: trees, rocks and herbs stand on them. */
+export const OPEN_GROUND = new Set<number>([T.GRASS, T.SAND, T.MUD, T.SNOW, T.STONE, T.ICE]);
 
 /** How many objects the game knows: World Builder's first ones, in the same order. */
-const GAME_OBJECT_COUNT = 56;
+const GAME_OBJECT_COUNT = 64;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
 export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
 export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
 
 /**
- * The game ground index for any World Builder tile. The six game grounds map to themselves;
+ * The game ground index for any World Builder tile. The game's own grounds map to themselves;
  * anything else (a tile painted with the general palette) maps to the closest game ground.
  */
 export function gameGround(tileId: number): number {
@@ -189,7 +195,15 @@ export const NPC_ROLES = [
   { value: 'captain', label: 'Guard captain' },
   { value: 'villager', label: 'Villager' },
   { value: 'slayer', label: 'Slayer master' },
+  // The people outside town, who just talk (and give quests).
+  { value: 'hermit', label: 'Hermit (Old Ansel)' },
+  { value: 'fisher', label: 'Fisher (Moira)' },
+  { value: 'farmer', label: 'Farmer (Giles)' },
+  { value: 'trapper', label: 'Trapper (Rook)' },
+  { value: 'miner', label: 'Miner (Dobbs)' },
 ];
+/** Townspeople worth robbing, who keep a guard indoors with them (the game's `guarded` in thieving.ts). */
+export const GUARDED_ROLES = new Set(['mayor']);
 
 /** Whether someone at (fx, fy) can talk to a townsperson at (x, y): next to them, or across a counter. */
 export function canTalkFrom(map: WorldMap, fx: number, fy: number, x: number, y: number): boolean {
@@ -278,7 +292,8 @@ export function guardPosts(map: WorldMap): { posts: { x: number; y: number }[]; 
   const safe = (x: number, y: number) => zoneAt(map, y * map.width + x)?.key === 'safe';
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
-      if (!open(x, y) || !safe(x, y)) continue;
+      // The zone first: it's quick, and only the town is Safe, so this stays fast on a big overworld.
+      if (!safe(x, y) || !open(x, y)) continue;
       for (const [dx, dy] of STRAIGHT) {
         const ox = x + dx;
         const oy = y + dy;
@@ -295,6 +310,28 @@ export function guardPosts(map: WorldMap): { posts: { x: number; y: number }[]; 
 }
 /** The game's order for the four straight neighbours when posting guards. */
 const STRAIGHT = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+
+/**
+ * The guards the game keeps indoors, since the town's guards can't come in: in a building's inside,
+ * one for each townsperson worth robbing (the mayor, in the Town Hall), two steps from them on the
+ * first open floor tile, scanning rows from the north-west, where no other townsperson stands.
+ */
+export function houseGuards(map: WorldMap): { x: number; y: number }[] {
+  const posts: { x: number; y: number }[] = [];
+  if (gameKind(map) !== 'interior') return posts;
+  const people = map.features.filter((f) => f.type === 'npc');
+  for (const f of people) {
+    if (!GUARDED_ROLES.has(String(placeProps(f).role))) continue;
+    let post: { x: number; y: number } | null = null;
+    for (let y = f.r - 2; y <= f.r + 2 && !post; y++) {
+      for (let x = f.c - 2; x <= f.c + 2 && !post; x++) {
+        if (Math.max(Math.abs(x - f.c), Math.abs(y - f.r)) === 2 && isWalkableAt(map, x, y) && !people.some((n) => n.c === x && n.r === y)) post = { x, y };
+      }
+    }
+    if (post) posts.push(post);
+  }
+  return posts;
+}
 
 // ---- zones -------------------------------------------------------------------------------
 
@@ -386,6 +423,16 @@ export const MONSTER_KINDS: { key: string; name: string; range: number }[] = [
   { key: 'hobgoblin', name: 'Hobgoblin', range: 8 },
   { key: 'fire_wyvern', name: 'Fire wyvern', range: 8 },
   { key: 'cinder_wyrm', name: 'Cinder Wyrm', range: 7 },
+  // The new lands: the desert, the swamp and the mountains (the first three nearer town).
+  { key: 'scarab', name: 'Scarab (desert)', range: 7 },
+  { key: 'bog_goblin', name: 'Bog goblin (swamp)', range: 7 },
+  { key: 'frost_ant', name: 'Frost ant (mountains)', range: 7 },
+  { key: 'mummy', name: 'Mummy (desert)', range: 7 },
+  { key: 'drowned', name: 'Drowned one (swamp)', range: 7 },
+  { key: 'yeti', name: 'Yeti (mountains)', range: 8 },
+  { key: 'antlion', name: 'Antlion (desert)', range: 6 },
+  { key: 'swamp_wyvern', name: 'Swamp wyvern', range: 8 },
+  { key: 'ice_wyvern', name: 'Ice wyvern', range: 8 },
   // Only players with the Slayer level can hurt these.
   { key: 'cave_crawler', name: 'Cave crawler (Slayer 10)', range: 6 },
   { key: 'banshee', name: 'Banshee (Slayer 25)', range: 7 },
@@ -468,7 +515,7 @@ export const PLACE_HELP: Record<string, string> = {
     'A house: this tile is its north-west (top) corner, and its walls fill Width × Depth tiles. Houses are 3 to 8 tiles a side; towers are square, 3 to 5. Put a Door object in its south or east wall (not a corner) and a link on the door to the inside.',
   fort: `A guild fort, on its banner's tile: guilds take it by standing in its yard (${FORT_RADIUS} tiles round the banner) and its chest (just east of the banner) gives the holders a reward each day. Put it in the Deep, with a palisade of fences round the yard and a gate in each side.`,
   merchant: 'Where the travelling merchant stands when she visits (one, on the overworld, in the Safe zone, where players can walk up to her).',
-  npc: 'A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk; the Slayer master gives Slayer tasks. Put a Counter in front of a banker or shopkeeper; players talk across it.',
+  npc: "A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper and miner); the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
 };
 
 /** A place's props with defaults filled in. */

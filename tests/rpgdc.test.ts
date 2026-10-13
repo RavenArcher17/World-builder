@@ -196,9 +196,9 @@ describe('RPG-DC export', () => {
     expect(out.maps.map((m) => m.id)).toEqual(['overworld', 'crypt1', 'crypt2', 'crypt3']);
     for (const m of out.maps) {
       expect(Object.keys(m)).toEqual(['id', 'name', 'kind', 'width', 'height', 'zone', 'groundLegend', 'ground', 'objectLegend', 'objects', 'zoneLegend', 'zones', 'places']);
-      expect(m.groundLegend).toEqual(['grass', 'path', 'water', 'town_floor', 'crypt_floor', 'crypt_wall', 'planks']);
+      expect(m.groundLegend).toEqual(['grass', 'path', 'water', 'town_floor', 'crypt_floor', 'crypt_wall', 'planks', 'sand', 'mud', 'bog', 'snow', 'stone', 'ice']);
       expect(m.objectLegend.slice(0, 20)).toEqual(['', 'tree', 'oak', 'willow', 'boulder', 'fence', 'copper_rock', 'tin_rock', 'iron_rock', 'bank', 'shop', 'furnace', 'anvil', 'cooking_fire', 'fishing_shrimp', 'fishing_trout', 'fishing_salmon', 'crypt_entrance', 'stairs_down', 'stairs_up']);
-      expect(m.objectLegend).toHaveLength(56);
+      expect(m.objectLegend).toHaveLength(64);
       expect(m.zoneLegend).toEqual(['safe', 'frontier', 'wilderness', 'deep']);
       expect(m.ground).toHaveLength(m.width * m.height);
       expect(m.objects).toHaveLength(m.width * m.height);
@@ -376,7 +376,7 @@ describe('game checks catch broken maps', () => {
     };
     p.maps[map.id] = map;
     const issues = checkGameMaps(p);
-    expect(issues.filter((i) => i.severity === 'error').map((i) => i.message)).toEqual(['The game needs the overworld to be 128×128; this map is 20×20.']);
+    expect(issues.filter((i) => i.severity === 'error').map((i) => i.message)).toEqual(['The game needs the overworld to be square, 128 to 512 tiles a side; this map is 20×20.']);
     expect(issues.map((i) => i.message).join('\n')).toMatch(/1 cell\(s\) use ground or objects the game doesn't have/);
   });
 });

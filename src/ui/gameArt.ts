@@ -5,7 +5,21 @@
  */
 import { Grid } from '../core/grid';
 import { O } from '../core/objects';
-import { ROOF_COLOURS, WALL_COLOURS, buildings, doorFace, dungeonTheme, fortChest, gameKind, type GameBuilding } from '../core/rpgdc/game';
+import {
+  OPEN_GROUND,
+  ROOF_COLOURS,
+  WALL_COLOURS,
+  buildingMask,
+  buildings,
+  doorFace,
+  dungeonTheme,
+  fortChest,
+  gameKind,
+  guardPosts,
+  houseGuards,
+  placeProps,
+  type GameBuilding,
+} from '../core/rpgdc/game';
 import { T } from '../core/tiles';
 import type { WorldMap } from '../core/types';
 import { paintOrder } from './drawObjects';
@@ -25,6 +39,10 @@ interface Sheet {
 interface GameArt {
   sheets: Record<string, Sheet>;
   images: Record<string, HTMLImageElement[]>;
+  /** Hero layer drawing order for each of the 8 facings. */
+  layerOrder: string[][];
+  /** Single pages of the character sheets (monsters, heroes' clothes), loaded as they're needed. */
+  pages: Map<string, HTMLImageElement>;
 }
 
 let loaded: GameArt | null = null;
@@ -61,7 +79,7 @@ export function loadGameArt(): Promise<GameArt> {
     loading = (async () => {
       const res = await fetch(`${base}art.json`, { mode: 'cors' });
       if (!res.ok) throw new Error(`The art index answered ${res.status}`);
-      const index = (await res.json()) as { sheets: Record<string, Sheet> };
+      const index = (await res.json()) as { sheets: Record<string, Sheet>; layerOrder?: string[][] };
       const images: Record<string, HTMLImageElement[]> = {};
       for (const name of ['world', 'dungeon', 'indoor']) {
         const sheet = index.sheets[name];
@@ -72,7 +90,7 @@ export function loadGameArt(): Promise<GameArt> {
         }
         images[name] = await Promise.all(sheet.pages.map((p) => loadImage(base + p)));
       }
-      loaded = { sheets: index.sheets, images };
+      loaded = { sheets: index.sheets, images, layerOrder: index.layerOrder ?? [], pages: new Map() };
       return loaded;
     })();
     loading.catch(() => (loading = null));
@@ -84,6 +102,12 @@ let onChange: (() => void) | null = null;
 /** Called when more art arrives (houses load as maps need them), so the map can be redrawn. */
 export function onGameArtChange(fn: () => void): void {
   onChange = fn;
+}
+let changeTimer = 0;
+/** Several sheets often arrive together: redraw once they're in, not after each. */
+function changed(): void {
+  clearTimeout(changeTimer);
+  changeTimer = window.setTimeout(() => onChange?.(), 200);
 }
 
 const sheetLoads = new Set<string>();
@@ -98,11 +122,37 @@ function haveSheet(name: string): boolean {
     Promise.all(art.sheets[name].pages.map((p) => loadImage(base + p)))
       .then((imgs) => {
         art.images[name] = imgs;
-        onChange?.();
+        changed();
       })
       .catch(() => sheetLoads.delete(name));
   }
   return false;
+}
+
+/**
+ * The page of a sheet a frame is on, if it's loaded; if not, starts loading just that page (a
+ * monster's standing pose is on its first page, and the big sheets have more) and redraws when
+ * it's in.
+ */
+function framePage(name: string, frame: string): { f: Frame; img: HTMLImageElement } | null {
+  const art = loaded;
+  const f = art?.sheets[name]?.frames[frame];
+  if (!art || !f) return null;
+  const whole = art.images[name]?.[f[0]];
+  if (whole) return { f, img: whole };
+  const key = `${name}#${f[0]}`;
+  const img = art.pages.get(key);
+  if (img) return { f, img };
+  if (!sheetLoads.has(key)) {
+    sheetLoads.add(key);
+    loadImage(artBase() + art.sheets[name].pages[f[0]])
+      .then((im) => {
+        art.pages.set(key, im);
+        changed();
+      })
+      .catch(() => sheetLoads.delete(key));
+  }
+  return null;
 }
 
 /** The game's stable per-tile hash (client/src/art.ts), so variants match the game. */
@@ -115,9 +165,40 @@ function tileHash(x: number, y: number, salt = 0): number {
 /** West, north, east, south: the order of the game's `edge/*` and `shore/*` frames. */
 const EDGE_NEIGHBOURS = [[-1, 0], [0, -1], [1, 0], [0, 1]] as const;
 
-type Ground = 'grass' | 'path' | 'floor' | 'water';
-const GROUND_OF: Partial<Record<number, Ground>> = { [T.PATH]: 'path', [T.WATER]: 'water', [T.TOWN_FLOOR]: 'floor', [T.CRYPT_FLOOR]: 'floor', [T.PLANKS]: 'floor' };
-const TREES: Partial<Record<number, string>> = { [O.TREE]: 'tree', [O.OAK]: 'oak', [O.WILLOW]: 'willow' };
+type Ground = 'grass' | 'path' | 'floor' | 'water' | 'sand' | 'mud' | 'bog' | 'snow' | 'stone' | 'ice';
+const GROUND_OF: Partial<Record<number, Ground>> = {
+  [T.PATH]: 'path',
+  [T.WATER]: 'water',
+  [T.TOWN_FLOOR]: 'floor',
+  [T.CRYPT_FLOOR]: 'floor',
+  [T.PLANKS]: 'floor',
+  [T.SAND]: 'sand',
+  [T.MUD]: 'mud',
+  [T.BOG]: 'bog',
+  [T.SNOW]: 'snow',
+  [T.STONE]: 'stone',
+  [T.ICE]: 'ice',
+};
+/**
+ * Where two grounds meet, the one higher up this list creeps over the other's edge with a ragged
+ * border: snow over grass, grass over sand, sand over mud, any of them over gravel, paths and
+ * floors. Water and bog get shores instead (the game's EDGE_RANK and EDGE_ART).
+ */
+const EDGE_RANK: Partial<Record<Ground, number>> = { snow: 6, grass: 5, sand: 4, mud: 3, stone: 2, path: 1, floor: 1, ice: 0 };
+const EDGE_ART: Partial<Record<Ground, string>> = { snow: 'snow-edge', grass: 'edge', sand: 'sand-edge', mud: 'mud-edge' };
+const wet = (g: Ground) => g === 'water' || g === 'bog';
+/**
+ * Scenery scattered over open ground for looks (the game's SCENERY): which art, on what share of
+ * tiles. Lily pads float. On grass only the first six plants: the others are herb patches.
+ */
+const SCENERY: Partial<Record<Ground, { frame: string; share: number; flat?: boolean; only?: number }>> = {
+  grass: { frame: 'plant', share: 0.06, only: 6 },
+  sand: { frame: 'dryplant', share: 0.05 },
+  mud: { frame: 'reed', share: 0.12 },
+  snow: { frame: 'snowplant', share: 0.04 },
+  bog: { frame: 'lily', share: 0.1, flat: true },
+};
+const TREES: Partial<Record<number, string>> = { [O.TREE]: 'tree', [O.OAK]: 'oak', [O.WILLOW]: 'willow', [O.YEW]: 'yew' };
 /** Ore rocks: Flare's boulder with veins, from the world sheet wherever they are (the caverns too). */
 const ORE_ART: Partial<Record<number, string>> = {
   [O.COPPER_ROCK]: 'ore-copper',
@@ -183,10 +264,72 @@ const HERB_ART: Partial<Record<number, { frame: string; tint: string }>> = {
   [O.HERB_THORNBERRY]: { frame: 'plant/12', tint: '#ff9a8a' },
   [O.HERB_NIGHTSHADE]: { frame: 'plant/8', tint: '#ffffff' },
   [O.HERB_EMBERBLOOM]: { frame: 'plant/9', tint: '#ffa060' },
+  // The new lands' herbs: a gold flower on the sand, a purple bush in the mud, pale-blue leaves on the snow.
+  [O.HERB_DUNEFLOWER]: { frame: 'plant/8', tint: '#ffd060' },
+  [O.HERB_BOGMYRTLE]: { frame: 'plant/13', tint: '#d8a0ff' },
+  [O.HERB_FROSTCAP]: { frame: 'plant/7', tint: '#b0e8ff' },
 };
-/** Scenery plants are the first six (dry grass and yellow bushes); the rest are kept for herbs. */
-const SCENERY_PLANTS = 6;
-const FISHING = new Set<number>([O.FISHING_SHRIMP, O.FISHING_TROUT, O.FISHING_SALMON]);
+const FISHING = new Set<number>([O.FISHING_SHRIMP, O.FISHING_TROUT, O.FISHING_SALMON, O.FISHING_EEL, O.FISHING_LOBSTER]);
+
+// ---- characters (client/src/actors.ts) -------------------------------------------------------
+
+/** One sheet of a character, tinted (heroes are several: body parts and gear). */
+type Layer = { sheet: string; tint?: string };
+/** Monsters drawn with another's art: [sheet, tint] (the game's MONSTER_ART). */
+const MONSTER_ART: Partial<Record<string, [string, string]>> = { sewer_rat: ['mon/rat', '#9a958a'] };
+/** Monsters drawn see-through. */
+const GHOSTLY = new Set(['ghost', 'banshee']);
+/** What each townsperson wears: a sheet per body part, and its tint (the game's NPC_OUTFITS). */
+const NPC_OUTFITS: Record<string, Record<string, [string, string?]>> = {
+  banker: { head: ['head_bald'], chest: ['cloth_shirt', '#ffe8a0'], hands: ['default_hands'], legs: ['cloth_pants', '#9a8ab8'], feet: ['leather_boots'] },
+  general: { head: ['head_short'], chest: ['leather_chest', '#e0b080'], hands: ['default_hands'], legs: ['cloth_pants'], feet: ['leather_boots'] },
+  smith: { head: ['head_bald'], chest: ['leather_chest', '#8a8a8a'], hands: ['leather_gloves', '#8a8a8a'], legs: ['cloth_pants'], feet: ['leather_boots'] },
+  mage: { head: ['mage_hood_alt1'], chest: ['mage_vest_alt1'], hands: ['mage_sleeves_alt1'], legs: ['mage_skirt_alt1'], feet: ['mage_boots_alt1'], main: ['staff'] },
+  alchemist: { head: ['head_short'], chest: ['cloth_shirt', '#a8f0a8'], hands: ['default_hands'], legs: ['cloth_pants', '#80a080'], feet: ['cloth_sandals'] },
+  tailor: { head: ['head_short'], chest: ['cloth_shirt', '#ff9ac8'], hands: ['default_hands'], legs: ['cloth_pants', '#c8a0ff'], feet: ['cloth_sandals'] },
+  fletcher: { head: ['leather_hood', '#a8d080'], chest: ['leather_chest', '#a8d080'], hands: ['leather_gloves'], legs: ['leather_pants'], feet: ['leather_boots'], main: ['longbow'] },
+  inn: { head: ['head_bald'], chest: ['cloth_shirt', '#ffffff'], hands: ['default_hands'], legs: ['cloth_pants', '#c89a6a'], feet: ['cloth_sandals'] },
+  mayor: { head: ['head_short'], chest: ['mage_vest_alt1', '#d890e8'], hands: ['mage_sleeves_alt1', '#d890e8'], legs: ['mage_skirt_alt1', '#b070c8'], feet: ['leather_boots'] },
+  captain: { head: ['plate_helm', '#ffd27a'], chest: ['plate_cuirass', '#ffd27a'], hands: ['plate_gauntlets', '#ffd27a'], legs: ['plate_greaves', '#ffd27a'], feet: ['plate_boots', '#ffd27a'], main: ['longsword'] },
+  villager: { head: ['head_short'], chest: ['cloth_shirt'], hands: ['default_hands'], legs: ['cloth_pants'], feet: ['cloth_sandals'] },
+  merchant: { head: ['leather_hood', '#40c0b0'], chest: ['mage_vest_alt1', '#e8a040'], hands: ['mage_sleeves_alt1', '#e8a040'], legs: ['mage_skirt_alt1', '#a060e0'], feet: ['leather_boots', '#8a5a3a'] },
+  slayer: { head: ['leather_hood', '#6a5058'], chest: ['leather_chest', '#7a5a5a'], hands: ['leather_gloves', '#5a4444'], legs: ['leather_pants', '#5a4444'], feet: ['leather_boots', '#5a4444'], main: ['greatsword'] },
+  // Outside town: the hermit in an old brown robe with a staff, the fisher in oilskins, the farmer in
+  // a straw-coloured smock, the trapper in leathers with a bow, and Dobbs grimy from the mine.
+  hermit: { head: ['mage_hood_alt1', '#9a8a6a'], chest: ['mage_vest_alt1', '#8a7a5a'], hands: ['mage_sleeves_alt1', '#8a7a5a'], legs: ['mage_skirt_alt1', '#6a5a48'], feet: ['cloth_sandals'], main: ['staff'] },
+  fisher: { head: ['leather_hood', '#e8c040'], chest: ['leather_chest', '#e8c040'], hands: ['default_hands'], legs: ['cloth_pants', '#506878'], feet: ['leather_boots', '#405060'], main: ['staff', '#8a5a2b'] },
+  farmer: { head: ['head_short'], chest: ['cloth_shirt', '#f0e0a8'], hands: ['default_hands'], legs: ['cloth_pants', '#7a6a40'], feet: ['leather_boots'], main: ['hand_axe'] },
+  trapper: { head: ['leather_hood', '#8a6a40'], chest: ['leather_chest', '#9a7a50'], hands: ['leather_gloves', '#7a5a3a'], legs: ['leather_pants', '#7a5a3a'], feet: ['leather_boots'], main: ['shortbow'] },
+  miner: { head: ['head_bald'], chest: ['leather_chest', '#707070'], hands: ['leather_gloves', '#5a5a5a'], legs: ['cloth_pants', '#5a5040'], feet: ['leather_boots', '#5a5a5a'], main: ['war_hammer'] },
+};
+/** Villagers' shirts and trousers, so no two neighbours look alike (the game varies them by id). */
+const VILLAGER_CLOTHES: [string, string][] = [
+  ['#b8d0ff', '#a08060'], ['#ffc890', '#707890'], ['#c8f0a8', '#8a6a4a'], ['#f0b0b0', '#606870'], ['#fff0c0', '#8a8a6a'],
+];
+/** Town guards: heroes in steel plate with a longsword (the game's GUARD_LOOK). */
+const GUARD: Record<string, Layer> = {
+  head: { sheet: 'hero/plate_helm' }, chest: { sheet: 'hero/plate_cuirass' }, hands: { sheet: 'hero/plate_gauntlets' },
+  legs: { sheet: 'hero/plate_greaves' }, feet: { sheet: 'hero/plate_boots' }, main: { sheet: 'hero/longsword' },
+};
+
+/** A townsperson's layers: their work clothes (villagers vary, here by where they stand). */
+function npcLayers(role: string, variant: number): Record<string, Layer> | null {
+  const outfit = NPC_OUTFITS[role];
+  if (!outfit) return null;
+  const layers: Record<string, Layer> = Object.fromEntries(Object.entries(outfit).map(([slot, [name, tint]]) => [slot, { sheet: `hero/${name}`, tint }]));
+  if (role === 'villager') {
+    const [shirt, trousers] = VILLAGER_CLOTHES[variant % VILLAGER_CLOTHES.length];
+    layers.chest.tint = shirt;
+    layers.legs.tint = trousers;
+    if (variant % 2) layers.head = { sheet: 'hero/head_bald' };
+  }
+  return layers;
+}
+
+/** Flare's eight facings as map steps: SW, W, NW, N, NE, E, SE, S. */
+const FACINGS = [[-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1]];
+/** The facing the game turns everyone to by default (south-east, towards the camera). */
+const FACING_SE = 6;
 
 /** A frame tinted like Phaser's setTint (multiplied), cached. */
 const tinted = new Map<string, HTMLCanvasElement>();
@@ -208,11 +351,16 @@ function tintedFrame(img: HTMLImageElement, f: Frame, tint: string): HTMLCanvasE
   return c;
 }
 
+/** Below this many pixels a tile, characters are specks: they're left out (and their art isn't loaded). */
+const CHARACTER_MIN_TILE_PX = 20;
+
 /**
  * Draw the map with the game's art at `s` pixels per render unit. Returns false (and draws
- * nothing) when the art isn't loaded or the map isn't an isometric game map.
+ * nothing) when the art isn't loaded or the map isn't an isometric game map. With `inView`, only
+ * the cells marked 1 are drawn (a big overworld is drawn just around what's on screen, as the
+ * game draws it a chunk at a time).
  */
-export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: number): boolean {
+export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: number, inView: Uint8Array | null = null): boolean {
   const art = loaded;
   if (!art || map.grid !== 'iso') return false;
   const g = new Grid(map.grid, map.width, map.height);
@@ -241,7 +389,28 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
   const count = (sheetName: string, what: string) => art.sheets[sheetName]?.counts?.[what] ?? 1;
   const variant = (what: string, x: number, y: number, salt = 0, sheetName = home) => `${what}/${Math.floor(tileHash(x, y, salt) * count(sheetName, what))}`;
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < map.height ? y * w + x : -1);
-  const order = paintOrder(g);
+  const order = inView ? paintOrder(g).filter((i) => inView[i]) : paintOrder(g);
+  const characters = s * 2 >= CHARACTER_MIN_TILE_PX ? charactersOf(map) : new Map<number, Character>();
+  /** The monster, townsperson or guard standing on cell i, if any, in the game's clothes and pose. */
+  const drawCharacter = (i: number) => {
+    const c = characters.get(i);
+    if (!c) return;
+    const [cx, cy] = g.center(i);
+    const slots = c.hero ? art.layerOrder[c.dir] ?? Object.keys(c.layers) : Object.keys(c.layers);
+    ctx.save();
+    ctx.globalAlpha = c.alpha;
+    for (const slot of slots) {
+      const layer = c.layers[slot];
+      const page = layer && framePage(layer.sheet, `stance/${c.dir}/0`);
+      if (!page) continue;
+      const { f, img } = page;
+      const x = cx * s - f[5] * k;
+      const y = cy * s - f[6] * k;
+      if (layer.tint) ctx.drawImage(tintedFrame(img, f, layer.tint), x, y, f[3] * k, f[4] * k);
+      else ctx.drawImage(img, f[1], f[2], f[3], f[4], x, y, f[3] * k, f[4] * k);
+    }
+    ctx.restore();
+  };
 
   // The caverns: rock walls, lava, embers and mine clutter (client/src/scenes/WorldScene.ts drawCave).
   if (kind === 'dungeon' && dungeonTheme(map) === 'cave' && haveSheet('cave')) {
@@ -328,6 +497,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       }
       if (L.object[i] === O.STAIRS_UP) put('stairs-up', i);
       if (lights.has(i)) put('brazier', i);
+      drawCharacter(i);
     }
     return true;
   }
@@ -336,20 +506,9 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     const i = at(x, y);
     return i < 0 ? null : GROUND_OF[L.terrain[i]] ?? 'grass';
   };
-  for (const i of order) {
-    const x = i % w;
-    const y = Math.floor(i / w);
-    const ground = groundAt(x, y)!;
-    put(variant(ground, x, y), i);
-    EDGE_NEIGHBOURS.forEach(([dx, dy], e) => {
-      const n = groundAt(x + dx, y + dy);
-      if (ground === 'water' && n && n !== 'water') put(`shore/${e}`, i);
-      if ((ground === 'path' || ground === 'floor') && n === 'grass') put(`edge/${e}`, i);
-    });
-    if (L.object[i] === O.CRYPT_ENTRANCE) put('entrance', i);
-    if (L.object[i] === O.SEWER_GRATE) put('sewer-grate', i);
-    if (FISHING.has(L.object[i])) fishRing(ctx, g, i, s);
-  }
+  /** Whether the art has something (an older game server has none of the new lands' art). */
+  const has = (what: string) => !!(art.sheets[home]?.counts?.[what] || art.sheets[home]?.frames[`${what}/0`]);
+  const either = (what: string, instead: string) => (has(what) ? what : instead);
   // Houses are drawn when the loop reaches their front corner, with their doors over them.
   const houses = new Map<number, GameBuilding>();
   for (const b of buildings(map)) {
@@ -357,6 +516,38 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     if (corner >= 0) houses.set(corner, b);
   }
   const inHouse = (x: number, y: number) => [...houses.values()].find((b) => x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h);
+  const walls = buildingMask(map);
+  // With tiles only a few pixels wide (a big map zoomed right out), edges and wild plants don't show.
+  const detail = 2 * s >= 10;
+  /** Wild plants on open ground and lily pads on the bog, just for looks, as the game scatters them. */
+  const scenery = (i: number, x: number, y: number, ground: Ground) => {
+    const sc = SCENERY[ground];
+    const t = L.terrain[i];
+    if (!detail || !sc || L.object[i] || walls[i] || !(OPEN_GROUND.has(t) || t === T.WATER || t === T.BOG) || tileHash(x, y, 9) >= sc.share || !has(sc.frame)) return null;
+    return { frame: `${sc.frame}/${Math.floor(tileHash(x, y, 10) * (sc.only ?? count(home, sc.frame)))}`, flat: !!sc.flat };
+  };
+  for (const i of order) {
+    const x = i % w;
+    const y = Math.floor(i / w);
+    const ground = groundAt(x, y)!;
+    put(variant(either(ground, wet(ground) ? 'water' : 'grass'), x, y), i);
+    // Soft edges where grounds meet: foam on lake shores (murky on bogs), and grass over paths, snow
+    // over grass and so on (see EDGE_RANK).
+    if (detail) EDGE_NEIGHBOURS.forEach(([dx, dy], e) => {
+      const n = groundAt(x + dx, y + dy);
+      if (!n) return;
+      if (wet(ground)) {
+        if (!wet(n)) put(`${ground === 'bog' ? either('bogshore', 'shore') : 'shore'}/${e}`, i);
+      } else if (EDGE_ART[n] && (EDGE_RANK[n] ?? 0) > (EDGE_RANK[ground] ?? 0)) {
+        put(`${EDGE_ART[n]}/${e}`, i);
+      }
+    });
+    if (L.object[i] === O.CRYPT_ENTRANCE) put('entrance', i);
+    if (L.object[i] === O.SEWER_GRATE) put('sewer-grate', i);
+    if (FISHING.has(L.object[i])) fishRing(ctx, g, i, s);
+    const plant = scenery(i, x, y, ground);
+    if (plant?.flat) put(plant.frame, i);
+  }
   const fence = (x: number, y: number) => at(x, y) >= 0 && L.object[at(x, y)] === O.FENCE;
   // Guild forts: the game draws a banner on the fort's tile and a chest just east of it.
   const banners = new Set<number>();
@@ -371,8 +562,12 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     const x = i % w;
     const y = Math.floor(i / w);
     const o = L.object[i];
-    if (TREES[o]) put(variant(TREES[o]!, x, y, 3), i);
-    else if (o === O.BOULDER) put(variant('rock', x, y), i);
+    // Trees and boulders on snow are snowy pines (and yews) and snowy rocks.
+    const snow = L.terrain[i] === T.SNOW;
+    if (TREES[o]) put(variant(snow ? either(o === O.YEW ? 'snowyew' : 'snowtree', TREES[o]!) : either(TREES[o]!, 'tree'), x, y, 3), i);
+    else if (o === O.BOULDER) put(variant(snow ? either('snowrock', 'rock') : 'rock', x, y), i);
+    else if (o === O.CACTUS) put(variant(either('cactus', 'rock'), x, y), i);
+    else if (o === O.DEAD_TREE) put(variant(either('deadtree', 'tree'), x, y), i);
     else if (HERB_ART[o]) putFrom('world', HERB_ART[o]!.frame, i, { tint: HERB_ART[o]!.tint, scale: 1.3 });
     else if (DECOR_ART[o]) put(DECOR_ART[o]!, i);
     else if (o === O.DOOR) {
@@ -383,9 +578,13 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       if (fence(x, y - 1)) put('fence-n', i);
       if (fence(x - 1, y)) put('fence-w', i);
       if (!fence(x, y - 1) && !fence(x - 1, y)) put('fence-post', i);
-    } else if (!o && L.terrain[i] === T.GRASS && !inHouse(x, y) && tileHash(x, y, 9) < 0.06) put(`plant/${Math.floor(tileHash(x, y, 10) * SCENERY_PLANTS)}`, i);
+    } else if (!o) {
+      const plant = scenery(i, x, y, groundAt(x, y)!);
+      if (plant && !plant.flat) put(plant.frame, i);
+    }
     if (chests.has(i)) put('bank', i, { tint: '#ffd27a' });
     if (banners.has(i)) drawBanner(i);
+    drawCharacter(i);
     const b = houses.get(i);
     if (b) drawHouse(b);
   }
@@ -472,6 +671,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       }
       if (L.object[i] === O.STAIRS_UP) put('stairs-up', i);
       if (lights.has(i)) put('brazier', i);
+      drawCharacter(i);
     }
   }
 
@@ -497,6 +697,49 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       }
     }
   }
+}
+
+/** Someone standing on a tile: a monster (one sheet) or a hero (body parts in Flare's order for the way they face). */
+interface Character {
+  layers: Record<string, Layer>;
+  hero: boolean;
+  dir: number;
+  alpha: number;
+}
+
+/**
+ * Who stands where on a map, as the game draws them: the first monster of each spawn (on the
+ * spawn's tile) and each boss, townspeople in their work clothes (turned to the counter in front
+ * of them), the travelling merchant, and the guards the game posts (at the town's gates, and
+ * indoors with the mayor).
+ */
+function charactersOf(map: WorldMap): Map<number, Character> {
+  const out = new Map<number, Character>();
+  const w = map.width;
+  const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < map.height;
+  const hero = (layers: Record<string, Layer>, x: number, y: number, dir = FACING_SE) => {
+    if (inside(x, y)) out.set(y * w + x, { layers, hero: true, dir, alpha: 1 });
+  };
+  const posts = gameKind(map) === 'overworld' ? guardPosts(map).posts : houseGuards(map);
+  for (const p of posts) hero(GUARD, p.x, p.y);
+  for (const f of map.features) {
+    if (!inside(f.c, f.r)) continue;
+    if (f.type === 'monster_spawn' || f.type === 'boss') {
+      const kind = String(placeProps(f).kind);
+      const [sheet, tint] = MONSTER_ART[kind] ?? [`mon/${kind}`, undefined];
+      out.set(f.r * w + f.c, { layers: { body: { sheet, tint } }, hero: false, dir: FACING_SE, alpha: GHOSTLY.has(kind) ? 0.6 : 1 });
+    } else if (f.type === 'npc' || f.type === 'merchant') {
+      const role = f.type === 'merchant' ? 'merchant' : String(placeProps(f).role);
+      const layers = npcLayers(role, Math.floor(tileHash(f.c, f.r, 21) * VILLAGER_CLOTHES.length));
+      if (!layers) continue;
+      // Shopkeepers and bankers face the counter in front of them.
+      const counter = [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]].find(
+        ([dx, dy]) => inside(f.c + dx, f.r + dy) && map.layers.object[(f.r + dy) * w + f.c + dx] === O.COUNTER,
+      );
+      hero(layers, f.c, f.r, counter ? FACINGS.findIndex(([dx, dy]) => dx === counter[0] && dy === counter[1]) : FACING_SE);
+    }
+  }
+  return out;
 }
 
 /** The game draws fishing spots as a pale ring on the water. */

@@ -3,7 +3,7 @@
  * Every issue names a tile so the editor can jump to it.
  */
 import { O, objectDef } from '../objects';
-import { T } from '../tiles';
+import { T, tile } from '../tiles';
 import type { Feature, Project, WorldMap } from '../types';
 import {
   ARENA_MAP_ID,
@@ -11,6 +11,7 @@ import {
   BUILDING_SIZES,
   FORT_ID,
   FORT_RADIUS,
+  GROUND_LEGEND,
   fortChest,
   BUILDING_STYLES,
   DUNGEON_THEMES,
@@ -52,19 +53,31 @@ export interface GameIssue {
   message: string;
 }
 
+/** The smallest and biggest overworld the game takes: square, 128 to 512 tiles a side. */
 export const OVERWORLD_SIZE = 128;
-/** Sizes the game takes for dungeon floors and building insides: [smallest, largest] a side. */
-export const SIZES = { dungeon: [16, 64], interior: [4, 32] } as const;
+export const OVERWORLD_MAX = 512;
+/** Sizes the game takes, per kind of map: [smallest, largest] a side (the overworld square). */
+export const SIZES = { overworld: [OVERWORLD_SIZE, OVERWORLD_MAX], dungeon: [16, 64], interior: [4, 32] } as const;
 
-/** Where each herb belongs, as the game places them. */
-const HERB_ZONES: Record<number, { name: string; zones: string[] }> = {
-  [O.HERB_SUNLEAF]: { name: 'Sunleaf', zones: ['frontier'] },
-  [O.HERB_SILVERWEED]: { name: 'Silverweed', zones: ['frontier'] },
-  [O.HERB_THORNBERRY]: { name: 'Thornberry', zones: ['wilderness'] },
-  [O.HERB_NIGHTSHADE]: { name: 'Nightshade', zones: ['wilderness'] },
-  [O.HERB_EMBERBLOOM]: { name: 'Emberbloom', zones: ['deep'] },
+/** Out of town: any zone but Safe. */
+const WILD = ['frontier', 'wilderness', 'deep'];
+/**
+ * Where each herb belongs, as the game places them (HERB_PATCHES in its herbs.ts): the
+ * heartland's herbs on grass in their zones, the new lands' each on its own land's ground,
+ * anywhere out of town.
+ */
+const HERBS: Record<number, { name: string; ground: number; zones: string[] }> = {
+  [O.HERB_SUNLEAF]: { name: 'Sunleaf', ground: T.GRASS, zones: ['frontier'] },
+  [O.HERB_SILVERWEED]: { name: 'Silverweed', ground: T.GRASS, zones: ['frontier'] },
+  [O.HERB_THORNBERRY]: { name: 'Thornberry', ground: T.GRASS, zones: ['wilderness'] },
+  [O.HERB_NIGHTSHADE]: { name: 'Nightshade', ground: T.GRASS, zones: ['wilderness'] },
+  [O.HERB_EMBERBLOOM]: { name: 'Emberbloom', ground: T.GRASS, zones: ['deep'] },
+  [O.HERB_DUNEFLOWER]: { name: 'Duneflower', ground: T.SAND, zones: WILD },
+  [O.HERB_BOGMYRTLE]: { name: 'Bog myrtle', ground: T.MUD, zones: WILD },
+  [O.HERB_FROSTCAP]: { name: 'Frostcap', ground: T.SNOW, zones: WILD },
 };
-const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW]);
+const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW, O.YEW]);
+const groundName = (t: number) => tile(t).name.toLowerCase();
 
 export function checkGameMaps(project: Project): GameIssue[] {
   const issues: GameIssue[] = [];
@@ -289,7 +302,7 @@ export function checkGameMaps(project: Project): GameIssue[] {
     // Herbs (warnings): in their zones, reachable, not blocking a path, not hidden by trees.
     if (m === overworld) {
       const herbs: number[] = [];
-      for (let i = 0; i < L.object.length; i++) if (HERB_ZONES[L.object[i]]) herbs.push(i);
+      for (let i = 0; i < L.object.length; i++) if (HERBS[L.object[i]]) herbs.push(i);
       if (herbs.length) {
         const x0 = herbs[0] % w;
         const y0 = Math.floor(herbs[0] / w);
@@ -298,9 +311,12 @@ export function checkGameMaps(project: Project): GameIssue[] {
       for (const i of herbs) {
         const x = i % w;
         const y = Math.floor(i / w);
-        const herb = HERB_ZONES[L.object[i]];
+        const herb = HERBS[L.object[i]];
         const zone = zoneAt(m, i)?.key ?? '';
-        if (!herb.zones.includes(zone)) add('warning', m, x, y, `${herb.name} (${x}, ${y}) is in the ${zone || 'no'} zone; it grows in the ${herb.zones.join(' or ')}.`);
+        if (!herb.zones.includes(zone)) {
+          add('warning', m, x, y, `${herb.name} (${x}, ${y}) is in the ${zone || 'no'} zone; it grows ${herb.zones === WILD ? 'anywhere out of town (not the Safe zone)' : `in the ${herb.zones.join(' or ')}`}.`);
+        }
+        if (L.terrain[i] !== herb.ground) add('warning', m, x, y, `${herb.name} (${x}, ${y}) is on ${groundName(L.terrain[i])}; it grows on ${groundName(herb.ground)}.`);
         const around = NEIGHBOURS.map(([dx, dy]) => [x + dx, y + dy]).filter(([nx, ny]) => nx >= 0 && ny >= 0 && nx < w && ny < m.height);
         if (!around.some(([nx, ny]) => reached[ny * w + nx])) add('warning', m, x, y, `${herb.name} (${x}, ${y}) can't be reached from the spawn point.`);
         else if (around.some(([nx, ny]) => !isWalkableAt(m, nx, ny))) add('warning', m, x, y, `${herb.name} (${x}, ${y}) has a blocked tile next to it, so it might block a path.`);
@@ -382,20 +398,17 @@ export function checkGameMaps(project: Project): GameIssue[] {
       if (oddAt < 0) oddAt = i;
     }
     if (odd) {
-      const g = ['grass', 'path', 'water', 'town floor', 'crypt floor', 'crypt wall', 'planks'][gameGround(L.terrain[oddAt])];
+      const g = GROUND_LEGEND[gameGround(L.terrain[oddAt])].replace('_', ' ');
       add('warning', m, oddAt % w, Math.floor(oddAt / w), `${odd} cell(s) use ground or objects the game doesn't have; they export as the closest game ground (first one exports as ${g}).`);
     }
 
+    // Sizes: the overworld square, 128 to 512 tiles a side; dungeon floors and insides within theirs.
     const kind = gameKind(m);
-    if (kind === 'overworld') {
-      if (m.width !== OVERWORLD_SIZE || m.height !== OVERWORLD_SIZE) {
-        add('error', m, 0, 0, `The game needs the overworld to be ${OVERWORLD_SIZE}×${OVERWORLD_SIZE}; this map is ${m.width}×${m.height}.`);
-      }
-    } else {
-      const [min, max] = SIZES[kind];
-      if (m.width < min || m.height < min || m.width > max || m.height > max) {
-        add('error', m, 0, 0, `The game needs ${kind === 'dungeon' ? 'dungeon floors' : "buildings' insides"} to be ${min} to ${max} tiles a side; this map is ${m.width}×${m.height}.`);
-      }
+    const [min, max] = SIZES[kind];
+    const square = kind !== 'overworld' || m.width === m.height;
+    if (!square || m.width < min || m.height < min || m.width > max || m.height > max) {
+      const what = kind === 'overworld' ? 'the overworld to be square,' : kind === 'dungeon' ? 'dungeon floors to be' : "buildings' insides to be";
+      add('error', m, 0, 0, `The game needs ${what} ${min} to ${max} tiles a side; this map is ${m.width}×${m.height}.`);
     }
   }
 

@@ -69,6 +69,13 @@ export const T = {
   PLANKS: 43,
   // 3D maps: no floor here (the upper storeys' default, stairwells, open drops).
   VOID: 44,
+  // More plain ground for game maps (RPG-DC's new lands): the desert, the swamp and the mountains.
+  SAND: 45,
+  MUD: 46,
+  BOG: 47,
+  SNOW: 48,
+  STONE: 49,
+  ICE: 50,
 } as const;
 
 const def = (
@@ -128,6 +135,12 @@ export const TILES: TileDef[] = [
   def(T.CRYPT_WALL, 'crypt_wall', 'Crypt wall', '#3b3640', 'dungeon', false, Infinity, 'bricks'),
   def(T.PLANKS, 'planks', 'Wooden floor', '#a8794a', 'urban', true, 0.5, 'boards'),
   def(T.VOID, 'void', 'Nothing (open air)', '#0b0c10', 'dungeon', false, Infinity),
+  def(T.SAND, 'sand', 'Sand', '#d6bd84', 'land', true, 1.3, 'dirt'),
+  def(T.MUD, 'mud', 'Mud', '#5c4c30', 'land', true, 2, 'dirt'),
+  def(T.BOG, 'bog', 'Bog water', '#3c4c2c', 'water', false, Infinity, 'waves'),
+  def(T.SNOW, 'snow', 'Snow', '#e6ecf0', 'land', true, 1.8),
+  def(T.STONE, 'stone', 'Bare rock / gravel', '#8c8a86', 'land', true, 1.5, 'dirt'),
+  def(T.ICE, 'ice', 'Ice', '#a6cede', 'land', true, 2),
 ];
 
 export function tile(id: number): TileDef {
@@ -135,7 +148,7 @@ export function tile(id: number): TileDef {
 }
 
 export function isWater(id: number): boolean {
-  return id === T.DEEP_OCEAN || id === T.OCEAN || id === T.LAKE || id === T.POOL || id === T.WATER;
+  return id === T.DEEP_OCEAN || id === T.OCEAN || id === T.LAKE || id === T.POOL || id === T.WATER || id === T.BOG;
 }
 
 export function isSea(id: number): boolean {

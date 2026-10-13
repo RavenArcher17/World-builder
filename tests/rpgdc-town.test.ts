@@ -3,10 +3,31 @@ import { describe, expect, it } from 'vitest';
 import { O } from '../src/core/objects';
 import { checkGameMaps } from '../src/core/rpgdc/checks';
 import { toRpgdcMaps, type RpgdcMapsFile } from '../src/core/rpgdc/export';
-import { buildingMask, buildings, dungeonTheme, gameKind, guardPosts, isWalkableAt, mapTheme, OBJECT_LEGEND, ZONES } from '../src/core/rpgdc/game';
-import { T } from '../src/core/tiles';
+import { createProject } from '../src/core/project';
+import {
+  buildingMask,
+  buildings,
+  dungeonTheme,
+  gameKind,
+  GROUND_LEGEND,
+  GROUND_TILES,
+  guardPosts,
+  houseGuards,
+  isGameGround,
+  isWalkableAt,
+  mapTheme,
+  MONSTER_KINDS,
+  normalRange,
+  NPC_ROLES,
+  OBJECT_LEGEND,
+  reachable,
+  withProp,
+  ZONES,
+} from '../src/core/rpgdc/game';
+import { isWater, T } from '../src/core/tiles';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
-import type { Project, WorldMap } from '../src/core/types';
+import { emptyLayers, type Feature, type Project, type WorldMap } from '../src/core/types';
+import { cacheFit, cacheRegion, MAX_CACHE_PIXELS } from '../src/ui/render';
 
 /** The game's own map file (shared/maps/rpg-dc.maps.json in RPG-DC), with the town, its insides and the sewers. */
 const FILE = readFileSync(new URL('./fixtures/rpg-dc.maps.json', import.meta.url), 'utf8');
@@ -43,7 +64,7 @@ describe('opening the game’s map file', () => {
     const bank = byGameId(p, 'bank');
     expect(bank.features.filter((f) => f.type === 'npc').map((f) => f.props?.role)).toEqual(['banker', 'banker']);
     const world = byGameId(p, 'overworld');
-    expect(world.features.filter((f) => f.type === 'building').length).toBe(14);
+    expect(world.features.filter((f) => f.type === 'building').length).toBe(18);
   });
 
   it('passes every game check', () => {
@@ -70,6 +91,7 @@ describe('opening the game’s map file', () => {
       'well', 'lamp_post', 'market_stall', 'flower_bed', 'bench', 'signpost', 'notice_board',
       'gold_rock', 'mithril_rock', 'adamant_rock', 'runite_rock',
       'essence_rock', 'air_altar', 'mind_altar', 'water_altar', 'earth_altar', 'fire_altar', 'chaos_altar', 'law_altar',
+      'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
     ]);
   });
 
@@ -110,12 +132,16 @@ describe('opening the game’s map file', () => {
     expect('theme' in out.find((m) => m.id === 'crypt1')!).toBe(false);
   });
 
-  it('posts town guards where the game does, one at each gate', () => {
-    // RPG-DC's server, on this file: guards at these tiles, and criminals come back at (63, 47).
+  it('posts town guards where the game does, one at each gate, and one with the mayor', () => {
+    // RPG-DC's server, on this file: guards at these tiles, criminals come back at (127, 105), and
+    // a guard stands two steps from the mayor in the Town Hall.
     const { posts, outside } = guardPosts(byGameId(project(), 'overworld'));
-    expect(posts.map((p) => [p.x, p.y])).toEqual([[63, 51], [51, 63], [77, 63], [63, 77]]);
-    expect(outside).toEqual({ x: 63, y: 47 });
+    expect(posts.map((p) => [p.x, p.y])).toEqual([[127, 109], [109, 127], [147, 127], [127, 147]]);
+    expect(outside).toEqual({ x: 127, y: 105 });
     expect(guardPosts(byGameId(project(), 'bank')).posts).toEqual([]);
+    expect(houseGuards(byGameId(project(), 'town_hall'))).toEqual([{ x: 4, y: 1 }]);
+    expect(houseGuards(byGameId(project(), 'bank'))).toEqual([]);
+    expect(houseGuards(byGameId(project(), 'overworld'))).toEqual([]);
   });
 
   it('treats a building’s walls as blocked, except its door', () => {
@@ -142,12 +168,12 @@ describe('game checks for the town', () => {
       const w = byGameId(p, 'overworld');
       const b = building(w, 'Bank');
       for (let i = 0; i < w.layers.object.length; i++) if (w.layers.object[i] === O.DOOR && Math.floor(i / w.width) === b.r + 4) w.layers.object[i] = 0;
-    }).some((m) => /Bank \(57, 58\) has no door/.test(m))).toBe(true);
+    }).some((m) => /Bank \(119, 120\) has no door/.test(m))).toBe(true);
     expect(edit((p) => {
       const w = byGameId(p, 'overworld');
       const b = building(w, 'Bank');
       w.layers.object[b.r * w.width + b.c + 2] = O.DOOR;
-    }).some((m) => /door at \(59, 58\) the camera can't see/.test(m))).toBe(true);
+    }).some((m) => /door at \(121, 120\) the camera can't see/.test(m))).toBe(true);
   });
 
   it('catches sizes there’s no art for', () => {
@@ -175,7 +201,7 @@ describe('game checks for the town', () => {
   });
 
   it('catches colours the game doesn’t have', () => {
-    expect(edit((p) => { building(byGameId(p, 'overworld'), 'Bank').props!.roof = 'pink'; }).some((m) => /Bank \(57, 58\) has an unknown roof colour "pink"/.test(m))).toBe(true);
+    expect(edit((p) => { building(byGameId(p, 'overworld'), 'Bank').props!.roof = 'pink'; }).some((m) => /Bank \(119, 120\) has an unknown roof colour "pink"/.test(m))).toBe(true);
     expect(edit((p) => { building(byGameId(p, 'overworld'), 'Bank').props!.walls = 'plaid'; }).some((m) => /unknown wall colour "plaid"/.test(m))).toBe(true);
   });
 
@@ -217,7 +243,7 @@ describe('the rarer ores and Runecrafting', () => {
     const world = byGameId(p, 'overworld');
     expect(count(world, O.ESSENCE_ROCK)).toBe(4);
     for (const a of ALTARS) expect(count(world, a)).toBe(1);
-    expect(count(world, O.RUNITE_ROCK)).toBe(3);
+    expect(count(world, O.RUNITE_ROCK)).toBe(4);
     expect(count(byGameId(p, 'caves1'), O.GOLD_ROCK)).toBe(4);
     expect(count(byGameId(p, 'caves2'), O.MITHRIL_ROCK)).toBe(4);
     expect(count(byGameId(p, 'caves3'), O.ADAMANT_ROCK)).toBe(3);
@@ -265,16 +291,19 @@ describe('the Duel Arena, the guild fort and the travelling merchant', () => {
   };
   const fortOf = (m: WorldMap) => m.features.find((f) => f.type === 'fort')!;
 
-  it('opens the fort and the merchant’s spot as places, and exports them as they were', () => {
+  it('opens the forts and the merchant’s spot as places, and exports them as they were', () => {
     const world = byGameId(project(), 'overworld');
     const fort = fortOf(world);
-    expect([fort.c, fort.r, fort.props?.id, fort.props?.name, fort.name]).toEqual([30, 120, 'deep_keep', 'the Deep Keep', 'the Deep Keep']);
+    expect([fort.c, fort.r, fort.props?.id, fort.props?.name, fort.name]).toEqual([46, 214, 'deep_keep', 'the Deep Keep', 'the Deep Keep']);
     const merchant = world.features.find((f) => f.type === 'merchant')!;
-    expect([merchant.c, merchant.r]).toEqual([70, 74]);
+    expect([merchant.c, merchant.r]).toEqual([136, 142]);
     const out = toRpgdcMaps(project()).maps.find((m) => m.id === 'overworld')!;
     expect(out.places.filter((p) => p.type === 'fort' || p.type === 'merchant')).toEqual([
-      { type: 'fort', x: 30, y: 120, id: 'deep_keep', name: 'the Deep Keep' },
-      { type: 'merchant', x: 70, y: 74 },
+      { type: 'fort', x: 46, y: 214, id: 'deep_keep', name: 'the Deep Keep' },
+      { type: 'fort', x: 160, y: 18, id: 'frost_hold', name: 'the Frost Hold' },
+      { type: 'fort', x: 233, y: 97, id: 'mire_keep', name: 'the Mire Keep' },
+      { type: 'fort', x: 96, y: 240, id: 'dune_keep', name: 'the Dune Keep' },
+      { type: 'merchant', x: 136, y: 142 },
     ]);
   });
 
@@ -291,7 +320,8 @@ describe('the Duel Arena, the guild fort and the travelling merchant', () => {
     const found = issues((p) => {
       const world = byGameId(p, 'overworld');
       const fort = fortOf(world);
-      world.features.push({ ...fort, id: 'f-x', c: 64, r: 80, props: { id: 'Bad Id', name: 'Town keep' } });
+      const spawn = world.features.find((f) => f.type === 'spawn_point')!;
+      world.features.push({ ...fort, id: 'f-x', c: spawn.c, r: spawn.r + 3, props: { id: 'Bad Id', name: 'Town keep' } });
       // A gap in the real fort's palisade, on its north side away from the gate.
       world.layers.object[(fort.r - 5) * world.width + fort.c - 3] = 0;
       byGameId(p, 'crypt1').features.push({ id: 'f-y', type: 'fort', c: 5, r: 5, name: 'x', props: { id: 'crypt_keep', name: 'x' } });
@@ -301,13 +331,14 @@ describe('the Duel Arena, the guild fort and the travelling merchant', () => {
     expect(errs.some((m) => /The fort Town keep's yard .* isn't all in the Deep/.test(m))).toBe(true);
     expect(errs.some((m) => /The fort x isn't on the overworld/.test(m))).toBe(true);
     const warnings = found.filter((i) => i.severity === 'warning').map((i) => i.message);
-    expect(warnings.some((m) => /The fort the Deep Keep's palisade has a gap at \(27, 115\)/.test(m))).toBe(true);
+    expect(warnings.some((m) => /The fort the Deep Keep's palisade has a gap at \(43, 209\)/.test(m))).toBe(true);
   });
 
   it('catches the merchant out of town, or two of her', () => {
     const errs = (fn: (world: WorldMap) => void) => issues((p) => fn(byGameId(p, 'overworld'))).filter((i) => i.severity === 'error').map((i) => i.message);
-    expect(errs((w) => { const m = w.features.find((f) => f.type === 'merchant')!; m.r = 90; }).some((m) => /isn't in the Safe zone/.test(m))).toBe(true);
-    expect(errs((w) => { const m = w.features.find((f) => f.type === 'merchant')!; w.features.push({ ...m, id: 'f-z', c: 66 }); }).some((m) => /more than one spot for the travelling merchant/.test(m))).toBe(true);
+    // Out at a fort's banner: open ground, but in the Deep.
+    expect(errs((w) => { const m = w.features.find((f) => f.type === 'merchant')!; Object.assign(m, { c: fortOf(w).c, r: fortOf(w).r }); }).some((m) => /isn't in the Safe zone/.test(m))).toBe(true);
+    expect(errs((w) => { const m = w.features.find((f) => f.type === 'merchant')!; w.features.push({ ...m, id: 'f-z', c: m.c + 1 }); }).some((m) => /more than one spot for the travelling merchant/.test(m))).toBe(true);
   });
 
   it('warns when the arena has no pit', () => {
@@ -316,5 +347,167 @@ describe('the Duel Arena, the guild fort and the travelling merchant', () => {
       arena.layers.object = arena.layers.object.map((o) => (o === O.FENCE ? 0 : o));
     });
     expect(found.some((i) => i.severity === 'warning' && /The Duel Arena has no pit/.test(i.message))).toBe(true);
+  });
+});
+
+describe('the new lands: a 256-tile world, its grounds, objects, monsters and people', () => {
+  const issues = (fn: (p: Project) => void) => {
+    const p = project();
+    fn(p);
+    return checkGameMaps(p);
+  };
+  const count = (m: WorldMap, id: number) => m.layers.object.filter((o) => o === id).length;
+  /** A bare overworld of n×m grass tiles: the town (Safe) round the spawn point, Frontier beyond. */
+  const bareWorld = (w: number, h = w) => {
+    const p = createProject('size');
+    const L = emptyLayers(w * h);
+    L.terrain.fill(T.GRASS);
+    L.zone.fill(2);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) L.zone[y * w + x] = 1;
+    const map: WorldMap = {
+      id: 'ow', name: 'World', kind: 'overland', scaleId: 'local', grid: 'iso', width: w, height: h, seed: 1,
+      settings: { rpgdcMapId: 'overworld' }, layers: L, children: [],
+      features: [{ id: 's', type: 'spawn_point', c: 3, r: 3, name: 'start' }],
+    };
+    p.maps[map.id] = map;
+    return { p, map };
+  };
+
+  it('opens the 256×256 overworld with every ground the game file uses', () => {
+    const before = file().maps.find((m) => m.id === 'overworld')!;
+    const world = byGameId(project(), 'overworld');
+    expect([world.width, world.height]).toEqual([256, 256]);
+    const want = new Map<string, number>();
+    for (const v of before.ground) want.set(before.groundLegend[v], (want.get(before.groundLegend[v]) ?? 0) + 1);
+    for (const [name, n] of want) {
+      const t = GROUND_TILES[GROUND_LEGEND.indexOf(name as (typeof GROUND_LEGEND)[number])];
+      expect(world.layers.terrain.filter((x) => x === t).length, name).toBe(n);
+    }
+    expect([...want.keys()].sort()).toEqual(['bog', 'grass', 'ice', 'mud', 'path', 'sand', 'snow', 'stone', 'town_floor', 'water']);
+  });
+
+  it('takes any square overworld from 128 to 512 tiles a side, as the game does', () => {
+    const sizeErrors = (w: number, h = w) => checkGameMaps(bareWorld(w, h).p).filter((i) => i.severity === 'error').map((i) => i.message);
+    for (const n of [128, 256, 512]) expect(sizeErrors(n), `${n}`).toEqual([]);
+    expect(sizeErrors(127)).toEqual(['The game needs the overworld to be square, 128 to 512 tiles a side; this map is 127×127.']);
+    expect(sizeErrors(513)).toEqual(['The game needs the overworld to be square, 128 to 512 tiles a side; this map is 513×513.']);
+    expect(sizeErrors(256, 200)).toEqual(['The game needs the overworld to be square, 128 to 512 tiles a side; this map is 256×200.']);
+  });
+
+  it('walks the new lands as the game does: bog is water, the rest is open ground', () => {
+    expect(GROUND_LEGEND.slice(7)).toEqual(['sand', 'mud', 'bog', 'snow', 'stone', 'ice']);
+    const { p, map } = bareWorld(128);
+    const grounds = [T.SAND, T.MUD, T.BOG, T.SNOW, T.STONE, T.ICE];
+    grounds.forEach((t, k) => (map.layers.terrain[20 * 128 + 20 + k] = t));
+    expect(grounds.map((_, k) => isWalkableAt(map, 20 + k, 20))).toEqual([true, true, false, true, true, true]);
+    expect(isWater(T.BOG)).toBe(true);
+    expect(grounds.every(isGameGround)).toBe(true);
+    // A monster in the bog is stuck; one on the sand is fine.
+    map.features.push({ id: 'm1', type: 'monster_spawn', c: 22, r: 20, name: 'x', props: { kind: 'drowned', count: 1, radius: 7 } });
+    map.features.push({ id: 'm2', type: 'monster_spawn', c: 20, r: 20, name: 'x', props: { kind: 'scarab', count: 1, radius: 7 } });
+    const errs = checkGameMaps(p).filter((i) => i.severity === 'error').map((i) => i.message);
+    expect(errs).toEqual(['Monster spawn (22, 20) is on a tile you can\'t walk on.']);
+    // They export under the game's names and open again as the same ground, with no warnings.
+    const out = toRpgdcMaps(p).maps[0];
+    expect(grounds.map((_, k) => out.groundLegend[out.ground[20 * 128 + 20 + k]])).toEqual(['sand', 'mud', 'bog', 'snow', 'stone', 'ice']);
+    const back = Object.values(fromRpgdcMaps(toRpgdcMaps(p)).maps)[0];
+    expect(back.layers.terrain).toEqual(map.layers.terrain);
+    expect(checkGameMaps(p).some((i) => /ground or objects the game doesn't have/.test(i.message))).toBe(false);
+  });
+
+  it('opens the new lands’ objects the game placed: yews, cacti, dead trees, eels and lobsters', () => {
+    const world = byGameId(project(), 'overworld');
+    expect([O.CACTUS, O.DEAD_TREE, O.YEW, O.FISHING_EEL, O.FISHING_LOBSTER].map((o) => count(world, o))).toEqual([143, 291, 30, 12, 14]);
+    // They stand in the way, like everything else.
+    const yew = world.layers.object.indexOf(O.YEW);
+    expect(isWalkableAt(world, yew % 256, Math.floor(yew / 256))).toBe(false);
+    const out = toRpgdcMaps(project()).maps.find((m) => m.id === 'overworld')!;
+    expect(out.objectLegend.slice(56)).toEqual(['cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap']);
+  });
+
+  it('needs eel and lobster spots reachable, like every fishing spot', () => {
+    const found = issues((p) => {
+      const world = byGameId(p, 'overworld');
+      const eel = world.layers.object.indexOf(O.FISHING_EEL);
+      const x = eel % 256;
+      const y = Math.floor(eel / 256);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (dx || dy) world.layers.object[(y + dy) * 256 + x + dx] = O.BOULDER;
+      }
+    });
+    expect(found.some((i) => i.severity === 'error' && /Fishing spot: eel .* has no walkable neighbour/.test(i.message))).toBe(true);
+  });
+
+  it('warns about the new herbs off their own ground or in town, and hidden by a yew', () => {
+    const warnings = issues((p) => {
+      const world = byGameId(p, 'overworld');
+      const spawn = world.features.find((f) => f.type === 'spawn_point')!;
+      // A duneflower on the town's cobbles; a frostcap on open snow out of town, with a yew beside it.
+      world.layers.object[(spawn.r + 1) * 256 + spawn.c + 1] = O.HERB_DUNEFLOWER;
+      const snow = world.layers.terrain.findIndex((t, i) => t === T.SNOW && reachable(world, [{ x: spawn.c, y: spawn.r }])[i] === 1);
+      world.layers.object[snow] = O.HERB_FROSTCAP;
+      world.layers.object[snow - 2] = O.YEW;
+    }).filter((i) => i.severity === 'warning').map((i) => i.message);
+    expect(warnings.some((m) => /Duneflower .* is in the safe zone; it grows anywhere out of town/.test(m))).toBe(true);
+    expect(warnings.some((m) => /Duneflower .* is on town cobbles; it grows on sand\./.test(m))).toBe(true);
+    expect(warnings.some((m) => /Frostcap .* is in the/.test(m) || /Frostcap .* is on/.test(m))).toBe(false);
+    expect(warnings.some((m) => /Frostcap .* is within 2 tiles of a tree/.test(m))).toBe(true);
+    expect(warnings.some((m) => /herb patch\(es\): the game uses just these/.test(m))).toBe(true);
+  });
+
+  it('knows the new lands’ monsters, each with its normal range', () => {
+    const ranges = { scarab: 7, bog_goblin: 7, frost_ant: 7, mummy: 7, drowned: 7, yeti: 8, antlion: 6, swamp_wyvern: 8, ice_wyvern: 8 };
+    for (const [kind, range] of Object.entries(ranges)) {
+      expect(MONSTER_KINDS.some((k) => k.key === kind), kind).toBe(true);
+      expect(normalRange(kind), kind).toBe(range);
+    }
+    const spawns = byGameId(project(), 'overworld').features.filter((f) => f.type === 'monster_spawn').map((f) => String(f.props?.kind));
+    for (const kind of Object.keys(ranges)) expect(spawns, kind).toContain(kind);
+    const f: Feature = { id: 'f', type: 'monster_spawn', c: 0, r: 0, name: 'x', props: { kind: 'rat', count: 1, radius: 6 } };
+    expect(withProp(f, 'kind', 'antlion').radius).toBe(6);
+    expect(withProp(f, 'kind', 'yeti').radius).toBe(8);
+  });
+
+  it('knows the people outside town, and Dobbs in the caverns', () => {
+    const p = project();
+    const roles = (id: string) => byGameId(p, id).features.filter((f) => f.type === 'npc').map((f) => [f.props?.role, f.name]);
+    expect(roles('hermit_hut')).toEqual([['hermit', 'Hermit (Old Ansel)']]);
+    expect(roles('fisher_hut')).toEqual([['fisher', 'Fisher (Moira)']]);
+    expect(roles('farmhouse')).toEqual([['farmer', 'Farmer (Giles)']]);
+    expect(roles('trapper_lodge')).toEqual([['trapper', 'Trapper (Rook)']]);
+    expect(roles('caves1')).toEqual([['miner', 'Miner (Dobbs)']]);
+    for (const r of ['hermit', 'fisher', 'farmer', 'trapper', 'miner']) expect(NPC_ROLES.some((n) => n.value === r), r).toBe(true);
+    // An unknown role is still an error.
+    const hut = byGameId(p, 'hermit_hut');
+    hut.features.find((f) => f.type === 'npc')!.props = { role: 'wizard' };
+    expect(errors(p).map((i) => i.message)).toContain('Townsperson (3, 2) has an unknown role "wizard".');
+  });
+
+  it('keeps just the part of a big map around the view rendered, at a size phones can hold', () => {
+    const map = bareWorld(256).map;
+    // Zoomed in on the middle: only around the view (a quarter of a screen more each way), a
+    // little sharper than it's shown.
+    const view = { x0: 250, y0: 120, x1: 270, y1: 160 };
+    const near = cacheRegion(map, view, 30);
+    expect(near.whole).toBe(false);
+    expect(near.s).toBe(36);
+    expect(near.region).toEqual({ x0: 245, y0: 110, x1: 275, y1: 170 });
+    expect(cacheFit(map, near, view, 30)).toBe('ok');
+    // Panned off it, or zoomed in past its detail: it's rendered again.
+    expect(cacheFit(map, near, { x0: 280, y0: 120, x1: 300, y1: 160 }, 30)).toBe('outside');
+    expect(cacheFit(map, near, { x0: 255, y0: 130, x1: 265, y1: 150 }, 60)).toBe('detail');
+    // Zoomed out over all of it: the whole map, at a little more than the screen shows.
+    const far = cacheRegion(map, { x0: -50, y0: -20, x1: 560, y1: 280 }, 2);
+    expect(far.region).toEqual({ x0: 0, y0: 0, x1: 512, y1: 256 });
+    expect(far.s).toBeCloseTo(2.4);
+    // A small map is kept whole with detail to spare, as before.
+    const small = cacheRegion(bareWorld(128).map, { x0: 100, y0: 50, x1: 120, y1: 70 }, 2);
+    expect([small.whole, small.s]).toEqual([true, 11]);
+    expect(cacheFit(bareWorld(128).map, small, { x0: 0, y0: 0, x1: 5, y1: 5 }, 40)).toBe('ok');
+    // Never more pixels than phones allow a canvas.
+    for (const scale of [1, 5, 20, 48, 100]) {
+      const r = cacheRegion(map, { x0: 0, y0: 0, x1: 2000 / scale, y1: 3000 / scale }, scale);
+      expect((r.region.x1 - r.region.x0) * (r.region.y1 - r.region.y0) * r.s * r.s, `${scale}`).toBeLessThanOrEqual(MAX_CACHE_PIXELS + 1);
+    }
   });
 });

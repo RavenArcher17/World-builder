@@ -35,20 +35,20 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "id": "overworld",
   "name": "RPG-DC overworld",
   "kind": "overworld",
-  "width": 128,
-  "height": 128,
+  "width": 256,
+  "height": 256,
   "zone": null,
-  "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks"],
+  "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks", "sand", "mud", "bog", "snow", "stone", "ice"],
   "ground": [0, 0, 1, ...],
-  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar"],
+  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap"],
   "objects": [0, 4, 0, ...],
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
   "places": [
-    { "type": "spawn_point", "x": 64, "y": 65 },
-    { "type": "monster_spawn", "x": 70, "y": 52, "kind": "goblin", "count": 1, "radius": 7 },
-    { "type": "link", "x": 36, "y": 44, "toMap": "crypt1", "toX": 19, "toY": 7 },
-    { "type": "building", "x": 57, "y": 58, "w": 6, "h": 5, "style": "stone", "sign": "Bank", "roof": "slate", "walls": "grey" }
+    { "type": "spawn_point", "x": 128, "y": 129 },
+    { "type": "monster_spawn", "x": 201, "y": 68, "kind": "yeti", "count": 1, "radius": 8 },
+    { "type": "link", "x": 78, "y": 68, "toMap": "crypt1", "toX": 19, "toY": 7 },
+    { "type": "building", "x": 119, "y": 120, "w": 6, "h": 5, "style": "stone", "sign": "Bank", "roof": "slate", "walls": "grey" }
   ]
 }
 ```
@@ -58,12 +58,12 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
 | `id` | string | The game's map id (`settings.rpgdcMapId`): `overworld`, `crypt1`, `sewer1`, `bank`, … |
 | `name` | string | Display name ("You enter the Bank."). |
 | `kind` | `"overworld"` \| `"dungeon"` \| `"interior"` | One overworld. Dungeon floors are dark (braziers light them); interiors are a building's inside, lit. Both use one zone for the whole map. In World Builder an interior is a dungeon-kind map with `settings.rpgdcKind` `"interior"`. |
-| `width`, `height` | integers | Size in tiles. The game needs 128×128 for the overworld, 16 to 64 a side for dungeon floors and 4 to 32 for insides. |
+| `width`, `height` | integers | Size in tiles. The game takes any square overworld from 128 to 512 tiles a side (its own is 256×256), 16 to 64 a side for dungeon floors and 4 to 32 for insides. |
 | `zone` | string \| `null` | Dungeons and insides: the whole map's zone key from `zoneLegend`. Overworld: `null`. |
 | `theme` | string, optional | Dungeon floors only: how the floor looks in the game. `crypt` (dressed stone), `sewer` (damp stone; water is sewer water) or `cave` (rough rock; water is lava). Without it, a floor with water looks like the sewers, otherwise the crypt. In World Builder: `settings.rpgdcTheme`, set with **Looks like** in the Map panel; written only when chosen. |
-| `groundLegend` | string[] | Ground kinds; `ground` values index into it. Always all seven, even if unused. |
+| `groundLegend` | string[] | Ground kinds; `ground` values index into it. Always all thirteen, even if unused. (The game's own file lists just the ones each map uses, in any order; both read the same.) |
 | `ground` | integer[] (`width*height`) | Ground per tile. |
-| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always all thirty-seven. |
+| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `herb_frostcap` (64 entries). |
 | `objects` | integer[] (`width*height`) | What stands on each tile. |
 | `zoneLegend` | string[] | Zone keys; `zones` values index into it. Always all four. |
 | `zones` | integer[] (`width*height`) \| `null` | Overworld: zone per tile. Dungeons: `null` (use `zone`). |
@@ -80,6 +80,21 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
 | `crypt_floor` | yes |
 | `crypt_wall` | no |
 | `planks` | yes (wooden floors indoors) |
+| `sand` | yes (the desert) |
+| `mud` | yes (the swamp) |
+| `bog` | no: bog water |
+| `snow` | yes (the mountains) |
+| `stone` | yes: bare rock and gravel |
+| `ice` | yes |
+
+The last six are the new lands'. To the game, sand, mud, snow, gravel and ice are open ground
+just like grass, and bog is water; they only change how a tile looks. Where two grounds meet, one
+creeps over the other's edge (snow over grass, grass over sand, sand over mud, any of them over
+gravel, paths and floors), bogs get murky shores, and wild plants follow the ground: dry grass in
+the desert, reeds in the swamp, little plants in the snow, lily pads on the bog. A tree on snow is
+drawn as a snowy pine (a yew as a snowy yew) and a boulder as a snowy rock. In World Builder they
+are tiles 45 to 50, **Sand**, **Mud**, **Bog water**, **Snow**, **Bare rock / gravel** and
+**Ice**, under **New lands** in the ground palette of an RPG-DC map.
 
 Tiles painted with World Builder's general palette export as the closest game ground (water
 tiles as `water`, dungeon floors as `crypt_floor`, other walkable land as `grass`, …); the check
@@ -101,7 +116,7 @@ entrance are used from a neighbouring tile (any of the 8 around it).
 | 14–16 | `fishing_shrimp`, `fishing_trout`, `fishing_salmon` | Fishing spots (on water). |
 | 17 | `crypt_entrance` | Overworld way down into the crypt. Needs a `link`. |
 | 18, 19 | `stairs_down`, `stairs_up` | Need a `link`. |
-| 20–24 | `herb_sunleaf`, `herb_silverweed`, `herb_thornberry`, `herb_nightshade`, `herb_emberbloom` | Herb patches. Once an overworld has any, the game uses just these and stops scattering its own. They grow in the Frontier (sunleaf, silverweed), the Wilderness (thornberry, nightshade) and the Deep (emberbloom). |
+| 20–24 | `herb_sunleaf`, `herb_silverweed`, `herb_thornberry`, `herb_nightshade`, `herb_emberbloom` | Herb patches. Once an overworld has any, the game uses just these and stops scattering its own. They grow on grass, in the Frontier (sunleaf, silverweed), the Wilderness (thornberry, nightshade) and the Deep (emberbloom). |
 | 25 | `door` | A building's door (in its south or east wall), or the way out of an inside. Needs a `link`. |
 | 26 | `sewer_grate` | A way down, like stairs: needs a `link` to a map with stairs up leading back. |
 | 27–29 | `alchemy_table`, `sewing_table`, `fletching_bench` | Workshop stations. |
@@ -110,6 +125,10 @@ entrance are used from a neighbouring tile (any of the 8 around it).
 | 44–47 | `gold_rock`, `mithril_rock`, `adamant_rock`, `runite_rock` | The rarer ores (Mining 40, 50, 65, 80). The game has gold and mithril in the caverns' first two floors, adamant in the Wyrm's Lair, and runite out in the Deep. |
 | 48 | `essence_rock` | Rune essence for Runecrafting (Mining 1). Never runs out, and holds no gems. |
 | 49–55 | `air_altar`, `mind_altar`, `water_altar`, `earth_altar`, `fire_altar`, `chaos_altar`, `law_altar` | Runecrafting altars, used from any of the 8 tiles around them: tap one with essence to bind it all into that rune. The game has air, mind, water and earth in the Frontier, fire and chaos in the Wilderness, law in the Deep. |
+| 56, 57 | `cactus`, `dead_tree` | The new lands' scenery: the desert's cacti and the swamp's dead trees. In the way like boulders. |
+| 58 | `yew` | A tree you can chop (Woodcutting 45), in the mountains. |
+| 59, 60 | `fishing_eel`, `fishing_lobster` | Fishing spots: eels in the swamp, lobsters off the coast. |
+| 61–63 | `herb_duneflower`, `herb_bogmyrtle`, `herb_frostcap` | The new lands' herb patches, each on its own land's ground anywhere out of town: duneflower on sand, bog myrtle in the mud, frostcap on snow. |
 
 ### Zones
 
@@ -134,7 +153,7 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `building` | `x`, `y`, `w`, `h`, `style`, `sign`, `roof`, `walls` (the last three optional) | A house on the overworld: `w`×`h` tiles of wall with its north-west corner at (`x`, `y`), in `style` `timber`, `stone` or `tower`; `sign` is its name. Houses are 3 to 8 tiles a side, towers square and 3 to 5 (the sizes the game has art for). Its walls block walking, except where an object (its door) stands. `roof` and `walls` colour it (below); without them it keeps its style's own colours. |
 | `fort` | `x`, `y`, `id`, `name` | A guild fort, on its banner's tile (the overworld, in the Deep). Guilds take it by standing in its yard, 4 tiles round the banner; its chest stands just east of the banner, and its holders open it once a day. `id` is lower-case letters, digits and `_` (holders are saved by it, so keep it once players use the fort); `name` reads in a sentence ("has taken the Deep Keep"). The game draws the banner and chest; the palisade is fences round the yard, 5 tiles out, with a 3-tile gate in the middle of each side. |
 | `merchant` | `x`, `y` | Where the travelling merchant stands when she visits town: one, on the overworld, on open Safe ground players can walk up to. |
-| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip); or `slayer`, the Slayer master, who gives Slayer tasks. A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
+| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip), and outside town `hermit` (Old Ansel), `fisher` (Fisher Moira), `farmer` (Farmer Giles), `trapper` (Rook the trapper) and `miner` (Dobbs, in the caverns); or `slayer`, the Slayer master, who gives Slayer tasks. The talkers give quests: villagers by the map they're in (`home1` to `home4`, so keep those map ids), the rest by their role (so keep one of each). A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
 
 Building colours. The game draws the roof, and the walls (the plaster of a timber house, the stone of
 a stone house or tower), again over the house, multiplied by the colour:
@@ -145,7 +164,9 @@ a stone house or tower), again over the house, multiplied by the colour:
 
 Monster kinds, with their normal range in tiles: `rat` 6, `goblin` 7, `wolf` 8, `bandit` 8,
 `troll` 7, `skeleton` 8, `giant_spider` 8, `ghoul` 8, `bone_king` 7, `sewer_rat` 6, `slime` 5,
-`beetle` 7, `rat_king` 6, `fire_ant` 7, `hobgoblin` 8, `fire_wyvern` 8, `cinder_wyrm` 7, and the
+`beetle` 7, `rat_king` 6, `fire_ant` 7, `hobgoblin` 8, `fire_wyvern` 8, `cinder_wyrm` 7; the new
+lands' `scarab` 7, `mummy` 7 and `antlion` 6 (the desert), `bog_goblin` 7, `drowned` 7 and
+`swamp_wyvern` 8 (the swamp), `frost_ant` 7, `yeti` 8 and `ice_wyvern` 8 (the mountains); and the
 Slayer monsters, which only players with the Slayer level can hurt: `cave_crawler` 6 (Slayer 10),
 `banshee` 7 (25), `basilisk` 7 (45), `gargoyle` 6 (65). The game uses the normal range for a
 `monster_spawn` that has no `radius`.
@@ -154,8 +175,10 @@ game posts guards itself, at each gate of the Safe zone: every walkable Safe til
 tile outside it (north, south, east or west) is a gate, its guard stands one step further in (if
 that's open Safe ground), and there's only one guard within 2 tiles. Criminals and murderers who
 die come back 3 tiles out of the first gate found (scanning rows from the top), or just outside it.
-World Builder shows the guards (💂) and that spot (⛓️) on the overworld, so moving a gate shows
-where its guard goes.
+Indoors, the game keeps a guard with each townsperson worth robbing (the mayor, in the Town Hall),
+since the town's guards can't come in: two steps from them, on the first open floor tile scanning
+rows from the north-west, where no other townsperson stands. World Builder shows the guards (💂)
+and that spot (⛓️), so moving a gate (or the mayor) shows where the guard goes.
 
 Maps saved before radius 0 meant "stays put" (settings without `rpgdcPlaces: 2`) used 0 for the
 normal range; World Builder writes the normal range into those spawns when the project is opened.
@@ -184,10 +207,11 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
   or east wall (not a corner); every townsperson stands on open floor players can reach, or talk to across a counter;
 - no monster spawn or boss in the Safe zone or on a tile you can't walk on;
 - every overworld tile has a zone, and every dungeon floor and inside has its zone;
-- there's one overworld, 128×128; dungeon floors are 16 to 64 tiles a side, insides 4 to 32;
-- herb patches (warnings): out of their zones, unreachable, next to a blocked tile, or within 2
-  tiles of a tree (which hides them in the game); and a reminder that the game then stops
-  scattering its own;
+- there's one overworld, square and 128 to 512 tiles a side; dungeon floors are 16 to 64 tiles a
+  side, insides 4 to 32;
+- herb patches (warnings): out of their zones or off their ground, unreachable, next to a blocked
+  tile, or within 2 tiles of a tree (which hides them in the game); and a reminder that the game
+  then stops scattering its own;
 - tiles using ground or objects the game doesn't have (a warning);
 - a look (theme) only on dungeon floors, and one of `crypt`, `sewer` or `cave`;
 - a Safe zone with no gate, so no town guards (a warning);

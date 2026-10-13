@@ -1166,6 +1166,26 @@ function objectModel(
       for (const s of [-1, 1]) out.box(x + Math.cos(facing) * 0.5 * s, y, z + Math.sin(facing) * 0.5 * s, 0.1, 1.8, 0.1, wood, facing);
       out.box(x, y + 0.9, z, 1.1, 0.8, 0.08, c, facing);
       return;
+    case 'cactus': {
+      // A column with an arm either side, turned at random.
+      const a = r * Math.PI;
+      out.cylinder(x, y, z, 0.24 * k, 0.2 * k, 1.9 * k, 8, c);
+      for (const [side, h] of [[1, 0.8], [-1, 1.1]]) {
+        const ax = x + Math.cos(a) * 0.36 * k * side;
+        const az = z + Math.sin(a) * 0.36 * k * side;
+        out.cylinder(ax, y + h * k, az, 0.13 * k, 0.11 * k, 0.6 * k, 6, c);
+      }
+      return;
+    }
+    case 'dead_tree': {
+      // A grey trunk with a few bare branches.
+      out.cylinder(x, y, z, 0.18 * k, 0.1 * k, 2.2 * k, 6, c);
+      for (let n = 0; n < 3; n++) {
+        const a = (n / 3) * Math.PI * 2 + r * 6;
+        out.cylinder(x + Math.cos(a) * 0.3 * k, y + (1.3 + n * 0.25) * k, z + Math.sin(a) * 0.3 * k, 0.07 * k, 0.03 * k, 0.8 * k, 5, c);
+      }
+      return;
+    }
   }
   switch (def.group) {
     case 'herb':

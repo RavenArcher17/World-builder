@@ -9,7 +9,7 @@ import { paintCluster, paintGrove } from '../core/brushes';
 import { O, OBJECTS, objectDef } from '../core/objects';
 import { createProject, deleteMap, parseProjectReport, rootMaps, serializeProject } from '../core/project';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
-import { PLACE_TYPES, defaultProps, gameMapId, isRpgdc, isWalkableAt, placeProps, zoneAt } from '../core/rpgdc/game';
+import { OPEN_GROUND, PLACE_TYPES, defaultProps, gameMapId, isGameGround, isRpgdc, isWalkableAt, placeProps, zoneAt } from '../core/rpgdc/game';
 import { cloneMap, regenerateRegion } from '../core/region';
 import { Rng, parseSeed, randomSeed } from '../core/rng';
 import { SCALES, getScale } from '../core/scales';
@@ -29,7 +29,7 @@ import { is3d } from '../core/scene3d/options';
 import { fromUnderkeep, isUnderkeepFile } from '../core/underkeep/import';
 import { isUnderkeep, underkeepNewPlace, underkeepPlaceFields, underkeepPlaceOptions } from './underkeepUi';
 import { storeyLayers, storeyNumbers, storeyView } from '../core/scene3d/storeys';
-import { DEFAULT_VIEW, ViewOptions, baseUnitPx, drawFeatures, renderMapCanvas, safeScale } from './render';
+import { DEFAULT_VIEW, ViewOptions, baseUnitPx, cacheFit, cacheRegion, drawFeatures, renderMapCanvas, type RenderRegion } from './render';
 
 type Tool = 'select' | 'pan' | 'paint' | 'feature';
 type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines' | 'object' | 'grove' | 'ore' | 'zone' | 'height' | 'roof' | 'turn' | 'prop';
@@ -94,7 +94,8 @@ export class App {
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private version = 0;
-  private cache: { canvas: HTMLCanvasElement; s: number; key: string } | null = null;
+  /** The map image drawn under everything: the whole map, or (on a big map) the part around the view. */
+  private cache: { canvas: HTMLCanvasElement; s: number; key: string; region: RenderRegion; whole: boolean; at: number } | null = null;
   private cacheTimer = 0;
   private saveTimer = 0;
   private genSettings: Settings = {};
@@ -656,7 +657,7 @@ export class App {
     // Keep the paint mode, tile and place type valid for the kind of map that is open.
     if (game && map) {
       if (!GAME_PAINT_MODES.includes(this.paintMode) || (this.paintMode === 'zone' && map.kind === 'dungeon')) this.paintMode = 'tile';
-      if (this.paintTile < T.GRASS) this.paintTile = T.GRASS;
+      if (!isGameGround(this.paintTile)) this.paintTile = T.GRASS;
       if (!(PLACE_TYPES as readonly string[]).includes(this.featureType)) this.featureType = 'monster_spawn';
     } else {
       if (!GENERIC_PAINT_MODES.includes(this.paintMode) && !(is3d(map) && is3dMode(this.paintMode))) this.paintMode = 'tile';
@@ -1134,27 +1135,52 @@ export class App {
   private ensureCache(map: WorldMap): void {
     const v = this.view;
     const key = `${map.id}:${this.storey}:${this.version}:${v.grid}:${v.hillshade}:${v.rivers}:${v.roads}:${v.objects}:${v.zones}:${v.gameArt && gameArtReady()}`;
-    const wanted = safeScale(map, Math.min(48, Math.max(baseUnitPx(map.grid), this.scale)));
-    if (this.cache && this.cache.key === key) {
-      if (wanted > this.cache.s * 1.4 || wanted < this.cache.s / 3) {
+    // What's on screen, in render units.
+    const seen = {
+      x0: -this.ox / this.scale,
+      y0: -this.oy / this.scale,
+      x1: (this.canvas.width - this.ox) / this.scale,
+      y1: (this.canvas.height - this.oy) / this.scale,
+    };
+    const cache = this.cache;
+    if (cache && cache.key === key) {
+      if (cache.whole) {
+        // A small map is kept whole: render it again (once the zooming stops) when the detail is far off.
+        const wanted = Math.min(48, Math.max(baseUnitPx(map.grid), this.scale));
+        if (wanted > cache.s * 1.4 || wanted < cache.s / 3) {
+          clearTimeout(this.cacheTimer);
+          this.cacheTimer = window.setTimeout(() => {
+            this.cache = null;
+            this.draw();
+          }, 150);
+        }
+        return;
+      }
+      // A big map is kept only around the view: render again once the view leaves it (while a
+      // pan or pinch goes on, at most a few times a second; the rest fills in when it stops), or
+      // once the zooming stops when it's zoomed in past its detail.
+      const fit = cacheFit(map, cache, seen, this.scale);
+      const busy = performance.now() - cache.at < 250;
+      if (fit === 'detail' || (fit === 'outside' && busy)) {
         clearTimeout(this.cacheTimer);
         this.cacheTimer = window.setTimeout(() => {
           this.cache = null;
           this.draw();
         }, 150);
       }
-      return;
+      if (fit === 'ok' || fit === 'detail' || busy) return;
     }
-    this.cache = { canvas: this.renderStorey(map, wanted), s: wanted, key };
+    const { region, s, whole } = cacheRegion(map, seen, this.scale);
+    this.cache = { canvas: this.renderStorey(map, s, whole ? undefined : region), s, key, region, whole, at: performance.now() };
   }
 
   /** The map image for the storey being edited; on an upper or lower storey the one below shows through, dimmed. */
-  private renderStorey(map: WorldMap, s: number): HTMLCanvasElement {
+  private renderStorey(map: WorldMap, s: number, region?: RenderRegion): HTMLCanvasElement {
     const zs = storeyNumbers(map);
-    if (zs.length < 2) return renderMapCanvas(map, s, this.view);
+    if (zs.length < 2) return renderMapCanvas(map, s, this.view, false, true, region);
     const k = zs.indexOf(this.storey);
-    const top = renderMapCanvas(storeyView(map, this.storey), s, this.view, false, false);
-    const out = renderMapCanvas(k > 0 ? storeyView(map, zs[k - 1]) : storeyView(map, this.storey), s, this.view, false, true);
+    const top = renderMapCanvas(storeyView(map, this.storey), s, this.view, false, false, region);
+    const out = renderMapCanvas(k > 0 ? storeyView(map, zs[k - 1]) : storeyView(map, this.storey), s, this.view, false, true, region);
     const ctx = out.getContext('2d')!;
     if (k > 0) {
       ctx.fillStyle = 'rgba(14,16,20,0.68)';
@@ -1175,7 +1201,7 @@ export class App {
     const cache = this.cache!;
     const k = this.scale / cache.s;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(cache.canvas, this.ox, this.oy, cache.canvas.width * k, cache.canvas.height * k);
+    ctx.drawImage(cache.canvas, this.ox + cache.region.x0 * this.scale, this.oy + cache.region.y0 * this.scale, cache.canvas.width * k, cache.canvas.height * k);
 
     const g = new Grid(map.grid, map.width, map.height);
     // Child map regions.
@@ -1563,8 +1589,9 @@ export class App {
       for (const i of this.brushCells(g, cell)) {
         L.terrain[i] = this.paintTile;
         L.building[i] = this.paintTile === T.BUILDING || this.paintTile === T.KEEP ? d.buildingId : 0;
-        if (game && this.paintTile !== T.GRASS) {
-          // Paths, floors and water clear away trees, rocks and fences, but not stations or stairs.
+        if (game && !OPEN_GROUND.has(this.paintTile)) {
+          // Paths, floors and water clear away trees, rocks and fences, but not stations or stairs
+          // (grass and the new lands' open ground keep them: a tree on snow is a snowy pine).
           const o = objectDef(L.object[i]);
           if (o && NATURE_GROUPS.has(o.group)) L.object[i] = 0;
         }

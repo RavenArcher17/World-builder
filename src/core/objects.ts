@@ -96,6 +96,16 @@ export const OBJECTS: ObjectDef[] = [
   o(53, 'fire_altar', 'Altar: fire', '#e0552e', '☄️', 'icon', 'altar', true),
   o(54, 'chaos_altar', 'Altar: chaos', '#c040c0', '💥', 'icon', 'altar', true),
   o(55, 'law_altar', 'Altar: law', '#4060e0', '⚖️', 'icon', 'altar', true),
+  // RPG-DC's new lands: scenery in the way like boulders (the desert's cacti, the swamp's dead trees),
+  // yews in the mountains, eels in the swamp, lobsters off the coast, and a herb for each land.
+  o(56, 'cactus', 'Cactus', '#5a9a4a', '🌵', 'icon', 'rock'),
+  o(57, 'dead_tree', 'Dead tree', '#7a6a58', '🪵', 'icon', 'rock'),
+  o(58, 'yew', 'Yew', '#24503a', '🌲', 'pine', 'tree'),
+  o(59, 'fishing_eel', 'Fishing spot: eel', '#8a9a5a', '🐍', 'icon', 'fishing', true),
+  o(60, 'fishing_lobster', 'Fishing spot: lobster', '#e04a3a', '🦞', 'icon', 'fishing', true),
+  o(61, 'herb_duneflower', 'Herb: duneflower', '#f0b840', '🌼', 'icon', 'herb', true),
+  o(62, 'herb_bogmyrtle', 'Herb: bog myrtle', '#8a5aa0', '🪻', 'icon', 'herb', true),
+  o(63, 'herb_frostcap', 'Herb: frostcap', '#a8e0f8', '🍃', 'icon', 'herb', true),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -153,7 +163,15 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'EARTH_ALTAR'
   | 'FIRE_ALTAR'
   | 'CHAOS_ALTAR'
-  | 'LAW_ALTAR',
+  | 'LAW_ALTAR'
+  | 'CACTUS'
+  | 'DEAD_TREE'
+  | 'YEW'
+  | 'FISHING_EEL'
+  | 'FISHING_LOBSTER'
+  | 'HERB_DUNEFLOWER'
+  | 'HERB_BOGMYRTLE'
+  | 'HERB_FROSTCAP',
   number
 >;
 

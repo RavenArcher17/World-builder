@@ -34,7 +34,13 @@ import { ART_CREDITS_URL, artBase } from './gameArt';
 
 export type GamePaintMode = 'tile' | 'object' | 'grove' | 'ore' | 'zone';
 
-const GROVE_OBJECTS = [O.TREE, O.OAK, O.WILLOW];
+/** Groves of one tree, or of the new lands' scenery (cacti in the desert, dead trees in the swamp). */
+const GROVE_OBJECTS = [O.TREE, O.OAK, O.WILLOW, O.YEW, O.CACTUS, O.DEAD_TREE];
+/** The ground palette, in groups: the first seven grounds, then the new lands' (from sand on). */
+const GROUND_GROUPS: [string, number[]][] = [
+  ['', GROUND_TILES.slice(0, 7)],
+  ['New lands', GROUND_TILES.slice(7)],
+];
 const OBJECT_GROUPS: [string, string[]][] = [
   ['Nature', ['tree', 'rock', 'ore', 'fishing', 'herb']],
   ['Runecrafting altars', ['altar']],
@@ -75,7 +81,10 @@ export function gamePaintOptions(app: App, map: WorldMap): HTMLElement[] {
 
   const pal = h('div', { class: 'palette' });
   if (mode === 'tile') {
-    for (const id of GROUND_TILES) pal.append(palButton(tile(id).name, swatch(tile(id).color), app.paintTile === id, () => app.setPaint({ paintTile: id })));
+    for (const [title, ids] of GROUND_GROUPS) {
+      if (title) pal.append(h('div', { class: 'pal-heading' }, title));
+      for (const id of ids) pal.append(palButton(tile(id).name, swatch(tile(id).color), app.paintTile === id, () => app.setPaint({ paintTile: id })));
+    }
   } else if (mode === 'object') {
     pal.append(palButton('Remove', '🧽', app.paintObject === 0, () => app.setPaint({ paintObject: 0 }), 'Remove objects'));
     // In groups, so the long list is easy to find your way round on a phone.

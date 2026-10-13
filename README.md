@@ -62,20 +62,27 @@ game mode; every other map behaves as above.
 
 - **Opening the game's maps:** **Open…** takes the game's `rpg-dc.maps.json` as well as project
   files, and **⟳ Get the game's maps** (Map panel) loads what the live game is playing: the
-  overworld, the crypt, the sewers and the inside of every building in town.
-- **Ground and objects:** paint the game's seven grounds (grass, path, water, town cobbles, crypt
-  floor and wall, wooden floors) and what stands on each tile, in groups: Nature (trees by species,
-  boulders, ore from copper to runite and rune essence, fishing spots, herbs), Runecrafting altars
+  overworld (any square from 128 to 512 tiles a side; the game's is 256), the crypt, the sewers,
+  the caverns and the inside of every building. A big map is drawn just around what's on screen,
+  as the game draws it, so it stays quick on a phone.
+- **Ground and objects:** paint the game's thirteen grounds (grass, path, water, town cobbles, crypt
+  floor and wall, wooden floors, and the new lands' sand, mud, bog water, snow, bare rock / gravel
+  and ice) and what stands on each tile, in groups: Nature (trees by species and yews, boulders,
+  cacti, dead trees, ore from copper to runite and rune essence, fishing spots from shrimp to eels
+  and lobsters, herbs from sunleaf to frostcap), Runecrafting altars
   (air, mind, water, earth, fire, chaos, law), Town (fences, stations, workbenches, doors, stairs, the
   sewer grate), Streets (well, lamp posts, market stalls, flower beds, benches, signposts, the notice
   board) and Indoors (counters, bookshelves, tables, beds, barrels, crates, lecterns). Grove
-  and Ore brushes scatter one species or ore at a time.
+  and Ore brushes scatter one species (or cacti, or dead trees) or ore at a time.
 - **Places with fields:** spawn point, monster spawns (kind, count, radius), bosses, braziers,
   links on stairs, doors and grates that name the target map and the exact tile you arrive on (tap
   it on the target map), buildings (style, size, name, roof and wall colours) and townspeople
-  (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk),
-  guild forts (id and name) and the travelling merchant's spot. The overworld shows
-  where the game will post its town guards (💂, one at each gate) and where criminals come back (⛓️).
+  (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk,
+  and the hermit, fisher, farmer, trapper and miner out of town), guild forts (id and name) and
+  the travelling merchant's spot. Monster spawns offer every monster, the new lands' scarabs,
+  mummies, bog goblins, yetis and wyverns too. The overworld shows where the game will post its
+  town guards (💂, one at each gate) and where criminals come back (⛓️), and the Town Hall the
+  guard who stands with the mayor.
 - **Zones:** paint Safe / Frontier / Wilderness / Deep on the overworld (legend shows each zone's
   rules); dungeon floors and buildings' insides pick one zone for the whole map.
 - **Check for game:** lists every problem with its tile; tap one to jump there.
@@ -86,8 +93,11 @@ game mode; every other map behaves as above.
   own sprites (Flare, CC BY-SA 3.0), loaded from `https://rpg-dc.onrender.com/art/` (the game
   serves them cross-origin): houses in their colours, doors, herbs, street decorations, insides
   with their furniture, the Duel Arena's fenced pits, a fort's banner and chest, the sewers' damp
-  stone, moss, drains and water, and the caverns' rock walls, lava, glowing cracks and mine clutter. **Looks like** (Map panel) sets a dungeon floor's look:
-  crypt, sewers or caverns.
+  stone, moss, drains and water, and the caverns' rock walls, lava, glowing cracks and mine
+  clutter; the new lands' snow, sand, mud, gravel, ice and bogs with their edges and shores,
+  snowy pines and rocks, yews, cacti, dead trees, reeds and lily pads; and the monsters,
+  townspeople (in their work clothes) and guards where they stand. **Looks like** (Map panel)
+  sets a dungeon floor's look: crypt, sewers or caverns.
 
 Projects from the game's exporter are converted to this form when opened. Everything works by
 touch on a phone: one finger paints or places, two fingers pinch and pan.

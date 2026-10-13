@@ -384,8 +384,8 @@ export function openHelpDialog(): void {
       h(
         'ul',
         {},
-        li('Paint', 'Ground (grass, path, water, cobbles, crypt floor and wall), Objects (trees, rocks, ore, stations, fishing spots, stairs), Grove and Ore brushes, and Zones on the overworld.'),
-        li('Place', 'spawn point, monster spawns (kind, count, radius), bosses, braziers and stairs links. Tap a place to edit its fields; for a link, choose the map and tap “Pick arrival tile”.'),
+        li('Paint', 'Ground (grass, path, water, cobbles, crypt floor and wall, wooden floors, and the new lands’ sand, mud, bog, snow, gravel and ice), Objects (trees, rocks, cacti, ore, stations, fishing spots, herbs, stairs), Grove and Ore brushes, and Zones on the overworld.'),
+        li('Place', 'spawn point, monster spawns (kind, count, radius), bosses, braziers, stairs and door links, buildings, townspeople, forts and the merchant. Tap a place to edit its fields; for a link, choose the map and tap “Pick arrival tile”.'),
         li('Check for game', 'in the Map panel lists every problem; tap one to jump to its tile. Export → RPG-DC maps writes rpg-dc.maps.json for the game.'),
       ),
       h('p', { class: 'hint' }, 'Touch: one finger paints, places or selects; two fingers pinch to zoom and drag to pan; double-tap a linked place to open its map.'),
