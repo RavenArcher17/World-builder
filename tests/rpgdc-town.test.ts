@@ -81,7 +81,17 @@ describe('opening the game’s map file', () => {
     expect(world.layers.object.filter((o) => o === O.WELL).length).toBe(1);
     // Townspeople who just talk.
     const roles = Object.values(project().maps).flatMap((m) => m.features.filter((f) => f.type === 'npc').map((f) => f.props?.role));
-    expect(roles).toEqual(expect.arrayContaining(['mayor', 'captain', 'villager']));
+    expect(roles).toEqual(expect.arrayContaining(['mayor', 'captain', 'villager', 'slayer']));
+  });
+
+  it('keeps the Slayer monsters’ lairs, with their counts and radii', () => {
+    const p = project();
+    const lairs = Object.values(p.maps).flatMap((m) => m.features.filter((f) => f.type === 'monster_spawn' && ['cave_crawler', 'banshee', 'basilisk', 'gargoyle'].includes(String(f.props?.kind))));
+    expect(lairs.map((f) => f.props?.kind).sort()).toEqual(['banshee', 'basilisk', 'cave_crawler', 'gargoyle']);
+    expect(lairs.find((f) => f.props?.kind === 'banshee')!.props).toMatchObject({ count: 3, radius: 3 });
+    const out = toRpgdcMaps(p).maps.flatMap((m) => m.places).filter((pl) => pl.type === 'monster_spawn' && pl.kind === 'gargoyle');
+    expect(out).toEqual([expect.objectContaining({ count: 4, radius: 4 })]);
+    expect(errors(p)).toEqual([]);
   });
 
   it('keeps the Ember Caverns: cave floors with lava, their monsters and the Cinder Wyrm', () => {

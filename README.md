@@ -73,7 +73,7 @@ game mode; every other map behaves as above.
 - **Places with fields:** spawn point, monster spawns (kind, count, radius), bosses, braziers,
   links on stairs, doors and grates that name the target map and the exact tile you arrive on (tap
   it on the target map), buildings (style, size, name, roof and wall colours) and townspeople
-  (banker, shopkeeper, or the mayor, guard captain and villagers who just talk). The overworld shows
+  (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk). The overworld shows
   where the game will post its town guards (💂, one at each gate) and where criminals come back (⛓️).
 - **Zones:** paint Safe / Frontier / Wilderness / Deep on the overworld (legend shows each zone's
   rules); dungeon floors and buildings' insides pick one zone for the whole map.

@@ -188,6 +188,7 @@ export const NPC_ROLES = [
   { value: 'mayor', label: 'Mayor' },
   { value: 'captain', label: 'Guard captain' },
   { value: 'villager', label: 'Villager' },
+  { value: 'slayer', label: 'Slayer master' },
 ];
 
 /** Whether someone at (fx, fy) can talk to a townsperson at (x, y): next to them, or across a counter. */
@@ -385,6 +386,11 @@ export const MONSTER_KINDS: { key: string; name: string; range: number }[] = [
   { key: 'hobgoblin', name: 'Hobgoblin', range: 8 },
   { key: 'fire_wyvern', name: 'Fire wyvern', range: 8 },
   { key: 'cinder_wyrm', name: 'Cinder Wyrm', range: 7 },
+  // Only players with the Slayer level can hurt these.
+  { key: 'cave_crawler', name: 'Cave crawler (Slayer 10)', range: 6 },
+  { key: 'banshee', name: 'Banshee (Slayer 25)', range: 7 },
+  { key: 'basilisk', name: 'Basilisk (Slayer 45)', range: 7 },
+  { key: 'gargoyle', name: 'Gargoyle (Slayer 65)', range: 6 },
 ];
 
 /** A monster's normal roaming range in tiles: the radius a new spawn of it starts with. */
@@ -446,7 +452,7 @@ export const PLACE_HELP: Record<string, string> = {
   link: 'Put it on a crypt entrance, stairs, a door or a sewer grate. Players using it arrive on the chosen tile of the target map. Stairs down (and grates) need stairs up leading back; a door needs a door back.',
   building:
     'A house: this tile is its north-west (top) corner, and its walls fill Width × Depth tiles. Houses are 3 to 8 tiles a side; towers are square, 3 to 5. Put a Door object in its south or east wall (not a corner) and a link on the door to the inside.',
-  npc: 'A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk. Put a Counter in front of a banker or shopkeeper; players talk across it.',
+  npc: 'A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk; the Slayer master gives Slayer tasks. Put a Counter in front of a banker or shopkeeper; players talk across it.',
 };
 
 /** A place's props with defaults filled in. */

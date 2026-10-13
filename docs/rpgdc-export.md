@@ -132,7 +132,7 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `brazier` | `x`, `y` | A light (crypt floors). |
 | `link` | `x`, `y`, `toMap`, `toX`, `toY` | On a `crypt_entrance`, `stairs_down`, `stairs_up`, `door` or `sewer_grate` tile. Using it moves the player to tile (`toX`, `toY`) of map `toMap`, which is walkable. |
 | `building` | `x`, `y`, `w`, `h`, `style`, `sign`, `roof`, `walls` (the last three optional) | A house on the overworld: `w`×`h` tiles of wall with its north-west corner at (`x`, `y`), in `style` `timber`, `stone` or `tower`; `sign` is its name. Houses are 3 to 8 tiles a side, towers square and 3 to 5 (the sizes the game has art for). Its walls block walking, except where an object (its door) stands. `roof` and `walls` colour it (below); without them it keeps its style's own colours. |
-| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip). A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
+| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip); or `slayer`, the Slayer master, who gives Slayer tasks. A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
 
 Building colours. The game draws the roof, and the walls (the plaster of a timber house, the stone of
 a stone house or tower), again over the house, multiplied by the colour:
@@ -143,8 +143,10 @@ a stone house or tower), again over the house, multiplied by the colour:
 
 Monster kinds, with their normal range in tiles: `rat` 6, `goblin` 7, `wolf` 8, `bandit` 8,
 `troll` 7, `skeleton` 8, `giant_spider` 8, `ghoul` 8, `bone_king` 7, `sewer_rat` 6, `slime` 5,
-`beetle` 7, `rat_king` 6, `fire_ant` 7, `hobgoblin` 8, `fire_wyvern` 8, `cinder_wyrm` 7. The game uses
-the normal range for a `monster_spawn` that has no `radius`.
+`beetle` 7, `rat_king` 6, `fire_ant` 7, `hobgoblin` 8, `fire_wyvern` 8, `cinder_wyrm` 7, and the
+Slayer monsters, which only players with the Slayer level can hurt: `cave_crawler` 6 (Slayer 10),
+`banshee` 7 (25), `basilisk` 7 (45), `gargoyle` 6 (65). The game uses the normal range for a
+`monster_spawn` that has no `radius`.
 Town guards and townspeople aren't monster kinds here: townspeople come from `npc` places, and the
 game posts guards itself, at each gate of the Safe zone: every walkable Safe tile beside a walkable
 tile outside it (north, south, east or west) is a gate, its guard stands one step further in (if
