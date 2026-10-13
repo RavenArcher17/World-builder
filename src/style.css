@@ -258,6 +258,11 @@ details.group > div {
   align-items: center;
   flex-wrap: wrap;
 }
+/* Never wider than the toolbar, so a long palette scrolls by itself instead of the whole page. */
+.tool-options {
+  min-width: 0;
+  max-width: 100%;
+}
 .tool-options select,
 .tool-options input {
   width: auto;
@@ -469,6 +474,8 @@ dialog::backdrop {
 /* ---- palettes (paint / place) ------------------------------------------------------------ */
 .palette {
   flex-basis: 100%;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   gap: 4px;
   overflow-x: auto;
