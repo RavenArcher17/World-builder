@@ -194,6 +194,74 @@ export function drawObject(ctx: CanvasRenderingContext2D, id: number, x: number,
       ctx.stroke();
       break;
     }
+    case 'cairn': {
+      // A small pile of stones, three, two and one (a cache is hidden under it).
+      const stones: [number, number, number][] = [
+        [-0.34, 0.02, 0.27], [0.32, 0.04, 0.27], [0, 0.1, 0.25], [-0.16, -0.3, 0.23], [0.17, -0.28, 0.22], [0, -0.56, 0.19],
+      ];
+      ctx.strokeStyle = shade(d.color, 0.55);
+      stones.forEach(([dx, dy, r], k) => {
+        ctx.fillStyle = shade(d.color, 0.9 + (k % 3) * 0.1);
+        ctx.beginPath();
+        ctx.ellipse(x + dx * u, y + dy * u, r * u, r * u * 0.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+      break;
+    }
+    case 'thicket': {
+      // Drawn like a tree (the game draws it as one of the trees round it), but see-through and
+      // with a dashed outline: it can be walked through.
+      ctx.strokeStyle = '#4b3420';
+      ctx.beginPath();
+      ctx.moveTo(x, y + u * 0.2);
+      ctx.lineTo(x, y - u * 0.5);
+      ctx.stroke();
+      ctx.fillStyle = d.color;
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      ctx.arc(x, y - u * 0.9, u * 0.62, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([u * 0.24, u * 0.16]);
+      ctx.strokeStyle = '#eaf6c8';
+      ctx.stroke();
+      ctx.setLineDash([]);
+      break;
+    }
+    case 'ruin': {
+      // A broken stretch of old stone wall, standing higher at one end.
+      ctx.fillStyle = d.color;
+      ctx.beginPath();
+      ctx.moveTo(x - u * 0.7, y + u * 0.2);
+      ctx.lineTo(x - u * 0.7, y - u * 0.85);
+      ctx.lineTo(x - u * 0.38, y - u * 0.85);
+      ctx.lineTo(x - u * 0.3, y - u * 0.6);
+      ctx.lineTo(x + u * 0.05, y - u * 0.55);
+      ctx.lineTo(x + u * 0.15, y - u * 0.32);
+      ctx.lineTo(x + u * 0.45, y - u * 0.38);
+      ctx.lineTo(x + u * 0.7, y - u * 0.18);
+      ctx.lineTo(x + u * 0.7, y + u * 0.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = shade(d.color, 0.55);
+      ctx.stroke();
+      // Courses of stone.
+      ctx.lineWidth = Math.max(1, u * 0.07);
+      ctx.beginPath();
+      ctx.moveTo(x - u * 0.7, y - u * 0.15);
+      ctx.lineTo(x + u * 0.7, y - u * 0.15);
+      ctx.moveTo(x - u * 0.7, y - u * 0.5);
+      ctx.lineTo(x + u * 0.08, y - u * 0.5);
+      ctx.moveTo(x - u * 0.15, y + u * 0.2);
+      ctx.lineTo(x - u * 0.15, y - u * 0.15);
+      ctx.moveTo(x + u * 0.35, y + u * 0.2);
+      ctx.lineTo(x + u * 0.35, y - u * 0.15);
+      ctx.moveTo(x - u * 0.4, y - u * 0.15);
+      ctx.lineTo(x - u * 0.4, y - u * 0.5);
+      ctx.stroke();
+      break;
+    }
     default: {
       ctx.fillStyle = d.color;
       ctx.globalAlpha = 0.85;

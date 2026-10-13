@@ -536,7 +536,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
       const facing = set >= 0 ? angleOfFacing(set) : facingAngle(i, centres, across, sol);
       if (def) {
         objectModel(objMesh, def, cx * S, y, cz * S, S, i, facing, (dir) => {
-          // Fence rails run to neighbouring fences.
+          // Fence rails run to neighbouring fences (and ruined walls to neighbouring ruins).
           const out: [number, number][] = [];
           for (const n of g.neighbors(i, !g.isHex ? false : true)) {
             const nd = objectDef(Lz.object[n]);
@@ -544,7 +544,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
           }
           return out;
         });
-        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar', 'travel'].includes(def.group)) {
+        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar', 'travel'].includes(def.group) || def.key === 'cache') {
           markers.push({
             name: uniqueName(`${def.key} ${g.col(i)},${g.row(i)}`),
             position: [cx * S, y, cz * S],
@@ -1070,6 +1070,36 @@ function objectModel(
         const ang = Math.atan2(dz, dx);
         out.box(x + dx / 4, y + 0.45, z + dz / 4, len, 0.12, 0.08, c, ang);
         out.box(x + dx / 4, y + 0.95, z + dz / 4, len, 0.12, 0.08, c, ang);
+      }
+      return;
+    }
+    case 'cairn':
+      // A small pile of stones: a ring of four, two on them and one on top.
+      for (let n = 0; n < 4; n++) {
+        const a = (n / 4) * Math.PI * 2 + r * 6;
+        out.blob(x + Math.cos(a) * 0.3, y + 0.12, z + Math.sin(a) * 0.3, 0.22, 0.16, 0.2, shade(c, 0.9 + (n % 2) * 0.15), seed + n);
+      }
+      for (let n = 0; n < 2; n++) {
+        const a = n * Math.PI + r * 6;
+        out.blob(x + Math.cos(a) * 0.13, y + 0.36, z + Math.sin(a) * 0.13, 0.18, 0.13, 0.17, c, seed + 4 + n);
+      }
+      out.blob(x, y + 0.56, z, 0.13, 0.11, 0.13, shade(c, 1.1), seed + 6);
+      return;
+    case 'thicket':
+      // A dense, low tree of a bush, dark green, that can be pushed through.
+      out.cylinder(x, y, z, 0.12 * k, 0.09 * k, 0.9 * k, 6, trunk);
+      out.blob(x, y + 1.1 * k, z, 1.15 * k, 0.95 * k, 1.15 * k, c, seed);
+      out.blob(x + 0.35 * k, y + 1.7 * k, z - 0.2 * k, 0.75 * k, 0.6 * k, 0.75 * k, shade(c, 1.15), seed + 1);
+      return;
+    case 'ruin': {
+      // A low, broken stone wall: a stub of a pillar, and a course of stone towards each
+      // neighbouring ruin, its top ragged.
+      const h = 0.7 + 0.8 * r;
+      out.box(x, y, z, 0.5, h, 0.5, c);
+      for (const [dx, dz] of linksTo(def.group)) {
+        const len = Math.hypot(dx, dz) / 2;
+        const ang = Math.atan2(dz, dx);
+        out.box(x + dx / 4, y, z + dz / 4, len, 0.35 + 0.6 * hash01(seed + Math.round(dx * 7 + dz * 13)), 0.4, shade(c, 0.92), ang);
       }
       return;
     }

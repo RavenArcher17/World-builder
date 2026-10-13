@@ -77,7 +77,9 @@ game mode; every other map behaves as above.
   and ice) and what stands on each tile, in groups: Nature (trees by species and yews, boulders,
   cacti, dead trees, ore from copper to runite and rune essence, fishing spots from shrimp to eels
   and lobsters, herbs from sunleaf to frostcap), Runecrafting altars
-  (air, mind, water, earth, fire, chaos, law), Fast travel (the waystone), Town (fences, stations, workbenches, doors, stairs, the
+  (air, mind, water, earth, fire, chaos, law), Fast travel (the waystone), Secrets (the hidden cache under its cairn,
+  and the thicket you can walk through into a hidden glade, marked so it can be told from the trees),
+  Ruins (the ruined chapel's walls), Town (fences, stations, workbenches, doors, stairs, the
   sewer grate), Streets (well, lamp posts, market stalls, flower beds, benches, signposts, the notice
   board) and Indoors (counters, bookshelves, tables, beds, barrels, crates, lecterns). Grove
   and Ore brushes scatter one species (or cacti, or dead trees) or ore at a time.
@@ -85,7 +87,7 @@ game mode; every other map behaves as above.
   links on stairs, doors and grates that name the target map and the exact tile you arrive on (tap
   it on the target map), buildings (style, size, name, roof and wall colours) and townspeople
   (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk,
-  and the hermit, fisher, farmer, trapper and miner out of town), guild forts (id and name), the
+  and the hermit, fisher, farmer, trapper, miner and miller out of town), guild forts (id and name), the
   travelling merchant's spot, and landmarks (id, name and radius): named places whose name shows as
   players arrive, drawn with their name and a faint circle for their radius; a waystone in one
   (one at most) is a stop for fast travel. Monster spawns offer every monster, the new lands' scarabs,
@@ -100,7 +102,8 @@ game mode; every other map behaves as above.
 
 - **Game art preview:** "Draw with the game's art" in the Map panel draws the map with the game's
   own sprites (Flare, CC BY-SA 3.0), loaded from `https://rpg-dc.onrender.com/art/` (the game
-  serves them cross-origin): houses in their colours, doors, herbs, street decorations, waystones, insides
+  serves them cross-origin): houses in their colours (and a windmill's sails), doors, herbs, street
+  decorations, waystones, caches' cairns, thickets, ruined walls, insides
   with their furniture, the Duel Arena's fenced pits, a fort's banner and chest, the sewers' damp
   stone, moss, drains and water, and the caverns' rock walls, lava, glowing cracks and mine
   clutter; the new lands' snow, sand, mud, gravel, ice and bogs with their edges and shores,

@@ -24,6 +24,7 @@ import {
   NPC_ROLES,
   OBJECT_LEGEND,
   reachable,
+  walkableTiles,
   withProp,
   ZONES,
 } from '../src/core/rpgdc/game';
@@ -31,6 +32,7 @@ import { isWater, T } from '../src/core/tiles';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import { emptyLayers, type Feature, type Project, type WorldMap } from '../src/core/types';
 import { cacheFit, cacheRegion, MAX_CACHE_PIXELS } from '../src/ui/render';
+import { isWindmill, ruinPieces, thicketLooksLike } from '../src/ui/gameArt';
 
 /** The game's own map file (shared/maps/rpg-dc.maps.json in RPG-DC), with the town, its insides and the sewers. */
 const FILE = readFileSync(new URL('./fixtures/rpg-dc.maps.json', import.meta.url), 'utf8');
@@ -67,7 +69,8 @@ describe('opening the game’s map file', () => {
     const bank = byGameId(p, 'bank');
     expect(bank.features.filter((f) => f.type === 'npc').map((f) => f.props?.role)).toEqual(['banker', 'banker']);
     const world = byGameId(p, 'overworld');
-    expect(world.features.filter((f) => f.type === 'building').length).toBe(18);
+    // The town's 18, and the windmill by Giles's Farm.
+    expect(world.features.filter((f) => f.type === 'building').length).toBe(19);
   });
 
   it('passes every game check, with no warnings', () => {
@@ -97,7 +100,7 @@ describe('opening the game’s map file', () => {
       'gold_rock', 'mithril_rock', 'adamant_rock', 'runite_rock',
       'essence_rock', 'air_altar', 'mind_altar', 'water_altar', 'earth_altar', 'fire_altar', 'chaos_altar', 'law_altar',
       'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
-      'waystone',
+      'waystone', 'cache', 'thicket', 'ruin',
     ]);
   });
 
@@ -429,12 +432,12 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
 
   it('opens the new lands’ objects the game placed: yews, cacti, dead trees, eels and lobsters', () => {
     const world = byGameId(project(), 'overworld');
-    expect([O.CACTUS, O.DEAD_TREE, O.YEW, O.FISHING_EEL, O.FISHING_LOBSTER].map((o) => count(world, o))).toEqual([881, 1775, 70, 30, 35]);
+    expect([O.CACTUS, O.DEAD_TREE, O.YEW, O.FISHING_EEL, O.FISHING_LOBSTER].map((o) => count(world, o))).toEqual([881, 1777, 70, 30, 35]);
     // They stand in the way, like everything else.
     const yew = world.layers.object.indexOf(O.YEW);
     expect(isWalkableAt(world, yew % world.width, Math.floor(yew / world.width))).toBe(false);
     const out = toRpgdcMaps(project()).maps.find((m) => m.id === 'overworld')!;
-    expect(out.objectLegend.slice(56)).toEqual(['cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap', 'waystone']);
+    expect(out.objectLegend.slice(56)).toEqual(['cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap', 'waystone', 'cache', 'thicket', 'ruin']);
   });
 
   it('needs eel and lobster spots reachable, like every fishing spot', () => {
@@ -538,7 +541,8 @@ describe('landmarks and waystones (fast travel)', () => {
     const p = project();
     const world = byGameId(p, 'overworld');
     const marks = world.features.filter((f) => f.type === 'landmark');
-    expect(marks).toHaveLength(16);
+    // Sixteen, and the ruined chapel and the smugglers' cove (which have no waystone).
+    expect(marks).toHaveLength(18);
     const town = marks.find((f) => f.props?.id === 'town')!;
     expect([town.c, town.r, town.name, town.props]).toEqual([384, 384, 'the Town', { id: 'town', name: 'the Town', radius: 22 }]);
     expect(marks.find((f) => f.props?.id === 'fisher_lake')!.name).toBe("Moira's Lake");
@@ -689,5 +693,196 @@ describe('landmarks and waystones (fast travel)', () => {
     expect(newPlaceProps(map, 'landmark')).toEqual({ id: 'landmark_3', name: 'Landmark 3', radius: 10 });
     expect(newPlaceProps(map, 'fort')).toEqual({ id: '', name: '' });
     expect(newPlaceProps(map, 'merchant')).toBeUndefined();
+  });
+});
+
+describe('secrets and the places outside town: caches, thickets, ruins and the windmill', () => {
+  const gameMap = (id: string) => file().maps.find((m) => m.id === id)!;
+  /** Where a map in the file has an object, [x, y] in row order (none if its legend hasn't it). */
+  const cellsOf = (m: RpgdcMapsFile['maps'][number], key: string) => {
+    const k = m.objectLegend.indexOf(key);
+    return k < 0 ? [] : m.objects.flatMap((v, i) => (v === k ? [[i % m.width, Math.floor(i / m.width)]] : []));
+  };
+  const count = (m: WorldMap, id: number) => m.layers.object.filter((o) => o === id).length;
+
+  it('opens the game’s caches, thickets and ruins as objects, and exports them as they were', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    expect([O.CACHE, O.THICKET, O.RUIN].map((o) => count(world, o))).toEqual([32, 16, 31]);
+    for (const id of ['chapel_cellar', 'smugglers_cove']) expect(count(byGameId(p, id), O.CACHE)).toBe(1);
+    // A cache and a ruin stand in the way like any object; a thicket doesn't.
+    const ow = gameMap('overworld');
+    const [cx, cy] = cellsOf(ow, 'cache')[0];
+    expect(world.layers.object[cy * world.width + cx]).toBe(O.CACHE);
+    expect(isWalkableAt(world, cx, cy)).toBe(false);
+    const [rx, ry] = cellsOf(ow, 'ruin')[0];
+    expect(isWalkableAt(world, rx, ry)).toBe(false);
+    expect(cellsOf(ow, 'thicket').every(([x, y]) => isWalkableAt(world, x, y))).toBe(true);
+    // Exported, and opened from that export, the same again.
+    const out = toRpgdcMaps(p);
+    const again = toRpgdcMaps(fromRpgdcMaps(out));
+    for (const id of ['overworld', 'chapel_cellar', 'smugglers_cove']) {
+      for (const key of ['cache', 'thicket', 'ruin']) {
+        const before = cellsOf(gameMap(id), key);
+        expect(cellsOf(out.maps.find((m) => m.id === id)!, key)).toEqual(before);
+        expect(cellsOf(again.maps.find((m) => m.id === id)!, key)).toEqual(before);
+      }
+    }
+    expect(out.maps[0].objectLegend.slice(64)).toEqual(['waystone', 'cache', 'thicket', 'ruin']);
+  });
+
+  it('opens the places outside town: the windmill and its miller, the chapel’s cellar, the smugglers’ cove', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    const mill = buildings(world).find((b) => b.sign === 'Mill')!;
+    expect([mill.style, mill.w, mill.h, isWindmill(mill)]).toEqual(['tower', 3, 3, true]);
+    expect(buildings(world).filter(isWindmill)).toHaveLength(1);
+    const windmill = byGameId(p, 'windmill');
+    expect([gameKind(windmill), windmill.settings.rpgdcZone]).toEqual(['interior', 'frontier']);
+    const miller = windmill.features.find((f) => f.type === 'npc')!;
+    expect([miller.props?.role, miller.name]).toEqual(['miller', 'Miller (Hob, in the windmill)']);
+    const cellar = byGameId(p, 'chapel_cellar');
+    expect([gameKind(cellar), mapTheme(cellar), dungeonTheme(cellar), cellar.settings.rpgdcZone]).toEqual(['dungeon', undefined, 'crypt', 'wilderness']);
+    const cove = byGameId(p, 'smugglers_cove');
+    expect([gameKind(cove), mapTheme(cove), dungeonTheme(cove), cove.settings.rpgdcZone]).toEqual(['dungeon', 'cave', 'cave', 'wilderness']);
+    // Two landmarks without a waystone, and the chapel's walls are ruins inside its landmark.
+    const marks = landmarks(world);
+    expect(marks.filter((l) => l.id === 'chapel' || l.id === 'cove').map((l) => [l.id, l.name, l.radius])).toEqual([
+      ['chapel', 'the Ruined Chapel', 10],
+      ['cove', "Smugglers' Cove", 10],
+    ]);
+    expect(cellsOf(gameMap('overworld'), 'ruin').every(([x, y]) => landmarkAt(marks, x, y)?.id === 'chapel')).toBe(true);
+    // Exported as they were.
+    const out = toRpgdcMaps(p);
+    expect(out.maps.find((m) => m.id === 'windmill')!.places).toContainEqual({ type: 'npc', x: 3, y: 3, role: 'miller' });
+    expect(out.maps.find((m) => m.id === 'overworld')!.places).toContainEqual({ type: 'building', x: 341, y: 396, w: 3, h: 3, style: 'tower', sign: 'Mill', roof: 'brown', walls: 'cream' });
+    expect(out.maps.find((m) => m.id === 'smugglers_cove')!.theme).toBe('cave');
+    expect(NPC_ROLES.map((r) => r.value).slice(-6)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
+  });
+
+  it('knows a windmill: a tower whose sign says mill', () => {
+    const b = (style: string, sign: string) => ({ x: 0, y: 0, w: 3, h: 3, style, sign, roof: '', walls: '' });
+    expect(isWindmill(b('tower', 'Mill'))).toBe(true);
+    expect(isWindmill(b('tower', 'The old windmill'))).toBe(true);
+    expect(isWindmill(b('tower', 'Mage Tower'))).toBe(false);
+    expect(isWindmill(b('stone', 'Mill'))).toBe(false);
+  });
+
+  /** A bare 128×128 overworld of grass: Safe round the spawn point (3, 3), Frontier beyond. */
+  const bare = () => {
+    const w = 128;
+    const p = createProject('secrets');
+    const L = emptyLayers(w * w);
+    L.terrain.fill(T.GRASS);
+    for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) L.zone[y * w + x] = x < 8 && y < 8 ? 1 : 2;
+    const map: WorldMap = {
+      id: 'ow', name: 'World', kind: 'overland', scaleId: 'local', grid: 'iso', width: w, height: w, seed: 1,
+      settings: { rpgdcMapId: 'overworld' }, layers: L, children: [],
+      features: [{ id: 's', type: 'spawn_point', c: 3, r: 3, name: 'start' }],
+    };
+    p.maps[map.id] = map;
+    return { p, map };
+  };
+  const put = (map: WorldMap, x: number, y: number, o: number) => (map.layers.object[y * map.width + x] = o);
+  const errs = (p: Project) => errors(p).map((i) => i.message);
+  const ring = (map: WorldMap, x: number, y: number, o: number) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) put(map, x + dx, y + dy, o);
+  };
+
+  it('needs a cache players can walk up to, on the overworld and below', () => {
+    const { p, map } = bare();
+    put(map, 40, 40, O.CACHE);
+    expect(errs(p)).toEqual([]);
+    ring(map, 40, 40, O.BOULDER);
+    expect(errs(p)).toEqual(['Hidden cache (40, 40) has no walkable neighbour that can be reached from the spawn point.']);
+    ring(map, 40, 40, 0);
+    // A cellar under the overworld: from where players arrive.
+    put(map, 10, 10, O.CRYPT_ENTRANCE);
+    map.features.push({ id: 'down', type: 'link', c: 10, r: 10, name: 'down', props: { toMap: 'cellar', toX: 5, toY: 5 } });
+    const L = emptyLayers(20 * 20);
+    L.terrain.fill(T.CRYPT_FLOOR);
+    const cellar: WorldMap = {
+      id: 'cellar', name: 'Cellar', kind: 'dungeon', scaleId: 'dungeon', grid: 'iso', width: 20, height: 20, seed: 1,
+      settings: { rpgdcMapId: 'cellar', rpgdcZone: 'wilderness' }, layers: L, children: [],
+      features: [{ id: 'up', type: 'link', c: 4, r: 5, name: 'up', props: { toMap: 'overworld', toX: 11, toY: 10 } }],
+    };
+    put(cellar, 4, 5, O.STAIRS_UP);
+    put(cellar, 15, 15, O.CACHE);
+    p.maps[cellar.id] = cellar;
+    expect(errs(p)).toEqual([]);
+    for (let y = 12; y < 20; y++) for (let x = 12; x < 20; x++) if (Math.max(Math.abs(x - 15), Math.abs(y - 15)) === 2) cellar.layers.terrain[y * 20 + x] = T.CRYPT_WALL;
+    expect(errs(p)).toEqual(['Hidden cache (15, 15) has no walkable neighbour that can be reached from where players arrive.']);
+  });
+
+  it('lets players walk through a thicket: a glade behind one is reachable, behind a tree it isn’t', () => {
+    const { p, map } = bare();
+    // A hidden glade: a ring of oaks round a cache, with a thicket in it.
+    for (let y = 36; y <= 44; y++) for (let x = 36; x <= 44; x++) if (Math.max(Math.abs(x - 40), Math.abs(y - 40)) === 4) put(map, x, y, O.OAK);
+    put(map, 40, 40, O.CACHE);
+    put(map, 44, 40, O.THICKET);
+    expect(isWalkableAt(map, 44, 40)).toBe(true);
+    expect(walkableTiles(map)[40 * map.width + 44]).toBe(1);
+    expect(reachable(map, [{ x: 3, y: 3 }])[39 * map.width + 40]).toBe(1);
+    expect(errs(p)).toEqual([]);
+    // An oak there instead closes the glade.
+    put(map, 44, 40, O.OAK);
+    expect(errs(p)).toEqual(['Hidden cache (40, 40) has no walkable neighbour that can be reached from the spawn point.']);
+    // Exported as a thicket, and opened again as one.
+    put(map, 44, 40, O.THICKET);
+    const out = toRpgdcMaps(p).maps[0];
+    expect(out.objectLegend[out.objects[40 * map.width + 44]]).toBe('thicket');
+    expect(Object.values(fromRpgdcMaps(toRpgdcMaps(p)).maps)[0].layers.object[40 * map.width + 44]).toBe(O.THICKET);
+  });
+
+  it('warns about a thicket on water, and counts a thicket as a tree that can hide an altar', () => {
+    const { p, map } = bare();
+    map.layers.terrain[50 * map.width + 50] = T.WATER;
+    put(map, 50, 50, O.THICKET);
+    // The game lets players through it wherever it stands.
+    expect(isWalkableAt(map, 50, 50)).toBe(true);
+    put(map, 60, 60, O.THICKET);
+    put(map, 62, 61, O.AIR_ALTAR);
+    expect(checkGameMaps(p).map((i) => [i.severity, i.message])).toEqual([
+      ['warning', 'Thicket (50, 50) is on water: players can walk through a thicket wherever it stands, so they can cross the water there.'],
+      ['warning', 'Altar: air (62, 61) is within 2 tiles of a tree, which can hide it in the game and take the taps meant for it.'],
+    ]);
+  });
+
+  it('draws a thicket as the first tree beside it: west, north, east, then south', () => {
+    const { map } = bare();
+    put(map, 20, 20, O.THICKET);
+    expect(thicketLooksLike(map, 20, 20)).toBe(O.TREE);
+    put(map, 20, 21, O.YEW);
+    expect(thicketLooksLike(map, 20, 20)).toBe(O.YEW);
+    put(map, 21, 20, O.WILLOW);
+    expect(thicketLooksLike(map, 20, 20)).toBe(O.WILLOW);
+    put(map, 20, 19, O.OAK);
+    expect(thicketLooksLike(map, 20, 20)).toBe(O.OAK);
+    put(map, 19, 20, O.BOULDER);
+    expect(thicketLooksLike(map, 20, 20)).toBe(O.OAK);
+    put(map, 19, 20, O.TREE);
+    expect(thicketLooksLike(map, 20, 20)).toBe(O.TREE);
+    expect(thicketLooksLike(map, 0, 0)).toBe(O.TREE);
+  });
+
+  it('joins ruined walls up like the fence, and they block walking like a boulder', () => {
+    const { p, map } = bare();
+    // An L of wall from (50, 50): along the top to (52, 50), down the side to (50, 52); and a lone pillar.
+    for (const [x, y] of [[50, 50], [51, 50], [52, 50], [50, 51], [50, 52], [60, 60]]) put(map, x, y, O.RUIN);
+    expect(ruinPieces(map, 50, 50)).toEqual(['ruin-post']);
+    expect(ruinPieces(map, 51, 50)).toEqual(['ruin-w']);
+    expect(ruinPieces(map, 52, 50)).toEqual(['ruin-w']);
+    expect(ruinPieces(map, 50, 51)).toEqual(['ruin-n']);
+    expect(ruinPieces(map, 60, 60)).toEqual(['ruin-post']);
+    put(map, 51, 51, O.RUIN);
+    expect(ruinPieces(map, 51, 51)).toEqual(['ruin-n', 'ruin-w']);
+    expect(ruinPieces(map, 0, 0)).toEqual(['ruin-post']);
+    expect(isWalkableAt(map, 51, 50)).toBe(false);
+    expect(errs(p)).toEqual([]);
+    // And the game's chapel: its broken walls are lone pillars only where a stretch starts (a
+    // corner, or after a gap); the rest join up.
+    const world = byGameId(project(), 'overworld');
+    const posts = cellsOf(gameMap('overworld'), 'ruin').filter(([x, y]) => ruinPieces(world, x, y)[0] === 'ruin-post');
+    expect(posts).toEqual([[256, 404], [261, 404], [267, 405], [256, 408], [267, 409], [260, 410], [264, 410]]);
   });
 });

@@ -5,7 +5,7 @@
  */
 
 /** How an object is drawn on the map. Small vector shapes stay crisp and fast for thousands of cells. */
-export type ObjectShape = 'pine' | 'round' | 'willow' | 'boulder' | 'fence' | 'ore' | 'icon';
+export type ObjectShape = 'pine' | 'round' | 'willow' | 'boulder' | 'fence' | 'ore' | 'icon' | 'cairn' | 'thicket' | 'ruin';
 
 export interface ObjectDef {
   id: number;
@@ -20,7 +20,7 @@ export interface ObjectDef {
   blocks: boolean;
   /** Used by standing next to it (a station, fishing spot or staircase) rather than on it. */
   useFromNeighbour: boolean;
-  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar' | 'travel';
+  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar' | 'travel' | 'secret' | 'ruin';
 }
 
 const o = (
@@ -109,6 +109,12 @@ export const OBJECTS: ObjectDef[] = [
   // RPG-DC's fast travel: a standing stone with glowing runes, tapped from beside it to travel to
   // another (each stands in a landmark place).
   o(64, 'waystone', 'Waystone', '#7fb2e5', '🧭', 'icon', 'travel', true),
+  // RPG-DC's secrets: a cache hidden under a cairn of stones, searched from beside it, and a thicket
+  // that looks like the trees round it but can be walked through (the way into a hidden glade).
+  o(65, 'cache', 'Hidden cache', '#a39d92', '💰', 'cairn', 'secret', true),
+  { ...o(66, 'thicket', 'Thicket (walk-through)', '#2d5527', '🌱', 'thicket', 'secret'), blocks: false },
+  // Old stonework, in the way like a boulder and joined up like a fence: a ruined chapel's walls.
+  o(67, 'ruin', 'Ruined wall', '#8f8a80', '🏚️', 'ruin', 'ruin'),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -175,7 +181,10 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'HERB_DUNEFLOWER'
   | 'HERB_BOGMYRTLE'
   | 'HERB_FROSTCAP'
-  | 'WAYSTONE',
+  | 'WAYSTONE'
+  | 'CACHE'
+  | 'THICKET'
+  | 'RUIN',
   number
 >;
 

@@ -273,6 +273,38 @@ const HERB_ART: Partial<Record<number, { frame: string; tint: string }>> = {
   [O.HERB_FROSTCAP]: { frame: 'plant/7', tint: '#b0e8ff' },
 };
 const FISHING = new Set<number>([O.FISHING_SHRIMP, O.FISHING_TROUT, O.FISHING_SALMON, O.FISHING_EEL, O.FISHING_LOBSTER]);
+/** A thicket is drawn as one of the trees beside it, a shade darker (the game's setTint(0xdce6d2)). */
+const THICKET_TINT = '#dce6d2';
+
+/** A windmill: a tower whose sign says so, any case (the game turns four sails on its east wall). */
+export const isWindmill = (b: GameBuilding): boolean => b.style === 'tower' && /mill/i.test(b.sign);
+
+/**
+ * The tree a thicket on (x, y) looks like, as the game picks it: the first tree, oak, willow or
+ * yew west, north, east or south of it; a tree (a pine) if there's none.
+ */
+export function thicketLooksLike(map: WorldMap, x: number, y: number): number {
+  for (const [dx, dy] of EDGE_NEIGHBOURS) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+    const o = map.layers.object[ny * map.width + nx];
+    if (TREES[o]) return o;
+  }
+  return O.TREE;
+}
+
+/**
+ * The pieces of ruined wall the game draws on (x, y), joined up like the fence: a stretch towards
+ * a ruin to the north, one towards a ruin to the west, or a lone pillar with neither.
+ */
+export function ruinPieces(map: WorldMap, x: number, y: number): ('ruin-n' | 'ruin-w' | 'ruin-post')[] {
+  const ruin = (rx: number, ry: number) => rx >= 0 && ry >= 0 && rx < map.width && ry < map.height && map.layers.object[ry * map.width + rx] === O.RUIN;
+  const out: ('ruin-n' | 'ruin-w' | 'ruin-post')[] = [];
+  if (ruin(x, y - 1)) out.push('ruin-n');
+  if (ruin(x - 1, y)) out.push('ruin-w');
+  return out.length ? out : ['ruin-post'];
+}
 
 // ---- characters (client/src/actors.ts) -------------------------------------------------------
 
@@ -304,6 +336,8 @@ const NPC_OUTFITS: Record<string, Record<string, [string, string?]>> = {
   farmer: { head: ['head_short'], chest: ['cloth_shirt', '#f0e0a8'], hands: ['default_hands'], legs: ['cloth_pants', '#7a6a40'], feet: ['leather_boots'], main: ['hand_axe'] },
   trapper: { head: ['leather_hood', '#8a6a40'], chest: ['leather_chest', '#9a7a50'], hands: ['leather_gloves', '#7a5a3a'], legs: ['leather_pants', '#7a5a3a'], feet: ['leather_boots'], main: ['shortbow'] },
   miner: { head: ['head_bald'], chest: ['leather_chest', '#707070'], hands: ['leather_gloves', '#5a5a5a'], legs: ['cloth_pants', '#5a5040'], feet: ['leather_boots', '#5a5a5a'], main: ['war_hammer'] },
+  // Hob the miller, in the windmill, white with flour.
+  miller: { head: ['leather_hood', '#f4f0e4'], chest: ['cloth_shirt', '#f4f0e4'], hands: ['default_hands'], legs: ['cloth_pants', '#d8d0bc'], feet: ['leather_boots', '#b8a888'] },
 };
 /** Villagers' shirts and trousers, so no two neighbours look alike (the game varies them by id). */
 const VILLAGER_CLOTHES: [string, string][] = [
@@ -390,15 +424,18 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     drawAt(sheetName, frame, cx, cy, opts);
   };
   const put = (frame: string, i: number, opts?: { tint?: string }) => putFrom(home, frame, i, opts);
-  /**
-   * A thing from the streets (or an altar, or a waystone), from the world sheet; an older game
-   * server without its art gets the plain symbol instead, so it doesn't vanish.
-   */
-  const putDecor = (o: number, i: number) => {
-    if (art.sheets.world?.frames[DECOR_ART[o]!]) return putFrom('world', DECOR_ART[o]!, i);
+  /** Object o's plain symbol on cell i, for when the game server has no art for it. */
+  const symbol = (o: number, i: number) => {
     const [cx, cy] = g.center(i);
     drawObject(ctx, o, cx * s, cy * s, s * 0.5);
   };
+  /** A frame of a sheet on cell i, or object o's plain symbol when an older game server hasn't that art, so it doesn't vanish. */
+  const putOr = (sheetName: string, frame: string, o: number, i: number) => {
+    if (art.sheets[sheetName]?.frames[frame] && art.images[sheetName]) putFrom(sheetName, frame, i);
+    else symbol(o, i);
+  };
+  /** A thing from the streets (or an altar, or a waystone), from the world sheet. */
+  const putDecor = (o: number, i: number) => putOr('world', DECOR_ART[o]!, o, i);
   const count = (sheetName: string, what: string) => art.sheets[sheetName]?.counts?.[what] ?? 1;
   const variant = (what: string, x: number, y: number, salt = 0, sheetName = home) => `${what}/${Math.floor(tileHash(x, y, salt) * count(sheetName, what))}`;
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < map.height ? y * w + x : -1);
@@ -501,6 +538,9 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         if (fenced(x, y - 1)) putFrom('world', 'fence-n', i);
         if (fenced(x - 1, y)) putFrom('world', 'fence-w', i);
         if (!fenced(x, y - 1) && !fenced(x - 1, y)) putFrom('world', 'fence-post', i);
+      } else if (L.object[i] === O.CACHE) {
+        // A cache's cairn of stones, from the dungeon sheet (insides too).
+        putOr(home, 'cairn', O.CACHE, i);
       } else if (DECOR_ART[L.object[i]]) {
         putDecor(L.object[i], i);
       } else if (ORE_ART[L.object[i]]) {
@@ -581,6 +621,9 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     else if (o === O.BOULDER) put(variant(snow ? either('snowrock', 'rock') : 'rock', x, y), i);
     else if (o === O.CACTUS) put(variant(either('cactus', 'rock'), x, y), i);
     else if (o === O.DEAD_TREE) put(variant(either('deadtree', 'tree'), x, y), i);
+    else if (o === O.THICKET) drawThicket(i, x, y, snow);
+    else if (o === O.CACHE) putOr('world', 'cairn', o, i);
+    else if (o === O.RUIN) drawRuin(i, x, y);
     else if (HERB_ART[o]) putFrom('world', HERB_ART[o]!.frame, i, { tint: HERB_ART[o]!.tint, scale: 1.3 });
     else if (DECOR_ART[o]) putDecor(o, i);
     else if (o === O.DOOR) {
@@ -602,6 +645,29 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     if (b) drawHouse(b);
   }
   return true;
+
+  /**
+   * A thicket, as the game draws it: as the first tree beside it (west, north, east, south; a pine
+   * if none), a shade darker, snowy on snow. Here it's marked with a dashed ring round its foot too,
+   * so it can be told from the trees: it can be walked through.
+   */
+  function drawThicket(i: number, x: number, y: number, snow: boolean) {
+    const tree = thicketLooksLike(map, x, y);
+    const frame = snow ? either(tree === O.YEW ? 'snowyew' : 'snowtree', TREES[tree]!) : either(TREES[tree]!, 'tree');
+    put(variant(frame, x, y, 3), i, { tint: THICKET_TINT });
+    thicketRing(ctx, g, i, s);
+  }
+
+  /**
+   * Ruined walls, joined up like the fence (the game's drawRuin): towards a ruin to the north and
+   * one to the west, or a lone pillar; three of each, picked by tile. The plain symbol on an older
+   * game server without their art.
+   */
+  function drawRuin(i: number, x: number, y: number) {
+    if (!art!.sheets.world?.frames['ruin-post/0']) return symbol(O.RUIN, i);
+    const salt = { 'ruin-n': 14, 'ruin-w': 15, 'ruin-post': 16 };
+    for (const piece of ruinPieces(map, x, y)) putFrom('world', variant(piece, x, y, salt[piece], 'world'), i);
+  }
 
   /** A fort's banner, as the game draws it before any guild holds the fort: a pole and a grey pennant. */
   function drawBanner(i: number) {
@@ -683,6 +749,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         if (byWall && tileHash(x, y, 6) < 0.22) putFrom('cave', pick('prop', x, y, 7), i);
       }
       if (L.object[i] === O.STAIRS_UP) put('stairs-up', i);
+      // A cache's cairn of stones, from the cave sheet.
+      if (L.object[i] === O.CACHE) putOr('cave', 'cairn', O.CACHE, i);
       if (lights.has(i)) put('brazier', i);
       drawCharacter(i);
     }
@@ -709,6 +777,62 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         put(`door-${b.style}-${doorFace(b, x, y) ?? 's'}`, i);
       }
     }
+    if (isWindmill(b)) drawSails(b);
+  }
+
+  /**
+   * A windmill's four sails, flat on its east wall about three quarters of the way up, as the game
+   * draws them (its drawSails), at the angle they start at in the game (they turn there).
+   */
+  function drawSails(b: GameBuilding) {
+    // Game pixels (64 to a tile's width) to ours, and the height of a unit up (Flare's camera looks down 30°).
+    const px = s / 32;
+    const up = ((32 / Math.SQRT1_2) * Math.cos(Math.PI / 6)) / 32;
+    const X = b.x + b.w - 0.5 + 0.12;
+    const Y = b.y + (b.h - 1) / 2;
+    const Z = b.w * 0.78;
+    const R = b.w * 0.75;
+    const W = R * 0.27;
+    const angle = (b.x * 7 + b.y) % 6;
+    /** A point on the sails: `u` along the wall (northwards), `v` up. */
+    const pt = (u: number, v: number): [number, number] => {
+      const [cx, cy] = g.centerCR(X, Y - u);
+      return [cx * s, (cy - (Z + v) * up) * s];
+    };
+    ctx.save();
+    const line = (a: [number, number], b2: [number, number]) => {
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b2[0], b2[1]);
+    };
+    for (let q = 0; q < 4; q++) {
+      const a = angle + (q * Math.PI) / 2;
+      const [dx, dy, nx, ny] = [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a)];
+      const p = (r: number, wd: number) => pt(dx * r + nx * wd, dy * r + ny * wd);
+      // The canvas on its lattice, then the spar down the middle.
+      const corners = [p(R * 0.25, 0), p(R, 0), p(R, W), p(R * 0.25, W)];
+      ctx.fillStyle = 'rgba(232,220,192,0.95)';
+      ctx.beginPath();
+      corners.forEach(([cx, cy], n) => (n ? ctx.lineTo(cx, cy) : ctx.moveTo(cx, cy)));
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(90,65,40,0.9)';
+      ctx.lineWidth = Math.max(0.5, px);
+      ctx.beginPath();
+      for (const r of [0.25, 0.44, 0.62, 0.81, 1]) line(p(R * r, 0), p(R * r, W));
+      line(p(R * 0.25, W), p(R, W));
+      ctx.stroke();
+      ctx.strokeStyle = '#4a3420';
+      ctx.lineWidth = Math.max(1, 2 * px);
+      ctx.beginPath();
+      line(p(0, 0), p(R * 1.04, 0));
+      ctx.stroke();
+    }
+    const [hx, hy] = pt(0, 0);
+    ctx.fillStyle = '#3a2a1a';
+    ctx.beginPath();
+    ctx.arc(hx, hy, Math.max(1, 3 * px), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -823,25 +947,56 @@ export function gameArtColours(map: WorldMap): OverviewColours | null {
     const ground = GROUND_OF[t] ?? (OPEN_GROUND.has(t) || t === T.GRASS ? 'grass' : null);
     return ground ? frameColour(home, `${ground}/0`) ?? frameColour(home, `${wet(ground) ? 'water' : 'grass'}/0`) : null;
   };
-  const objectOf = (o: number, snow: boolean) => {
+  const objectOf = (o: number, snow: boolean): number | null => {
     if (TREES[o]) return frameColour(home, `${snow ? (o === O.YEW ? 'snowyew' : 'snowtree') : TREES[o]}/0`) ?? frameColour(home, 'tree/0');
+    // A thicket looks like the trees round it, a shade darker.
+    if (o === O.THICKET) {
+      const c = objectOf(O.TREE, snow);
+      return c === null ? null : multiply(c, parseInt(THICKET_TINT.slice(1), 16));
+    }
+    if (o === O.RUIN) return frameColour(home, 'ruin-post/0');
     if (o === O.DEAD_TREE) return frameColour(home, 'deadtree/0');
     if (o === O.CACTUS) return frameColour(home, 'cactus/0');
     if (o === O.BOULDER) return frameColour(home, `${snow ? 'snowrock' : 'rock'}/0`);
     return null;
   };
   // Looked up once per kind of ground and object (a big map asks for each of its cells).
+  const groundColour = (t: number) => {
+    if (!grounds.has(t)) grounds.set(t, groundOf(t));
+    return grounds.get(t)!;
+  };
   return {
-    ground: (t) => {
-      if (!grounds.has(t)) grounds.set(t, groundOf(t));
-      return grounds.get(t)!;
-    },
+    ground: groundColour,
     object: (o, t) => {
+      // A cache is a secret: like the game's minimap, the overview shows the ground under it.
+      if (o === O.CACHE) return groundColour(t);
       const key = o * 2 + (t === T.SNOW ? 1 : 0);
       if (!things.has(key)) things.set(key, objectOf(o, t === T.SNOW));
       return things.get(key)!;
     },
   };
+}
+
+/** Two colours (0xRRGGBB) multiplied, as a tint is. */
+function multiply(a: number, b: number): number {
+  const ch = (shift: number) => Math.round((((a >> shift) & 255) * ((b >> shift) & 255)) / 255) << shift;
+  return ch(16) | ch(8) | ch(0);
+}
+
+/** A thicket's mark, so it can be told from the trees it looks like: a dashed ring round its foot. */
+function thicketRing(ctx: CanvasRenderingContext2D, g: Grid, i: number, s: number): void {
+  const [cx, cy] = g.center(i);
+  ctx.save();
+  ctx.lineWidth = Math.max(1, s * 0.07);
+  ctx.setLineDash([s * 0.16, s * 0.11]);
+  ctx.beginPath();
+  ctx.ellipse(cx * s, cy * s, s * 0.6, s * 0.3, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(20,40,10,0.55)';
+  ctx.stroke();
+  ctx.lineWidth = Math.max(0.5, s * 0.035);
+  ctx.strokeStyle = 'rgba(240,255,215,0.95)';
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** The game draws fishing spots as a pale ring on the water. */

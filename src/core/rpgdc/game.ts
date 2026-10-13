@@ -48,10 +48,16 @@ const GROUND_WALKABLE = [true, true, false, true, true, false, true, true, true,
 export const OPEN_GROUND = new Set<number>([T.GRASS, T.SAND, T.MUD, T.SNOW, T.STONE, T.ICE]);
 
 /** How many objects the game knows: World Builder's first ones, in the same order. */
-const GAME_OBJECT_COUNT = 65;
+const GAME_OBJECT_COUNT = 68;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
 export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
 export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
+/**
+ * 1 for the game's objects you can walk through (the thicket), by object index. In the game a
+ * cell with an object takes the object's tile, whatever the ground under it, and the thicket's
+ * tile is walkable; every other object's blocks.
+ */
+const OPEN_OBJECT = Uint8Array.from(OBJECT_LEGEND, (_, k) => (k > 0 && !OBJECTS[k].blocks ? 1 : 0));
 
 /**
  * The game ground index for any World Builder tile. The game's own grounds map to themselves;
@@ -76,13 +82,23 @@ export function gameObject(objectId: number): number {
   return objectId > 0 && objectId < OBJECT_LEGEND.length ? objectId : 0;
 }
 
-/** Walkable in the game: walkable ground with nothing standing on it, and not inside a building's walls. */
+/**
+ * Walkable in the game: walkable ground with nothing standing on it, and not inside a building's
+ * walls; or a thicket, which you push through (wherever it stands, as in the game).
+ */
 export function isWalkable(map: WorldMap, i: number, mask: Uint8Array = buildingMask(map)): boolean {
-  return GROUND_WALKABLE[gameGround(map.layers.terrain[i])] && gameObject(map.layers.object[i]) === 0 && !mask[i];
+  const o = gameObject(map.layers.object[i]);
+  if (o) return OPEN_OBJECT[o] === 1;
+  return GROUND_WALKABLE[gameGround(map.layers.terrain[i])] && !mask[i];
 }
 
 /** Whether each World Builder tile is ground the game walks on (by tile id), worked out once. */
 const WALKABLE_TILE = TILES.map((t) => GROUND_WALKABLE[gameGround(t.id)]);
+
+/** Whether a World Builder tile is ground the game walks on (with nothing standing on it). */
+export function walkableGround(tileId: number): boolean {
+  return WALKABLE_TILE[tileId] ?? GROUND_WALKABLE[gameGround(tileId)];
+}
 
 /**
  * 1 for every tile you can walk on (as isWalkable), for the whole map at once: much quicker than
@@ -97,8 +113,12 @@ export function walkableTiles(map: WorldMap, mask: Uint8Array = buildingMask(map
   for (let i = 0; i < n; i++) {
     const t = terrain[i];
     const o = object[i];
+    if (o > 0 && o < objects) {
+      out[i] = OPEN_OBJECT[o];
+      continue;
+    }
     const ground = WALKABLE_TILE[t] ?? GROUND_WALKABLE[gameGround(t)];
-    if (ground && !(o > 0 && o < objects) && !mask[i]) out[i] = 1;
+    if (ground && !mask[i]) out[i] = 1;
   }
   return out;
 }
@@ -223,6 +243,7 @@ export const NPC_ROLES = [
   { value: 'farmer', label: 'Farmer (Giles)' },
   { value: 'trapper', label: 'Trapper (Rook)' },
   { value: 'miner', label: 'Miner (Dobbs)' },
+  { value: 'miller', label: 'Miller (Hob, in the windmill)' },
 ];
 /** Townspeople worth robbing, who keep a guard indoors with them (the game's `guarded` in thieving.ts). */
 export const GUARDED_ROLES = new Set(['mayor']);
@@ -618,7 +639,7 @@ export const PLACE_HELP: Record<string, string> = {
   fort: `A guild fort, on its banner's tile: guilds take it by standing in its yard (${FORT_RADIUS} tiles round the banner) and its chest (just east of the banner) gives the holders a reward each day. Put it in the Deep, with a palisade of fences round the yard and a gate in each side.`,
   merchant: 'Where the travelling merchant stands when she visits (one, on the overworld, in the Safe zone, where players can walk up to her).',
   landmark: `A named place on the overworld (the town, a lake, a keep), on its middle: walking within its radius (${LANDMARK_RADIUS.min} to ${LANDMARK_RADIUS.max} tiles, a circle) shows its name, and the first time counts as finding it. Put one Waystone object inside it (not in the Deep) for fast travel between the landmarks players have found.`,
-  npc: "A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper and miner); the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
+  npc: "A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller); the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
 };
 
 /** A place's props with defaults filled in. */

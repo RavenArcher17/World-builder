@@ -46,6 +46,8 @@ const OBJECT_GROUPS: [string, string[]][] = [
   ['Nature', ['tree', 'rock', 'ore', 'fishing', 'herb']],
   ['Runecrafting altars', ['altar']],
   ['Fast travel', ['travel']],
+  ['Secrets', ['secret']],
+  ['Ruins', ['ruin']],
   ['Town', ['wall', 'station', 'door', 'stairs']],
   ['Streets', ['street']],
   ['Indoors', ['furniture']],

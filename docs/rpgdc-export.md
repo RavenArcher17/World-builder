@@ -40,7 +40,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zone": null,
   "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks", "sand", "mud", "bog", "snow", "stone", "ice"],
   "ground": [0, 0, 1, ...],
-  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone"],
+  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin"],
   "objects": [0, 4, 0, ...],
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
@@ -64,7 +64,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
 | `theme` | string, optional | Dungeon floors only: how the floor looks in the game. `crypt` (dressed stone), `sewer` (damp stone; water is sewer water) or `cave` (rough rock; water is lava). Without it, a floor with water looks like the sewers, otherwise the crypt. In World Builder: `settings.rpgdcTheme`, set with **Looks like** in the Map panel; written only when chosen. |
 | `groundLegend` | string[] | Ground kinds; `ground` values index into it. Always all thirteen, even if unused. (The game's own file lists just the ones each map uses, in any order; both read the same.) |
 | `ground` | integer[] (`width*height`) | Ground per tile. |
-| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `waystone` (65 entries). |
+| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `ruin` (68 entries). |
 | `objects` | integer[] (`width*height`) | What stands on each tile. |
 | `zoneLegend` | string[] | Zone keys; `zones` values index into it. Always all four. |
 | `zones` | integer[] (`width*height`) \| `null` | Overworld: zone per tile. Dungeons: `null` (use `zone`). |
@@ -103,8 +103,9 @@ warns when a map has any.
 
 ### Objects
 
-Any object blocks walking. Stations, fishing spots, herbs, altars, waystones, doors, stairs, the
-grate and the crypt entrance are used from a neighbouring tile (any of the 8 around it).
+Any object blocks walking, except the `thicket`, which players push through. Stations, fishing
+spots, herbs, altars, waystones, caches, doors, stairs, the grate and the crypt entrance are used
+from a neighbouring tile (any of the 8 around it).
 
 | Index | Key | Notes |
 |---|---|---|
@@ -131,6 +132,9 @@ grate and the crypt entrance are used from a neighbouring tile (any of the 8 aro
 | 59, 60 | `fishing_eel`, `fishing_lobster` | Fishing spots: eels in the swamp, lobsters off the coast. |
 | 61–63 | `herb_duneflower`, `herb_bogmyrtle`, `herb_frostcap` | The new lands' herb patches, each on its own land's ground anywhere out of town: duneflower on sand, bog myrtle in the mud, frostcap on snow. |
 | 64 | `waystone` | Fast travel: a standing stone with glowing runes, used from any of the 8 tiles around it to travel to the waystone of any landmark the player has found. On the overworld only, inside a `landmark` place (below), one to a landmark, and not in the Deep. Free in town and the Frontier; travelling to one in the Wilderness costs coins. |
+| 65 | `cache` | A secret: a hidden cache under a cairn of stones, used from any of the 8 tiles around it like a station. Each player can search each cache once, for coins and something useful, more the further out it is (by its zone). On any map: the overworld (off the paths, in hidden glades), dungeon floors and insides. The game draws it as a cairn (the `cairn` frame of the world, dungeon or cave sheet), and its minimap as the ground under it. |
+| 66 | `thicket` | A secret: a thicket that looks like the trees round it (the game draws it as the first tree west, north, east or south of it, a shade darker), but which players walk through: the way into a hidden glade. The one object that doesn't block walking: its cell is walkable whatever the ground under it. |
+| 67 | `ruin` | Old stonework, the walls of a ruined chapel: in the way like a boulder, and joined up like the fence (towards a ruin to the north and to the west, or a lone pillar). |
 
 ### Zones
 
@@ -156,7 +160,7 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `fort` | `x`, `y`, `id`, `name` | A guild fort, on its banner's tile (the overworld, in the Deep). Guilds take it by standing in its yard, 4 tiles round the banner; its chest stands just east of the banner, and its holders open it once a day. `id` is lower-case letters, digits and `_` (holders are saved by it, so keep it once players use the fort); `name` reads in a sentence ("has taken the Deep Keep"). The game draws the banner and chest; the palisade is fences round the yard, 5 tiles out, with a 3-tile gate in the middle of each side. |
 | `merchant` | `x`, `y` | Where the travelling merchant stands when she visits town: one, on the overworld, on open Safe ground players can walk up to. |
 | `landmark` | `x`, `y`, `id`, `name`, `radius` (optional) | A named place on the overworld, on its middle: the town, a lake, the crypt, a keep. Walking within `radius` tiles of (`x`, `y`) (a straight line: a circle, not a square) shows its `name`, and the first time counts as finding it. `id` is lower-case letters, digits and `_`, 2 to 31 of them, starting with a letter (players' finds are saved by it, so keep it once players have found the landmark), and unique; `name` is 1 to 40 letters ("Moira's Lake", "the Oasis"); `radius` is a whole number from 2 to 40, 10 when it's left out (World Builder always writes it). Its waystone is the `waystone` object that stands in it: within its radius, or, where landmarks overlap, in the one with the nearest middle. |
-| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip), and outside town `hermit` (Old Ansel), `fisher` (Fisher Moira), `farmer` (Farmer Giles), `trapper` (Rook the trapper) and `miner` (Dobbs, in the caverns); or `slayer`, the Slayer master, who gives Slayer tasks. The talkers give quests: villagers by the map they're in (`home1` to `home4`, so keep those map ids), the rest by their role (so keep one of each). A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
+| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip), and outside town `hermit` (Old Ansel), `fisher` (Fisher Moira), `farmer` (Farmer Giles), `trapper` (Rook the trapper), `miner` (Dobbs, in the caverns) and `miller` (Hob the miller, in the windmill); or `slayer`, the Slayer master, who gives Slayer tasks. The talkers give quests: villagers by the map they're in (`home1` to `home4`, so keep those map ids), the rest by their role (so keep one of each). A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
 
 Building colours. The game draws the roof, and the walls (the plaster of a timber house, the stone of
 a stone house or tower), again over the house, multiplied by the colour:
@@ -197,6 +201,15 @@ ignores waystones in the Deep. In World Builder, a landmark is a **Landmark** pl
 name; a faint circle shows its radius, a stronger one when it's selected), and the waystone is
 under **Fast travel** in the object palette.
 
+Secrets and ruins. A `cache` hides under a cairn of stones off the paths, in hidden glades and down
+in the places outside town; a hidden glade is a ring of trees round a cache, with a `thicket`
+(two, side by side, in the game's map) as the way in. In World Builder both are under **Secrets**
+in the object palette: a cache is drawn as a cairn, and a thicket as a tree with a dashed outline
+(with the game's art, as the game draws it, with a dashed ring round its foot), so it can be told
+from the trees.
+Ruined walls are under **Ruins**. A tower whose sign says "Mill" (any case) is a windmill: the game
+turns four sails on its east wall, which World Builder's art preview shows too.
+
 Links come in pairs: going down from map A to B (a link on A's entrance, stairs down or grate) is
 matched by a link on one of B's stairs up back to A, and a door into B by a door on B back to A. Going down, the arrival tile is normally
 just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs down.
@@ -206,9 +219,9 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 **Check for game** reports each problem with its map and tile (tap one to jump there):
 
 - exactly one spawn point, on the overworld, on walkable ground in the Safe zone;
-- every station, altar, waystone and fishing spot has a walkable neighbour reachable on foot from the spawn point
+- every station, altar, waystone, cache and fishing spot has a walkable neighbour reachable on foot from the spawn point
   (on dungeon floors: from where links arrive), moving in 8 directions without cutting corners
-  past blocked tiles;
+  past blocked tiles (thickets are walked through, so a glade behind one counts);
 - every entrance, staircase, door and grate has a link to an existing map and a walkable target
   tile, and links come in pairs;
 - no stairs on a dungeon floor with a wall just east, south or south-east of them: the game draws
@@ -226,7 +239,8 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 - a look (theme) only on dungeon floors, and one of `crypt`, `sewer` or `cave`;
 - a Safe zone with no gate, so no town guards (a warning);
 - altars and essence rocks (warnings): an altar in the Safe zone, or either within 2 tiles of a
-  tree, which can hide it and take the taps meant for it; and runite outside the Deep.
+  tree (or a thicket, which the game draws as one), which can hide it and take the taps meant for
+  it; and runite outside the Deep.
 - guild forts: on the overworld, with an id and a name, their whole yard in the Deep, and the
   banner and chest on open ground reachable from the spawn point; a gap in the palisade is a warning;
 - the travelling merchant: one spot, on the overworld, on open Safe ground players can reach;
@@ -234,7 +248,8 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 - landmarks: on the overworld, with an id of lower-case letters, digits and `_` used by no other
   landmark, a name of 1 to 40 letters, and a radius from 2 to 40 (the game refuses a file without);
 - waystones: on the overworld, each in a landmark (within its radius of the middle; where several
-  hold it, the one with the nearest middle), at most one in a landmark, and not in the Deep.
+  hold it, the one with the nearest middle), at most one in a landmark, and not in the Deep;
+- thickets (a warning): one on water or a wall, which players could then walk across.
 
 ## Opening the game's maps
 

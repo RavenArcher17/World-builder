@@ -397,7 +397,7 @@ export function openHelpDialog(): void {
       h(
         'ul',
         {},
-        li('Paint', 'Ground (grass, path, water, cobbles, crypt floor and wall, wooden floors, and the new lands’ sand, mud, bog, snow, gravel and ice), Objects (trees, rocks, cacti, ore, stations, altars, waystones, fishing spots, herbs, stairs), Grove and Ore brushes, and Zones on the overworld.'),
+        li('Paint', 'Ground (grass, path, water, cobbles, crypt floor and wall, wooden floors, and the new lands’ sand, mud, bog, snow, gravel and ice), Objects (trees, rocks, cacti, ore, stations, altars, waystones, caches, thickets you can walk through, ruined walls, fishing spots, herbs, stairs), Grove and Ore brushes, and Zones on the overworld.'),
         li('Place', 'spawn point, monster spawns (kind, count, radius), bosses, braziers, stairs and door links, buildings, townspeople, forts, the merchant and landmarks (named places; a waystone in one, at most one, is a stop for fast travel). Tap a place to edit its fields; for a link, choose the map and tap “Pick arrival tile”.'),
         li('Check for game', 'in the Map panel lists every problem; tap one to jump to its tile. Export → RPG-DC maps writes rpg-dc.maps.json for the game.'),
         li('Sizes', 'the overworld is square, 128 to 1024 tiles a side (the game’s is 768); dungeon floors 16 to 64, insides 4 to 32. A big overworld is best edited on a computer.'),

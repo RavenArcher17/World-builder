@@ -37,8 +37,8 @@ type Tool = 'select' | 'pan' | 'paint' | 'feature';
 type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines' | 'object' | 'grove' | 'ore' | 'zone' | 'height' | 'roof' | 'turn' | 'prop';
 const GAME_PAINT_MODES: PaintMode[] = ['tile', 'object', 'grove', 'ore', 'zone'];
 const GENERIC_PAINT_MODES: PaintMode[] = ['tile', 'road', 'river', 'erase-lines', 'object'];
-/** Objects that clear away when a path, floor or water is painted over them. */
-const NATURE_GROUPS = new Set(['tree', 'rock', 'ore', 'wall']);
+/** Objects that clear away when a path, floor or water is painted over them (and thickets, below). */
+const NATURE_GROUPS = new Set(['tree', 'rock', 'ore', 'wall', 'ruin']);
 const OBJECTS_LIST = OBJECTS.slice(1);
 
 /** `${uid}:${projectId}` of the project that auto-syncs to the cloud. */
@@ -1785,7 +1785,7 @@ export class App {
           // Paths, floors and water clear away trees, rocks and fences, but not stations or stairs
           // (grass and the new lands' open ground keep them: a tree on snow is a snowy pine).
           const o = objectDef(L.object[i]);
-          if (o && NATURE_GROUPS.has(o.group)) L.object[i] = 0;
+          if (o && (NATURE_GROUPS.has(o.group) || o.id === O.THICKET)) L.object[i] = 0;
         }
         const e = PAINT_ELEVATION[this.paintTile];
         if (map.kind === 'overland' && !game && this.storey === 0) {

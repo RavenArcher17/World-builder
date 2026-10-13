@@ -38,6 +38,7 @@ import {
   gameMaps,
   gameObject,
   guardPosts,
+  walkableGround,
   walkableTiles,
   isWalkable,
   isWalkableAt,
@@ -83,7 +84,10 @@ const HERBS: Record<number, { name: string; ground: number; zones: string[] }> =
   [O.HERB_BOGMYRTLE]: { name: 'Bog myrtle', ground: T.MUD, zones: WILD },
   [O.HERB_FROSTCAP]: { name: 'Frostcap', ground: T.SNOW, zones: WILD },
 };
-const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW, O.YEW]);
+/** What the game draws as a tree (a thicket looks like the trees round it), which can hide what's near it. */
+const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW, O.YEW, O.THICKET]);
+/** Objects used from a tile beside them, which must be one players can walk to. */
+const USED_FROM_BESIDE = new Set(['station', 'fishing', 'altar', 'travel']);
 const groundName = (t: number) => tile(t).name.toLowerCase();
 
 export function checkGameMaps(project: Project): GameIssue[] {
@@ -190,14 +194,15 @@ export function checkGameMaps(project: Project): GameIssue[] {
       }
     }
 
-    // Stations, altars, waystones and fishing spots must be usable from a tile you can walk to.
+    // Stations, altars, waystones, caches and fishing spots must be usable from a tile you can walk
+    // to (thickets are walked through, so a glade behind one is reachable).
     const starts = m === overworld ? owSpawns.map((s) => ({ x: s.f.c, y: s.f.r })) : arrivals.get(m) ?? [];
     const walk = walkableTiles(m);
     const walkAt = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < m.height && walk[y * w + x] === 1;
     const reached = reachable(m, starts, walk);
     for (const i of things) {
       const d = objectDef(L.object[i]);
-      if (!d || (d.group !== 'station' && d.group !== 'fishing' && d.group !== 'altar' && d.group !== 'travel')) continue;
+      if (!d || (!USED_FROM_BESIDE.has(d.group) && L.object[i] !== O.CACHE)) continue;
       const x = i % w;
       const y = Math.floor(i / w);
       const usable = NEIGHBOURS.some(([dx, dy]) => {
@@ -306,6 +311,15 @@ export function checkGameMaps(project: Project): GameIssue[] {
       else if (first) add('error', m, x, y, `A second waystone in ${name} (${x}, ${y}): the first is at (${first.x}, ${first.y}).`);
       else if (zoneAt(m, i)?.key === 'deep') add('error', m, x, y, `The waystone in ${name} (${x}, ${y}) is in the Deep, where waystones don't work.`);
       if (l && !first) stones.set(l.id, { x, y });
+    }
+
+    // Thickets (a warning): the game lets players push through one wherever it stands, so one on
+    // water or a wall is a way across it.
+    for (const i of things) {
+      if (L.object[i] !== O.THICKET || walkableGround(L.terrain[i])) continue;
+      const x = i % w;
+      const y = Math.floor(i / w);
+      add('warning', m, x, y, `Thicket (${x}, ${y}) is on ${groundName(L.terrain[i])}: players can walk through a thicket wherever it stands, so they can cross the ${groundName(L.terrain[i])} there.`);
     }
 
     // The Duel Arena: duellists fight in its pits, the places you can stand that can't be walked to

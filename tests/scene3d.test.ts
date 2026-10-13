@@ -176,6 +176,27 @@ describe('3D scene', () => {
     expect(s.markers.find((k) => k.data.key === 'bank')).toBeTruthy();
     expect(s.markers.find((k) => k.data.key === 'tree')).toBeUndefined();
   });
+
+  it('joins a ruined wall to the ruins beside it, and marks a cache but not a thicket', () => {
+    const build = (cells: [number, number, number][]) => {
+      const m = with3d(make('town', 'square', 2, [12, 12]));
+      m.layers.terrain.fill(T.GRASS);
+      m.layers.building.fill(0);
+      m.layers.object.fill(0);
+      m.features = [];
+      for (const [c, r, o] of cells) m.layers.object[r * 12 + c] = o;
+      return buildScene(m);
+    };
+    const triangles = (s: Scene3D) => s.parts.find((p) => p.kind === 'objects')!.mesh.indices.length;
+    const apart = build([[2, 2, O.RUIN], [6, 6, O.RUIN]]);
+    const joined = build([[2, 2, O.RUIN], [3, 2, O.RUIN]]);
+    expect(meshProblems(joined)).toEqual([]);
+    expect(triangles(joined)).toBeGreaterThan(triangles(apart));
+    const secrets = build([[2, 2, O.CACHE], [6, 6, O.THICKET]]);
+    expect(meshProblems(secrets)).toEqual([]);
+    expect(windingProblems(secrets)).toBe(0);
+    expect(secrets.markers.filter((k) => k.data.kind === 'object').map((k) => k.data.key)).toEqual(['cache']);
+  });
 });
 
 describe('.glb export', () => {

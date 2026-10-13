@@ -94,7 +94,8 @@ Under it, one mesh node per part. Parts with nothing in them are left out.
 Empty nodes under `Markers` mark:
 
 - every place on the map;
-- every object a game interacts with: stations, fishing spots, stairs and entrances, doors and herbs;
+- every object a game interacts with: stations, fishing spots, stairs and entrances, doors, herbs,
+  altars, waystones and caches;
 - every light, loot and danger prop;
 - every named room (at its middle).
 
