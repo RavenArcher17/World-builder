@@ -97,6 +97,7 @@ function importPlace(p: RpgdcMap['places'][number]): Feature {
   const name =
     (type === 'building' && String(props.sign)) ||
     (type === 'npc' && NPC_ROLES.find((r) => r.value === props.role)?.label) ||
+    (type === 'fort' && String(props.name ?? '')) ||
     featureDef(type).label;
   const f: Feature = { id: newId('f'), type, c: x, r: y, name };
   if (Object.keys(props).length) f.props = props;

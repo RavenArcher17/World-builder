@@ -256,3 +256,65 @@ describe('the rarer ores and Runecrafting', () => {
     expect(found.some((i) => i.severity === 'error' && /Altar: law .* has no walkable neighbour/.test(i.message))).toBe(true);
   });
 });
+
+describe('the Duel Arena, the guild fort and the travelling merchant', () => {
+  const issues = (fn: (p: Project) => void) => {
+    const p = project();
+    fn(p);
+    return checkGameMaps(p);
+  };
+  const fortOf = (m: WorldMap) => m.features.find((f) => f.type === 'fort')!;
+
+  it('opens the fort and the merchant’s spot as places, and exports them as they were', () => {
+    const world = byGameId(project(), 'overworld');
+    const fort = fortOf(world);
+    expect([fort.c, fort.r, fort.props?.id, fort.props?.name, fort.name]).toEqual([30, 120, 'deep_keep', 'the Deep Keep', 'the Deep Keep']);
+    const merchant = world.features.find((f) => f.type === 'merchant')!;
+    expect([merchant.c, merchant.r]).toEqual([70, 74]);
+    const out = toRpgdcMaps(project()).maps.find((m) => m.id === 'overworld')!;
+    expect(out.places.filter((p) => p.type === 'fort' || p.type === 'merchant')).toEqual([
+      { type: 'fort', x: 30, y: 120, id: 'deep_keep', name: 'the Deep Keep' },
+      { type: 'merchant', x: 70, y: 74 },
+    ]);
+  });
+
+  it('opens the arena with its pits, and the Guard House’s door to it', () => {
+    const p = project();
+    const arena = byGameId(p, 'arena');
+    expect(gameKind(arena)).toBe('interior');
+    expect(arena.layers.object.filter((o) => o === O.FENCE).length).toBeGreaterThan(60);
+    const house = byGameId(p, 'guard_house');
+    expect(house.features.some((f) => f.type === 'link' && f.props?.toMap === 'arena')).toBe(true);
+  });
+
+  it('catches a fort outside the Deep, in a dungeon, or with a bad id; warns of a gap in its palisade', () => {
+    const found = issues((p) => {
+      const world = byGameId(p, 'overworld');
+      const fort = fortOf(world);
+      world.features.push({ ...fort, id: 'f-x', c: 64, r: 80, props: { id: 'Bad Id', name: 'Town keep' } });
+      // A gap in the real fort's palisade, on its north side away from the gate.
+      world.layers.object[(fort.r - 5) * world.width + fort.c - 3] = 0;
+      byGameId(p, 'crypt1').features.push({ id: 'f-y', type: 'fort', c: 5, r: 5, name: 'x', props: { id: 'crypt_keep', name: 'x' } });
+    });
+    const errs = found.filter((i) => i.severity === 'error').map((i) => i.message);
+    expect(errs.some((m) => /The fort Town keep needs an id/.test(m))).toBe(true);
+    expect(errs.some((m) => /The fort Town keep's yard .* isn't all in the Deep/.test(m))).toBe(true);
+    expect(errs.some((m) => /The fort x isn't on the overworld/.test(m))).toBe(true);
+    const warnings = found.filter((i) => i.severity === 'warning').map((i) => i.message);
+    expect(warnings.some((m) => /The fort the Deep Keep's palisade has a gap at \(27, 115\)/.test(m))).toBe(true);
+  });
+
+  it('catches the merchant out of town, or two of her', () => {
+    const errs = (fn: (world: WorldMap) => void) => issues((p) => fn(byGameId(p, 'overworld'))).filter((i) => i.severity === 'error').map((i) => i.message);
+    expect(errs((w) => { const m = w.features.find((f) => f.type === 'merchant')!; m.r = 90; }).some((m) => /isn't in the Safe zone/.test(m))).toBe(true);
+    expect(errs((w) => { const m = w.features.find((f) => f.type === 'merchant')!; w.features.push({ ...m, id: 'f-z', c: 66 }); }).some((m) => /more than one spot for the travelling merchant/.test(m))).toBe(true);
+  });
+
+  it('warns when the arena has no pit', () => {
+    const found = issues((p) => {
+      const arena = byGameId(p, 'arena');
+      arena.layers.object = arena.layers.object.map((o) => (o === O.FENCE ? 0 : o));
+    });
+    expect(found.some((i) => i.severity === 'warning' && /The Duel Arena has no pit/.test(i.message))).toBe(true);
+  });
+});

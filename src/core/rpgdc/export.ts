@@ -25,7 +25,9 @@ export type RpgdcPlace =
   | { type: 'brazier'; x: number; y: number }
   | { type: 'link'; x: number; y: number; toMap: string; toX: number; toY: number }
   | { type: 'building'; x: number; y: number; w: number; h: number; style: string; sign?: string; roof?: string; walls?: string }
-  | { type: 'npc'; x: number; y: number; role: string };
+  | { type: 'npc'; x: number; y: number; role: string }
+  | { type: 'fort'; x: number; y: number; id: string; name: string }
+  | { type: 'merchant'; x: number; y: number };
 
 export interface RpgdcMap {
   id: string;
@@ -84,7 +86,7 @@ function exportMap(map: WorldMap): RpgdcMap {
 
 function exportPlaces(map: WorldMap): RpgdcPlace[] {
   const out: RpgdcPlace[] = [];
-  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc'];
+  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc', 'fort', 'merchant'];
   const features = map.features.filter((f) => order.includes(f.type)).sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
   for (const f of features) {
     const p = placeProps(f);
@@ -125,6 +127,12 @@ function exportPlaces(map: WorldMap): RpgdcPlace[] {
       }
       case 'npc':
         out.push({ type: 'npc', x, y, role: String(p.role) });
+        break;
+      case 'fort':
+        out.push({ type: 'fort', x, y, id: String(p.id).trim(), name: String(p.name).trim() });
+        break;
+      case 'merchant':
+        out.push({ type: 'merchant', x, y });
         break;
     }
   }

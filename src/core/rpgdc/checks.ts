@@ -6,8 +6,12 @@ import { O, objectDef } from '../objects';
 import { T } from '../tiles';
 import type { Feature, Project, WorldMap } from '../types';
 import {
+  ARENA_MAP_ID,
   BACK,
   BUILDING_SIZES,
+  FORT_ID,
+  FORT_RADIUS,
+  fortChest,
   BUILDING_STYLES,
   DUNGEON_THEMES,
   mapTheme,
@@ -191,6 +195,72 @@ export function checkGameMaps(project: Project): GameIssue[] {
       else if (!talkSpots(m, f.c, f.r).some((t) => reached[t.y * w + t.x])) {
         add('error', m, f.c, f.r, `Players can't reach townsperson ${at(f)} from ${m === overworld ? 'the spawn point' : 'where they arrive'}, or talk to them across a counter.`);
       }
+    }
+
+    // Guild forts: on the overworld, the yard all in the Deep, the banner and chest on open ground
+    // players can reach, and (a warning) a palisade of fences round the yard with a gate in each side.
+    for (const f of m.features) {
+      if (f.type !== 'fort') continue;
+      const p = placeProps(f);
+      const id = String(p.id).trim();
+      const name = String(p.name).trim();
+      const label = `The fort ${name || id || at(f)}`;
+      if (m !== overworld) {
+        add('error', m, f.c, f.r, `${label} isn't on the overworld: forts stand in the Deep.`);
+        continue;
+      }
+      if (!FORT_ID.test(id)) add('error', m, f.c, f.r, `${label} needs an id of lower-case letters, digits and _ (like deep_keep).`);
+      else if (m.features.some((g) => g !== f && g.type === 'fort' && String(placeProps(g).id).trim() === id)) add('error', m, f.c, f.r, `Two forts use the id "${id}".`);
+      if (!name || name.length > 40) add('error', m, f.c, f.r, `${label} needs a name of up to 40 letters.`);
+      let shallow = -1;
+      for (let y = f.r - FORT_RADIUS; y <= f.r + FORT_RADIUS && shallow < 0; y++) {
+        for (let x = f.c - FORT_RADIUS; x <= f.c + FORT_RADIUS && shallow < 0; x++) {
+          if (x < 0 || y < 0 || x >= w || y >= m.height || zoneAt(m, y * w + x)?.key !== 'deep') shallow = y * w + x;
+        }
+      }
+      if (shallow >= 0) add('error', m, f.c, f.r, `${label}'s yard (${FORT_RADIUS} tiles round its banner) isn't all in the Deep.`);
+      const chest = fortChest(f.c, f.r);
+      for (const [what, t] of [['banner', { x: f.c, y: f.r }], ['chest', chest]] as const) {
+        if (!isWalkableAt(m, t.x, t.y)) add('error', m, t.x, t.y, `${label}'s ${what} (${t.x}, ${t.y}) is on a tile you can't walk on.`);
+        else if (!reached[t.y * w + t.x]) add('error', m, t.x, t.y, `${label}'s ${what} (${t.x}, ${t.y}) can't be reached from the spawn point.`);
+      }
+      const wall = FORT_RADIUS + 1;
+      outer: for (let y = f.r - wall; y <= f.r + wall; y++) {
+        for (let x = f.c - wall; x <= f.c + wall; x++) {
+          const edge = Math.max(Math.abs(x - f.c), Math.abs(y - f.r)) === wall;
+          const gate = Math.abs(x - f.c) <= 1 || Math.abs(y - f.r) <= 1;
+          if (!edge || gate || (x >= 0 && y >= 0 && x < w && y < m.height && L.object[y * w + x] === O.FENCE)) continue;
+          add('warning', m, x, y, `${label}'s palisade has a gap at (${x}, ${y}): fence the yard ${wall} tiles round the banner, leaving a 3-tile gate in the middle of each side.`);
+          break outer;
+        }
+      }
+    }
+
+    // The travelling merchant: one spot, on the overworld, in town, where players can reach her.
+    for (const f of m.features) {
+      if (f.type !== 'merchant') continue;
+      const i = f.r * w + f.c;
+      if (m !== overworld) add('error', m, f.c, f.r, `The travelling merchant's spot ${at(f)} isn't on the overworld.`);
+      else if (m.features.filter((g) => g.type === 'merchant').length > 1) add('error', m, f.c, f.r, `There's more than one spot for the travelling merchant: keep one ${at(f)}.`);
+      else if (!isWalkable(m, i)) add('error', m, f.c, f.r, `The travelling merchant ${at(f)} stands on a tile you can't walk on.`);
+      else if (zoneAt(m, i)?.key !== 'safe') add('error', m, f.c, f.r, `The travelling merchant's spot ${at(f)} isn't in the Safe zone.`);
+      else if (!talkSpots(m, f.c, f.r).some((t) => reached[t.y * w + t.x])) add('error', m, f.c, f.r, `Players can't reach the travelling merchant ${at(f)} from the spawn point.`);
+    }
+
+    // The Duel Arena: duellists fight in its pits, the places you can stand that can't be walked to
+    // from its door, so it needs at least one, big enough for two.
+    if (gameMapId(m) === ARENA_MAP_ID && starts.length) {
+      const pits: number[] = [];
+      const inPit = new Uint8Array(L.terrain.length);
+      for (let i = 0; i < L.terrain.length; i++) {
+        if (reached[i] || inPit[i] || !isWalkable(m, i)) continue;
+        const pit = reachable(m, [{ x: i % w, y: Math.floor(i / w) }]);
+        let size = 0;
+        pit.forEach((v, j) => { if (v) { inPit[j] = 1; size++; } });
+        pits.push(size);
+        if (size < 2) add('warning', m, i % w, Math.floor(i / w), `The pit at (${i % w}, ${Math.floor(i / w)}) has room for only one: duels need two.`);
+      }
+      if (!pits.length) add('warning', m, starts[0].x, starts[0].y, 'The Duel Arena has no pit: fence or wall off a space players can\'t walk into from the door, for the game to put duellists in.');
     }
 
     // Buildings: a size there's art for, and a door the camera can see.

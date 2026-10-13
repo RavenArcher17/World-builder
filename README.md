@@ -73,7 +73,8 @@ game mode; every other map behaves as above.
 - **Places with fields:** spawn point, monster spawns (kind, count, radius), bosses, braziers,
   links on stairs, doors and grates that name the target map and the exact tile you arrive on (tap
   it on the target map), buildings (style, size, name, roof and wall colours) and townspeople
-  (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk). The overworld shows
+  (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk),
+  guild forts (id and name) and the travelling merchant's spot. The overworld shows
   where the game will post its town guards (💂, one at each gate) and where criminals come back (⛓️).
 - **Zones:** paint Safe / Frontier / Wilderness / Deep on the overworld (legend shows each zone's
   rules); dungeon floors and buildings' insides pick one zone for the whole map.
@@ -84,8 +85,8 @@ game mode; every other map behaves as above.
 - **Game art preview:** "Draw with the game's art" in the Map panel draws the map with the game's
   own sprites (Flare, CC BY-SA 3.0), loaded from `https://rpg-dc.onrender.com/art/` (the game
   serves them cross-origin): houses in their colours, doors, herbs, street decorations, insides
-  with their furniture, the sewers' damp stone, moss, drains and water, and the caverns' rock walls,
-  lava, glowing cracks and mine clutter. **Looks like** (Map panel) sets a dungeon floor's look:
+  with their furniture, the Duel Arena's fenced pits, a fort's banner and chest, the sewers' damp
+  stone, moss, drains and water, and the caverns' rock walls, lava, glowing cracks and mine clutter. **Looks like** (Map panel) sets a dungeon floor's look:
   crypt, sewers or caverns.
 
 Projects from the game's exporter are converted to this form when opened. Everything works by

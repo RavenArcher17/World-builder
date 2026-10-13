@@ -132,6 +132,8 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `brazier` | `x`, `y` | A light (crypt floors). |
 | `link` | `x`, `y`, `toMap`, `toX`, `toY` | On a `crypt_entrance`, `stairs_down`, `stairs_up`, `door` or `sewer_grate` tile. Using it moves the player to tile (`toX`, `toY`) of map `toMap`, which is walkable. |
 | `building` | `x`, `y`, `w`, `h`, `style`, `sign`, `roof`, `walls` (the last three optional) | A house on the overworld: `w`×`h` tiles of wall with its north-west corner at (`x`, `y`), in `style` `timber`, `stone` or `tower`; `sign` is its name. Houses are 3 to 8 tiles a side, towers square and 3 to 5 (the sizes the game has art for). Its walls block walking, except where an object (its door) stands. `roof` and `walls` colour it (below); without them it keeps its style's own colours. |
+| `fort` | `x`, `y`, `id`, `name` | A guild fort, on its banner's tile (the overworld, in the Deep). Guilds take it by standing in its yard, 4 tiles round the banner; its chest stands just east of the banner, and its holders open it once a day. `id` is lower-case letters, digits and `_` (holders are saved by it, so keep it once players use the fort); `name` reads in a sentence ("has taken the Deep Keep"). The game draws the banner and chest; the palisade is fences round the yard, 5 tiles out, with a 3-tile gate in the middle of each side. |
+| `merchant` | `x`, `y` | Where the travelling merchant stands when she visits town: one, on the overworld, on open Safe ground players can walk up to. |
 | `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip); or `slayer`, the Slayer master, who gives Slayer tasks. A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
 
 Building colours. The game draws the roof, and the walls (the plaster of a timber house, the stone of
@@ -157,6 +159,10 @@ where its guard goes.
 
 Maps saved before radius 0 meant "stays put" (settings without `rpgdcPlaces: 2`) used 0 for the
 normal range; World Builder writes the normal range into those spawns when the project is opened.
+
+The Duel Arena is the map with id `arena`: duellists fight in its pits, which the game finds by
+itself: every place you can stand there that can't be walked to from the arena's door is part of a
+pit (fence or wall a space off), and two duellists start in its opposite corners.
 
 Links come in pairs: going down from map A to B (a link on A's entrance, stairs down or grate) is
 matched by a link on one of B's stairs up back to A, and a door into B by a door on B back to A. Going down, the arrival tile is normally
@@ -187,6 +193,10 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 - a Safe zone with no gate, so no town guards (a warning);
 - altars and essence rocks (warnings): an altar in the Safe zone, or either within 2 tiles of a
   tree, which can hide it and take the taps meant for it; and runite outside the Deep.
+- guild forts: on the overworld, with an id and a name, their whole yard in the Deep, and the
+  banner and chest on open ground reachable from the spawn point; a gap in the palisade is a warning;
+- the travelling merchant: one spot, on the overworld, on open Safe ground players can reach;
+- the Duel Arena (warnings): no pit, or a pit with room for only one.
 
 ## Opening the game's maps
 

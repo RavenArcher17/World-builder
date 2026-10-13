@@ -416,7 +416,16 @@ const kindField = (def: string): PlaceField => ({
   default: def,
 });
 
-export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc'] as const;
+export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant'] as const;
+
+/** A guild fort's yard: this far round its banner (the game's FORT_RADIUS); its palisade is one further out. */
+export const FORT_RADIUS = 4;
+/** Fort ids, as the game takes them (holders are saved by id, so keep it once players use the fort). */
+export const FORT_ID = /^[a-z][a-z0-9_]{1,30}$/;
+/** Where a fort's chest stands: just east of its banner. */
+export const fortChest = (x: number, y: number) => ({ x: x + 1, y });
+/** The game's Duel Arena map: every place you can stand there that can't be walked to from its door is a pit. */
+export const ARENA_MAP_ID = 'arena';
 
 export const PLACE_FIELDS: Record<string, PlaceField[]> = {
   spawn_point: [],
@@ -441,6 +450,11 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
     { key: 'walls', label: 'Wall colour', type: 'select', options: [{ value: '', label: "The style's own" }, ...WALL_COLOURS], default: '' },
   ],
   npc: [{ key: 'role', label: 'Who', type: 'select', options: NPC_ROLES, default: 'general' }],
+  fort: [
+    { key: 'id', label: 'Id (letters, digits, _; keep it once players use the fort)', type: 'text', default: '' },
+    { key: 'name', label: 'Name (as in "taken the Deep Keep")', type: 'text', default: '' },
+  ],
+  merchant: [],
 };
 
 export const PLACE_HELP: Record<string, string> = {
@@ -452,6 +466,8 @@ export const PLACE_HELP: Record<string, string> = {
   link: 'Put it on a crypt entrance, stairs, a door or a sewer grate. Players using it arrive on the chosen tile of the target map. Stairs down (and grates) need stairs up leading back; a door needs a door back.',
   building:
     'A house: this tile is its north-west (top) corner, and its walls fill Width × Depth tiles. Houses are 3 to 8 tiles a side; towers are square, 3 to 5. Put a Door object in its south or east wall (not a corner) and a link on the door to the inside.',
+  fort: `A guild fort, on its banner's tile: guilds take it by standing in its yard (${FORT_RADIUS} tiles round the banner) and its chest (just east of the banner) gives the holders a reward each day. Put it in the Deep, with a palisade of fences round the yard and a gate in each side.`,
+  merchant: 'Where the travelling merchant stands when she visits (one, on the overworld, in the Safe zone, where players can walk up to her).',
   npc: 'A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk; the Slayer master gives Slayer tasks. Put a Counter in front of a banker or shopkeeper; players talk across it.',
 };
 

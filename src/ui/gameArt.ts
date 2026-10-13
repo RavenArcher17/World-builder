@@ -5,7 +5,7 @@
  */
 import { Grid } from '../core/grid';
 import { O } from '../core/objects';
-import { ROOF_COLOURS, WALL_COLOURS, buildings, doorFace, dungeonTheme, gameKind, type GameBuilding } from '../core/rpgdc/game';
+import { ROOF_COLOURS, WALL_COLOURS, buildings, doorFace, dungeonTheme, fortChest, gameKind, type GameBuilding } from '../core/rpgdc/game';
 import { T } from '../core/tiles';
 import type { WorldMap } from '../core/types';
 import { paintOrder } from './drawObjects';
@@ -268,6 +268,11 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         if (sewer && L.terrain[i] === T.CRYPT_FLOOR && !pieces.has(i) && tileHash(x, y, 11) < 0.14) put(variant('moss', x, y, 12), i);
         return;
       }
+      // Bare earth (the Duel Arena's pits), from outdoors; under fences too.
+      if (L.terrain[i] === T.PATH || L.object[i] === O.FENCE) {
+        putFrom('world', variant('path', x, y, 0, 'world'), i);
+        return;
+      }
       const near = [at(x - 1, y), at(x, y - 1), at(x + 1, y), at(x, y + 1)].map((n) => (n < 0 ? -1 : L.terrain[n]));
       const t = L.terrain[i];
       const kindOf = t === T.PLANKS ? 'planks' : t === T.TOWN_FLOOR ? 'stone' : near.includes(T.PLANKS) || anyPlanks ? 'planks' : 'stone';
@@ -309,6 +314,11 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
           put(variant(face && !inside && !sewer && tileHash(x, y, 4) < 0.12 ? `wall-${piece}-deco` : `wall-${piece}`, x, y, 5), i, damp);
           if (sewer && face && tileHash(x, y, 13) < 0.2) put(`drain-${piece}`, i);
         }
+      } else if (L.object[i] === O.FENCE) {
+        const fenced = (fx: number, fy: number) => at(fx, fy) >= 0 && L.object[at(fx, fy)] === O.FENCE;
+        if (fenced(x, y - 1)) putFrom('world', 'fence-n', i);
+        if (fenced(x - 1, y)) putFrom('world', 'fence-w', i);
+        if (!fenced(x, y - 1) && !fenced(x - 1, y)) putFrom('world', 'fence-post', i);
       } else if (DECOR_ART[L.object[i]]) {
         putFrom('world', DECOR_ART[L.object[i]]!, i);
       } else if (ORE_ART[L.object[i]]) {
@@ -348,6 +358,15 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
   }
   const inHouse = (x: number, y: number) => [...houses.values()].find((b) => x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h);
   const fence = (x: number, y: number) => at(x, y) >= 0 && L.object[at(x, y)] === O.FENCE;
+  // Guild forts: the game draws a banner on the fort's tile and a chest just east of it.
+  const banners = new Set<number>();
+  const chests = new Set<number>();
+  for (const f of map.features) {
+    if (f.type !== 'fort') continue;
+    banners.add(at(f.c, f.r));
+    const c = fortChest(f.c, f.r);
+    chests.add(at(c.x, c.y));
+  }
   for (const i of order) {
     const x = i % w;
     const y = Math.floor(i / w);
@@ -365,10 +384,35 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       if (fence(x - 1, y)) put('fence-w', i);
       if (!fence(x, y - 1) && !fence(x - 1, y)) put('fence-post', i);
     } else if (!o && L.terrain[i] === T.GRASS && !inHouse(x, y) && tileHash(x, y, 9) < 0.06) put(`plant/${Math.floor(tileHash(x, y, 10) * SCENERY_PLANTS)}`, i);
+    if (chests.has(i)) put('bank', i, { tint: '#ffd27a' });
+    if (banners.has(i)) drawBanner(i);
     const b = houses.get(i);
     if (b) drawHouse(b);
   }
   return true;
+
+  /** A fort's banner, as the game draws it before any guild holds the fort: a pole and a grey pennant. */
+  function drawBanner(i: number) {
+    const [cx, cy] = g.center(i);
+    const px = (n: number) => n * k;
+    const x0 = cx * s;
+    const y0 = cy * s;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(x0, y0, px(9), px(4), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#5a4128';
+    ctx.fillRect(x0 - px(2), y0 - px(76), px(4), px(76));
+    ctx.fillStyle = '#9a9a92';
+    ctx.beginPath();
+    ctx.moveTo(x0 + px(2), y0 - px(72));
+    ctx.lineTo(x0 + px(34), y0 - px(62));
+    ctx.lineTo(x0 + px(2), y0 - px(50));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
 
   /**
    * A cave floor: Flare's rock walls (low ledges where a wall has floor north or west of it too,
