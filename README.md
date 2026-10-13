@@ -52,7 +52,12 @@ preview links) must be added under Authentication → Settings → Authorised do
 | **3D** | Tick **🧊 3D map** in the Map panel to see the map in 3D (turn, move and zoom by touch or mouse) and export it as a **3D model (.glb)** for Godot, Unity or Blender: ground, walls, buildings, objects, water and roads in metres, with collision set up for Godot and marker nodes carrying each place's data. Smooth hills or stepped blocks. 3D maps also get Underkeep-style building tools: storeys above and below, heights in half metres, open sky or roofed cells, stairs that climb to the floor they face, props (lights, hearths, furniture, chests, traps) and named rooms. Maps without it stay 2D. See [`docs/3d-export.md`](docs/3d-export.md). |
 | **Export** | PNG image, **Tiled** map (`.tmj` + generated tileset PNG; opens in Tiled and imports into Godot, Unity via SuperTiled2Unity, GameMaker, Phaser, Defold…), **game JSON**, or **CSV**. Any map can be converted to another grid on export (e.g. hex → square tiles). |
 
-Projects autosave in the browser; **Save** downloads a `.world.json` you can re-open anywhere.
+Projects autosave in the browser, a moment after each change: in its database (IndexedDB), which
+holds big projects too, with the map layers packed small. Where the browser won't give the page a
+database, a project small enough goes into localStorage instead, and you're told in plain words if
+one is too big to keep there (then use **Save**, or the cloud). Projects autosaved by older versions
+(in localStorage) open as before and move to the database. **Save** downloads a `.world.json` you
+can re-open anywhere. Undo keeps 25 steps, each holding only the layers it changed.
 
 ## Game maps: RPG-DC
 
@@ -62,9 +67,11 @@ game mode; every other map behaves as above.
 
 - **Opening the game's maps:** **Open…** takes the game's `rpg-dc.maps.json` as well as project
   files, and **⟳ Get the game's maps** (Map panel) loads what the live game is playing: the
-  overworld (any square from 128 to 512 tiles a side; the game's is 256), the crypt, the sewers,
-  the caverns and the inside of every building. A big map is drawn just around what's on screen,
-  as the game draws it, so it stays quick on a phone.
+  overworld (any square from 128 to 1024 tiles a side; the game's is 768, a continent in the
+  ocean), the crypt, the sewers, the caverns and the inside of every building. A big map is drawn
+  just around what's on screen, as the game draws it, and zoomed out as an overview (a pixel a
+  tile); painting redraws just around the brush. The 768 world is quick on a computer; it works on
+  a phone, but is best edited on a computer (the Map panel says so there).
 - **Ground and objects:** paint the game's thirteen grounds (grass, path, water, town cobbles, crypt
   floor and wall, wooden floors, and the new lands' sand, mud, bog water, snow, bare rock / gravel
   and ice) and what stands on each tile, in groups: Nature (trees by species and yews, boulders,

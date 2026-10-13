@@ -6,8 +6,9 @@ import { T, TILES, tile } from '../core/tiles';
 import { SEA_LEVEL, WorldMap } from '../core/types';
 import { TILESET_COLUMNS, tilePixels } from '../core/export/formats';
 import { cellMetrics, drawObject, drawPattern, paintOrder } from './drawObjects';
-import { drawGameArt } from './gameArt';
-import { gameKind, guardPosts, houseGuards, isRpgdc } from '../core/rpgdc/game';
+import { drawGameArt, gameArtColours, gameArtReady, townGuards } from './gameArt';
+import { gameKind, isRpgdc } from '../core/rpgdc/game';
+import { OVERVIEW_MIN_CELLS, cellsAbout, drawOverview, overviewWanted } from './overview';
 
 export interface ViewOptions {
   grid: boolean;
@@ -107,78 +108,173 @@ export interface RenderRegion {
 }
 
 /**
- * The cells to draw for a region: those whose centre is in it or near enough that what stands on
- * them can show in it. Trees and houses reach well above their cell, so more is taken below.
+ * How far what stands on a cell can reach from its centre, in render units: trees and houses
+ * reach well above their cell and a little to each side.
  */
-export function cellsInRegion(g: Grid, r: RenderRegion): Uint8Array {
-  const mask = new Uint8Array(g.size);
-  for (let i = 0; i < g.size; i++) {
-    const [x, y] = g.center(i);
-    if (x >= r.x0 - 9 && x <= r.x1 + 9 && y >= r.y0 - 2 && y <= r.y1 + 16) mask[i] = 1;
+const REACH = { side: 9, up: 16, down: 2 };
+
+/**
+ * The cells to draw for a region, in the order they're painted (back to front): those whose
+ * centre is in it or near enough that what stands on them can show in it. Only the cells near
+ * the region are looked at, so this stays quick on a big map.
+ */
+export function cellsInRegion(g: Grid, r: RenderRegion): number[] {
+  const X0 = r.x0 - REACH.side;
+  const X1 = r.x1 + REACH.side;
+  const Y0 = r.y0 - REACH.down;
+  const Y1 = r.y1 + REACH.up;
+  const out: number[] = [];
+  const w = g.width;
+  if (g.type === 'iso') {
+    // Cell (c, row) has its centre at x = c - row + height, y = (c + row + 1) / 2, and is painted
+    // in order of c + row (back to front), then c: walk the diagonals that cross the region.
+    const H = g.height;
+    const dMin = Math.ceil(X0 - H);
+    const dMax = Math.floor(X1 - H);
+    const sumMin = Math.max(0, Math.ceil(2 * Y0 - 1));
+    const sumMax = Math.min(g.width + g.height - 2, Math.floor(2 * Y1 - 1));
+    for (let sum = sumMin; sum <= sumMax; sum++) {
+      const c0 = Math.max(0, sum - H + 1, Math.ceil((sum + dMin) / 2));
+      const c1 = Math.min(w - 1, sum, Math.floor((sum + dMax) / 2));
+      for (let c = c0; c <= c1; c++) out.push((sum - c) * w + c);
+    }
+    return out;
   }
-  return mask;
+  // Square and hex maps are painted in index order: the rows and columns around the region, each
+  // cell checked exactly.
+  const S3 = Math.sqrt(3);
+  let cMin: number;
+  let cMax: number;
+  let rMin: number;
+  let rMax: number;
+  if (g.type === 'square') {
+    [cMin, cMax, rMin, rMax] = [Math.ceil(X0 - 0.5), Math.floor(X1 - 0.5), Math.ceil(Y0 - 0.5), Math.floor(Y1 - 0.5)];
+  } else if (g.type === 'hex-pointy') {
+    [cMin, cMax, rMin, rMax] = [Math.floor(X0 / S3) - 1, Math.ceil(X1 / S3), Math.ceil((Y0 - 1) / 1.5), Math.floor((Y1 - 1) / 1.5)];
+  } else {
+    [cMin, cMax, rMin, rMax] = [Math.ceil((X0 - 1) / 1.5), Math.floor((X1 - 1) / 1.5), Math.floor(Y0 / S3) - 1, Math.ceil(Y1 / S3)];
+  }
+  cMin = Math.max(0, cMin);
+  cMax = Math.min(w - 1, cMax);
+  rMin = Math.max(0, rMin);
+  rMax = Math.min(g.height - 1, rMax);
+  for (let row = rMin; row <= rMax; row++) {
+    for (let c = cMin; c <= cMax; c++) {
+      const [x, y] = g.centerCR(c, row);
+      if (x >= X0 && x <= X1 && y >= Y0 && y <= Y1) out.push(row * w + c);
+    }
+  }
+  return out;
+}
+
+/**
+ * The parts of a map image that change when these cells do: each cell with what stands on it
+ * (see REACH), overlapping ones merged.
+ */
+export function regionAround(g: Grid, cells: number[]): RenderRegion[] {
+  const out: RenderRegion[] = [];
+  for (const i of cells) {
+    if (i < 0 || i >= g.size) continue;
+    const [x, y] = g.center(i);
+    let r = { x0: x - REACH.side, y0: y - REACH.up, x1: x + REACH.side, y1: y + REACH.down };
+    // Merge with any it overlaps (repeatedly, as a merged one can reach others).
+    for (let k = 0; k < out.length; k++) {
+      const o = out[k];
+      if (o.x0 <= r.x1 && r.x0 <= o.x1 && o.y0 <= r.y1 && r.y0 <= o.y1) {
+        r = { x0: Math.min(o.x0, r.x0), y0: Math.min(o.y0, r.y0), x1: Math.max(o.x1, r.x1), y1: Math.max(o.y1, r.y1) };
+        out.splice(k, 1);
+        k = -1;
+      }
+    }
+    out.push(r);
+  }
+  return out;
+}
+
+/** How a map image is drawn: cell by cell, or as an overview (see overview.ts); `stamp` names the map's state, so work on it can be kept. */
+export interface DrawOptions {
+  overview?: boolean;
+  stamp?: number;
+}
+
+/** Whether a map image of a region (or the whole map) at `s` pixels per unit is best drawn as an overview. */
+export function wantsOverview(map: WorldMap, s: number, view: ViewOptions, region?: RenderRegion): boolean {
+  const g = new Grid(map.grid, map.width, map.height);
+  const cells = region ? cellsAbout(g, Math.max(0, region.x1 - region.x0) * Math.max(0, region.y1 - region.y0)) : g.size;
+  return overviewWanted(g, s, cells, view.gameArt && map.grid === 'iso' && gameArtReady());
 }
 
 /**
  * Draw terrain, buildings, rivers, roads and grid into a context at `s` pixels per unit. With a
- * region, only what shows in it is drawn (the caller translates the context to it).
+ * region, only what shows in it is drawn (the caller translates the context to it). As an
+ * overview, each cell is one flat colour.
  */
-export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number, view: ViewOptions, region?: RenderRegion): void {
+export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number, view: ViewOptions, region?: RenderRegion, opts: DrawOptions = {}): void {
   const g = new Grid(map.grid, map.width, map.height);
   const L = map.layers;
-  const mask = region ? cellsInRegion(g, region) : null;
+  const cells = region ? cellsInRegion(g, region) : null;
+  // Ground, tints and grid lines go down in index order (as for a whole map); what stands on the
+  // cells in paint order.
+  const byIndex = cells && g.type === 'iso' ? Int32Array.from(cells).sort() : cells;
+  const each = (fn: (i: number) => void) => {
+    if (byIndex) for (let k = 0; k < byIndex.length; k++) fn(byIndex[k]);
+    else for (let i = 0; i < g.size; i++) fn(i);
+  };
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   const { inner, flat } = cellMetrics(g, s);
-  if (view.gameArt && drawGameArt(ctx, map, s, mask)) {
-    drawZoneTint(ctx, g, map, s, view, mask);
-    if (view.grid) drawGridLines(ctx, g, s, mask);
-    return;
-  }
-  for (let i = 0; i < g.size; i++) {
-    if (mask && !mask[i]) continue;
-    // "Nothing" (3D maps' open air) is left clear, so a storey below can show through.
-    if (L.terrain[i] === T.VOID) continue;
-    const c = cellColor(map, g, i, view.hillshade);
-    polygon(ctx, g.corners(i), s);
-    ctx.fillStyle = c;
-    ctx.strokeStyle = c;
-    ctx.lineWidth = 1;
-    ctx.fill();
-    ctx.stroke();
-    const pattern = tile(L.terrain[i]).pattern;
-    if (pattern && inner >= 4) {
-      const [x, y] = g.center(i);
-      drawPattern(ctx, pattern, x * s, y * s, inner, flat, i);
+  const art = view.gameArt && map.grid === 'iso' && gameArtReady();
+  if (opts.overview) {
+    drawOverview(ctx, map, g, s, view, cells, art ? gameArtColours(map) : null);
+  } else {
+    if (art && drawGameArt(ctx, map, s, cells, opts.stamp)) {
+      drawZoneTint(ctx, g, map, s, view, each);
+      if (view.grid) drawGridLines(ctx, g, s, each);
+      return;
     }
-  }
-  drawZoneTint(ctx, g, map, s, view, mask);
-
-  // Outlines between different buildings / walls so each structure reads as one shape.
-  ctx.strokeStyle = 'rgba(40,24,16,0.85)';
-  ctx.lineWidth = Math.max(1, s * 0.09);
-  for (let i = 0; i < g.size; i++) {
-    if (mask && !mask[i]) continue;
-    const t = L.terrain[i];
-    if (t !== T.BUILDING && t !== T.KEEP) continue;
-    const pts = g.corners(i);
-    const [cx, cy] = g.center(i);
-    for (let k = 0; k < pts.length; k++) {
-      const a = pts[k];
-      const b = pts[(k + 1) % pts.length];
-      const mx = (a[0] + b[0]) / 2;
-      const my = (a[1] + b[1]) / 2;
-      const n = g.pixelToCell(cx + (mx - cx) * 1.4, cy + (my - cy) * 1.4);
-      const same = n >= 0 && L.terrain[n] === t && L.building[n] === L.building[i];
-      if (same) continue;
-      ctx.beginPath();
-      ctx.moveTo(a[0] * s, a[1] * s);
-      ctx.lineTo(b[0] * s, b[1] * s);
+    each((i) => {
+      // "Nothing" (3D maps' open air) is left clear, so a storey below can show through.
+      if (L.terrain[i] === T.VOID) return;
+      const c = cellColor(map, g, i, view.hillshade);
+      polygon(ctx, g.corners(i), s);
+      ctx.fillStyle = c;
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 1;
+      ctx.fill();
       ctx.stroke();
-    }
+      const pattern = tile(L.terrain[i]).pattern;
+      if (pattern && inner >= 4) {
+        const [x, y] = g.center(i);
+        drawPattern(ctx, pattern, x * s, y * s, inner, flat, i);
+      }
+    });
+    drawZoneTint(ctx, g, map, s, view, each);
+
+    // Outlines between different buildings / walls so each structure reads as one shape.
+    ctx.strokeStyle = 'rgba(40,24,16,0.85)';
+    ctx.lineWidth = Math.max(1, s * 0.09);
+    each((i) => {
+      const t = L.terrain[i];
+      if (t !== T.BUILDING && t !== T.KEEP) return;
+      const pts = g.corners(i);
+      const [cx, cy] = g.center(i);
+      for (let k = 0; k < pts.length; k++) {
+        const a = pts[k];
+        const b = pts[(k + 1) % pts.length];
+        const mx = (a[0] + b[0]) / 2;
+        const my = (a[1] + b[1]) / 2;
+        const n = g.pixelToCell(cx + (mx - cx) * 1.4, cy + (my - cy) * 1.4);
+        const same = n >= 0 && L.terrain[n] === t && L.building[n] === L.building[i];
+        if (same) continue;
+        ctx.beginPath();
+        ctx.moveTo(a[0] * s, a[1] * s);
+        ctx.lineTo(b[0] * s, b[1] * s);
+        ctx.stroke();
+      }
+    });
   }
 
-  if (view.rivers) {
+  if (view.rivers && hasAny(L.river)) {
     for (const line of extractPolylines(g, L.river)) {
       const size = line.reduce((m, i) => Math.max(m, L.riverSize[i]), 0);
       const w = Math.max(0.12, Math.min(0.55, 0.08 + Math.log10(Math.max(1, size)) * 0.13));
@@ -192,7 +288,7 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
     }
   }
 
-  if (view.roads) {
+  if (view.roads && hasAny(L.road)) {
     const lines = extractPolylines(g, L.road).map((line) => ({ line, level: Math.max(...line.map((i) => L.roadLevel[i] || 1)) }));
     lines.sort((a, b) => a.level - b.level);
     const k = g.isHex ? 1.6 : 1;
@@ -223,45 +319,53 @@ export function drawBase(ctx: CanvasRenderingContext2D, map: WorldMap, s: number
     }
     ctx.setLineDash([]);
   }
+  if (opts.overview) return;
 
-  if (view.objects && L.object.some(Boolean)) {
+  if (view.objects && hasAny(L.object)) {
     const u = g.type === 'iso' ? s * 0.5 : inner;
-    for (const i of paintOrder(g)) {
-      if (!L.object[i] || (mask && !mask[i])) continue;
+    for (const i of cells ?? paintOrder(g)) {
+      if (!L.object[i]) continue;
       const [x, y] = g.center(i);
       drawObject(ctx, L.object[i], x * s, y * s, u);
     }
   }
 
-  if (view.grid) drawGridLines(ctx, g, s, mask);
+  if (view.grid) drawGridLines(ctx, g, s, each);
 }
 
-function drawZoneTint(ctx: CanvasRenderingContext2D, g: Grid, map: WorldMap, s: number, view: ViewOptions, mask: Uint8Array | null): void {
+/** Whether a layer has anything in it (a loop: quick, and it stops at the first). */
+function hasAny(layer: number[]): boolean {
+  for (let i = 0; i < layer.length; i++) if (layer[i]) return true;
+  return false;
+}
+
+type EachCell = (fn: (i: number) => void) => void;
+
+function drawZoneTint(ctx: CanvasRenderingContext2D, g: Grid, map: WorldMap, s: number, view: ViewOptions, each: EachCell): void {
   const L = map.layers;
-  if (!view.zones || !L.zone.some(Boolean)) return;
-  for (let i = 0; i < g.size; i++) {
-    if (!L.zone[i] || (mask && !mask[i])) continue;
+  if (!view.zones || !hasAny(L.zone)) return;
+  each((i) => {
+    if (!L.zone[i]) return;
     polygon(ctx, g.corners(i), s);
     ctx.fillStyle = ZONE_TINT[L.zone[i]] ?? 'transparent';
     ctx.fill();
-  }
+  });
 }
 
-function drawGridLines(ctx: CanvasRenderingContext2D, g: Grid, s: number, mask: Uint8Array | null = null): void {
+function drawGridLines(ctx: CanvasRenderingContext2D, g: Grid, s: number, each: EachCell): void {
   ctx.strokeStyle = 'rgba(0,0,0,0.18)';
   ctx.lineWidth = 1;
-  for (let i = 0; i < g.size; i++) {
-    if (mask && !mask[i]) continue;
+  each((i) => {
     polygon(ctx, g.corners(i), s);
     ctx.stroke();
-  }
+  });
 }
 
 /**
  * Render a map to a new canvas (used for the viewport cache and PNG export): the whole map, or
  * just a region of it (the canvas then starts at the region's top-left corner).
  */
-export function renderMapCanvas(map: WorldMap, s: number, view: ViewOptions, withFeatures = false, background = true, region?: RenderRegion): HTMLCanvasElement {
+export function renderMapCanvas(map: WorldMap, s: number, view: ViewOptions, withFeatures = false, background = true, region?: RenderRegion, opts: DrawOptions = {}): HTMLCanvasElement {
   const g = new Grid(map.grid, map.width, map.height);
   const b = g.renderBounds();
   const r = region ?? { x0: 0, y0: 0, x1: b.w, y1: b.h };
@@ -274,7 +378,7 @@ export function renderMapCanvas(map: WorldMap, s: number, view: ViewOptions, wit
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
   ctx.translate(-r.x0 * s, -r.y0 * s);
-  drawBase(ctx, map, s, view, region);
+  drawBase(ctx, map, s, view, region, { ...opts, overview: opts.overview ?? wantsOverview(map, s, view, region) });
   if (withFeatures) drawFeatures(ctx, map, s, 0, 0, view, null);
   return canvas;
 }
@@ -303,7 +407,9 @@ export function cacheRegion(map: WorldMap, view: RenderRegion, scale: number): {
   };
   const rw = Math.max(1, region.x1 - region.x0);
   const rh = Math.max(1, region.y1 - region.y0);
-  const s = Math.max(1, Math.min(48, Math.max(2, scale * 1.2), Math.sqrt(MAX_CACHE_PIXELS / (rw * rh)), 8000 / rw, 8000 / rh));
+  // Big maps zoomed right out are drawn as an overview, which needs no more than a pixel a unit.
+  const least = map.width * map.height > OVERVIEW_MIN_CELLS ? 1 : 2;
+  const s = Math.max(1, Math.min(48, Math.max(least, scale * 1.2), Math.sqrt(MAX_CACHE_PIXELS / (rw * rh)), 8000 / rw, 8000 / rh));
   return { region, s, whole: false };
 }
 
@@ -339,6 +445,7 @@ export function drawFeatures(
   oy: number,
   view: ViewOptions,
   selectedId: string | null,
+  stamp?: number,
 ): void {
   if (!view.features) return;
   const g = new Grid(map.grid, map.width, map.height);
@@ -353,7 +460,7 @@ export function drawFeatures(
   // The game's own town guards and where criminals come back, so moving a gate shows its guard;
   // indoors, the guard it keeps with a townsperson worth robbing (the mayor).
   if (isRpgdc(map) && gameKind(map) !== 'dungeon') {
-    const { posts, outside } = gameKind(map) === 'overworld' ? guardPosts(map) : { posts: houseGuards(map), outside: null };
+    const { posts, outside } = townGuards(map, stamp);
     const marks = posts.map((p) => ({ ...p, icon: '💂', text: 'Guard' }));
     if (outside) marks.push({ ...outside, icon: '⛓️', text: 'Criminals return' });
     const fs = size * 0.8;

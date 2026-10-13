@@ -35,8 +35,8 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "id": "overworld",
   "name": "RPG-DC overworld",
   "kind": "overworld",
-  "width": 256,
-  "height": 256,
+  "width": 768,
+  "height": 768,
   "zone": null,
   "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks", "sand", "mud", "bog", "snow", "stone", "ice"],
   "ground": [0, 0, 1, ...],
@@ -45,10 +45,10 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
   "places": [
-    { "type": "spawn_point", "x": 128, "y": 129 },
-    { "type": "monster_spawn", "x": 201, "y": 68, "kind": "yeti", "count": 1, "radius": 8 },
-    { "type": "link", "x": 78, "y": 68, "toMap": "crypt1", "toX": 19, "toY": 7 },
-    { "type": "building", "x": 119, "y": 120, "w": 6, "h": 5, "style": "stone", "sign": "Bank", "roof": "slate", "walls": "grey" }
+    { "type": "spawn_point", "x": 384, "y": 385 },
+    { "type": "monster_spawn", "x": 171, "y": 115, "kind": "yeti", "count": 1, "radius": 8 },
+    { "type": "link", "x": 284, "y": 284, "toMap": "crypt1", "toX": 19, "toY": 7 },
+    { "type": "building", "x": 375, "y": 376, "w": 6, "h": 5, "style": "stone", "sign": "Bank", "roof": "slate", "walls": "grey" }
   ]
 }
 ```
@@ -58,7 +58,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
 | `id` | string | The game's map id (`settings.rpgdcMapId`): `overworld`, `crypt1`, `sewer1`, `bank`, … |
 | `name` | string | Display name ("You enter the Bank."). |
 | `kind` | `"overworld"` \| `"dungeon"` \| `"interior"` | One overworld. Dungeon floors are dark (braziers light them); interiors are a building's inside, lit. Both use one zone for the whole map. In World Builder an interior is a dungeon-kind map with `settings.rpgdcKind` `"interior"`. |
-| `width`, `height` | integers | Size in tiles. The game takes any square overworld from 128 to 512 tiles a side (its own is 256×256), 16 to 64 a side for dungeon floors and 4 to 32 for insides. |
+| `width`, `height` | integers | Size in tiles. The game takes any square overworld from 128 to 1024 tiles a side (its own is 768×768, a continent in the ocean), 16 to 64 a side for dungeon floors and 4 to 32 for insides. |
 | `zone` | string \| `null` | Dungeons and insides: the whole map's zone key from `zoneLegend`. Overworld: `null`. |
 | `theme` | string, optional | Dungeon floors only: how the floor looks in the game. `crypt` (dressed stone), `sewer` (damp stone; water is sewer water) or `cave` (rough rock; water is lava). Without it, a floor with water looks like the sewers, otherwise the crypt. In World Builder: `settings.rpgdcTheme`, set with **Looks like** in the Map panel; written only when chosen. |
 | `groundLegend` | string[] | Ground kinds; `ground` values index into it. Always all thirteen, even if unused. (The game's own file lists just the ones each map uses, in any order; both read the same.) |
@@ -207,7 +207,7 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
   or east wall (not a corner); every townsperson stands on open floor players can reach, or talk to across a counter;
 - no monster spawn or boss in the Safe zone or on a tile you can't walk on;
 - every overworld tile has a zone, and every dungeon floor and inside has its zone;
-- there's one overworld, square and 128 to 512 tiles a side; dungeon floors are 16 to 64 tiles a
+- there's one overworld, square and 128 to 1024 tiles a side; dungeon floors are 16 to 64 tiles a
   side, insides 4 to 32;
 - herb patches (warnings): out of their zones or off their ground, unreachable, next to a blocked
   tile, or within 2 tiles of a tree (which hides them in the game); and a reminder that the game
@@ -231,6 +231,12 @@ game's maps** in the Map panel does the same with the maps the live game is play
 same maps. Use it whenever maps were changed on the game's side, so the next export doesn't put
 old maps back. Either replaces the project in this browser; the project keeps the id
 `rpgdc-world`, so saving it to the cloud replaces the RPG-DC project there.
+
+The game's 768-tile overworld is a big map: about 18 MB as a project file (well under 1 MB
+gzipped, which is what a cloud save stores) and 590,000 tiles. World Builder draws it zoomed out
+as an overview (a pixel per tile) and cell by cell, or with the game's art, only around what's on
+screen; painting redraws just around the brush. It's autosaved in the browser's database
+(IndexedDB) like any project. It works on a phone, but it's best edited on a computer.
 
 ## Opening projects made from the game's first maps
 

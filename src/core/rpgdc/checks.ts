@@ -12,6 +12,7 @@ import {
   FORT_ID,
   FORT_RADIUS,
   GROUND_LEGEND,
+  GROUND_TILES,
   fortChest,
   BUILDING_STYLES,
   DUNGEON_THEMES,
@@ -32,7 +33,7 @@ import {
   gameMaps,
   gameObject,
   guardPosts,
-  isGameGround,
+  walkableTiles,
   isWalkable,
   isWalkableAt,
   mapZone,
@@ -53,9 +54,9 @@ export interface GameIssue {
   message: string;
 }
 
-/** The smallest and biggest overworld the game takes: square, 128 to 512 tiles a side. */
+/** The smallest and biggest overworld the game takes: square, 128 to 1024 tiles a side (OVERWORLD_MAX in its map.ts). */
 export const OVERWORLD_SIZE = 128;
-export const OVERWORLD_MAX = 512;
+export const OVERWORLD_MAX = 1024;
 /** Sizes the game takes, per kind of map: [smallest, largest] a side (the overworld square). */
 export const SIZES = { overworld: [OVERWORLD_SIZE, OVERWORLD_MAX], dungeon: [16, 64], interior: [4, 32] } as const;
 
@@ -64,7 +65,8 @@ const WILD = ['frontier', 'wilderness', 'deep'];
 /**
  * Where each herb belongs, as the game places them (HERB_PATCHES in its herbs.ts): the
  * heartland's herbs on grass in their zones, the new lands' each on its own land's ground,
- * anywhere out of town.
+ * anywhere out of town. (Its counts and distances from the spawn point only steer the game's own
+ * scattering, on an overworld without herbs placed here.)
  */
 const HERBS: Record<number, { name: string; ground: number; zones: string[] }> = {
   [O.HERB_SUNLEAF]: { name: 'Sunleaf', ground: T.GRASS, zones: ['frontier'] },
@@ -157,9 +159,12 @@ export function checkGameMaps(project: Project): GameIssue[] {
     const w = m.width;
     const L = m.layers;
     const linked = new Set(linksOf(m).map((f) => f.r * w + f.c));
+    // The cells with something standing on them (on a big map, far fewer than all its cells).
+    const things: number[] = [];
+    for (let i = 0; i < L.object.length; i++) if (L.object[i]) things.push(i);
 
     // Every entrance and staircase needs a link.
-    for (let i = 0; i < L.object.length; i++) {
+    for (const i of things) {
       if (stairsDirection(L.object[i]) && !linked.has(i)) {
         add('error', m, i % w, Math.floor(i / w), `${objectDef(L.object[i])!.name} (${i % w}, ${Math.floor(i / w)}) has no link: place a link on it.`);
       }
@@ -182,8 +187,10 @@ export function checkGameMaps(project: Project): GameIssue[] {
 
     // Stations, altars and fishing spots must be usable from a tile you can walk to.
     const starts = m === overworld ? owSpawns.map((s) => ({ x: s.f.c, y: s.f.r })) : arrivals.get(m) ?? [];
-    const reached = reachable(m, starts);
-    for (let i = 0; i < L.object.length; i++) {
+    const walk = walkableTiles(m);
+    const walkAt = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < m.height && walk[y * w + x] === 1;
+    const reached = reachable(m, starts, walk);
+    for (const i of things) {
       const d = objectDef(L.object[i]);
       if (!d || (d.group !== 'station' && d.group !== 'fishing' && d.group !== 'altar')) continue;
       const x = i % w;
@@ -266,8 +273,8 @@ export function checkGameMaps(project: Project): GameIssue[] {
       const pits: number[] = [];
       const inPit = new Uint8Array(L.terrain.length);
       for (let i = 0; i < L.terrain.length; i++) {
-        if (reached[i] || inPit[i] || !isWalkable(m, i)) continue;
-        const pit = reachable(m, [{ x: i % w, y: Math.floor(i / w) }]);
+        if (reached[i] || inPit[i] || !walk[i]) continue;
+        const pit = reachable(m, [{ x: i % w, y: Math.floor(i / w) }], walk);
         let size = 0;
         pit.forEach((v, j) => { if (v) { inPit[j] = 1; size++; } });
         pits.push(size);
@@ -302,7 +309,7 @@ export function checkGameMaps(project: Project): GameIssue[] {
     // Herbs (warnings): in their zones, reachable, not blocking a path, not hidden by trees.
     if (m === overworld) {
       const herbs: number[] = [];
-      for (let i = 0; i < L.object.length; i++) if (HERBS[L.object[i]]) herbs.push(i);
+      for (const i of things) if (HERBS[L.object[i]]) herbs.push(i);
       if (herbs.length) {
         const x0 = herbs[0] % w;
         const y0 = Math.floor(herbs[0] / w);
@@ -319,7 +326,7 @@ export function checkGameMaps(project: Project): GameIssue[] {
         if (L.terrain[i] !== herb.ground) add('warning', m, x, y, `${herb.name} (${x}, ${y}) is on ${groundName(L.terrain[i])}; it grows on ${groundName(herb.ground)}.`);
         const around = NEIGHBOURS.map(([dx, dy]) => [x + dx, y + dy]).filter(([nx, ny]) => nx >= 0 && ny >= 0 && nx < w && ny < m.height);
         if (!around.some(([nx, ny]) => reached[ny * w + nx])) add('warning', m, x, y, `${herb.name} (${x}, ${y}) can't be reached from the spawn point.`);
-        else if (around.some(([nx, ny]) => !isWalkableAt(m, nx, ny))) add('warning', m, x, y, `${herb.name} (${x}, ${y}) has a blocked tile next to it, so it might block a path.`);
+        else if (around.some(([nx, ny]) => !walkAt(nx, ny))) add('warning', m, x, y, `${herb.name} (${x}, ${y}) has a blocked tile next to it, so it might block a path.`);
         let tree = false;
         for (let dy = -2; dy <= 2 && !tree; dy++) for (let dx = -2; dx <= 2 && !tree; dx++) {
           const nx = x + dx;
@@ -332,7 +339,7 @@ export function checkGameMaps(project: Project): GameIssue[] {
 
     // Runecrafting altars and essence rocks (warnings): out of town, and not hidden by trees, which
     // stand in front of them on screen and take the taps meant for them. Runite belongs in the Deep.
-    for (let i = 0; i < L.object.length; i++) {
+    for (const i of things) {
       const o = L.object[i];
       const d = objectDef(o);
       if (!d || (d.group !== 'altar' && o !== O.ESSENCE_ROCK && o !== O.RUNITE_ROCK)) continue;
@@ -354,7 +361,7 @@ export function checkGameMaps(project: Project): GameIssue[] {
     }
 
     // Town guards stand at the gates of the Safe zone; without a gate there are none.
-    if (m === overworld && owSpawns.length && !guardPosts(m).posts.length) {
+    if (m === overworld && owSpawns.length && !guardPosts(m, walk).posts.length) {
       const s = owSpawns[0].f;
       add('warning', m, s.c, s.r, "The Safe zone has no gate (a walkable Safe tile beside a walkable tile outside it), so the game posts no town guards, and criminals come back at the spawn point.");
     }
@@ -366,7 +373,7 @@ export function checkGameMaps(project: Project): GameIssue[] {
       const kind = String(placeProps(f).kind);
       const label = f.type === 'boss' ? 'Boss' : 'Monster spawn';
       if (!MONSTER_KINDS.some((k) => k.key === kind)) add('error', m, f.c, f.r, `${label} ${at(f)} has an unknown monster "${kind}".`);
-      if (!isWalkable(m, i)) add('error', m, f.c, f.r, `${label} ${at(f)} is on a tile you can't walk on.`);
+      if (!(walk[i] ?? isWalkable(m, i))) add('error', m, f.c, f.r, `${label} ${at(f)} is on a tile you can't walk on.`);
       else if (zoneAt(m, i)?.key === 'safe') add('error', m, f.c, f.r, `${label} ${at(f)} is in the Safe zone.`);
     }
 
@@ -392,8 +399,9 @@ export function checkGameMaps(project: Project): GameIssue[] {
     // Ground and objects the game doesn't have are exported as the closest thing it does.
     let odd = 0;
     let oddAt = -1;
+    const gameGrounds = new Set<number>(GROUND_TILES);
     for (let i = 0; i < L.terrain.length; i++) {
-      if (isGameGround(L.terrain[i]) && gameObject(L.object[i]) === L.object[i]) continue;
+      if (gameGrounds.has(L.terrain[i]) && gameObject(L.object[i]) === L.object[i]) continue;
       odd++;
       if (oddAt < 0) oddAt = i;
     }
@@ -402,7 +410,7 @@ export function checkGameMaps(project: Project): GameIssue[] {
       add('warning', m, oddAt % w, Math.floor(oddAt / w), `${odd} cell(s) use ground or objects the game doesn't have; they export as the closest game ground (first one exports as ${g}).`);
     }
 
-    // Sizes: the overworld square, 128 to 512 tiles a side; dungeon floors and insides within theirs.
+    // Sizes: the overworld square, 128 to 1024 tiles a side; dungeon floors and insides within theirs.
     const kind = gameKind(m);
     const [min, max] = SIZES[kind];
     const square = kind !== 'overworld' || m.width === m.height;

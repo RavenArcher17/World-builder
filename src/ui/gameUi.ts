@@ -3,7 +3,7 @@
  * objects, groves, ore and zones; place fields; the zone legend; "Check for game"; the export.
  */
 import { featureDef } from '../core/features';
-import { O, OBJECTS, objectDef } from '../core/objects';
+import { O, objectDef } from '../core/objects';
 import { checkGameMaps, type GameIssue } from '../core/rpgdc/checks';
 import { RPGDC_EXPORT_NAME, toRpgdcMaps } from '../core/rpgdc/export';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
@@ -316,9 +316,4 @@ export function gameExportSummary(app: App): string {
   const n = gameMaps(app.project).length;
   if (!issues.length) return `✅ ${n} RPG-DC maps, all checks pass.`;
   return `⚠️ ${n} RPG-DC maps: ${errors} error(s), ${issues.length - errors} warning(s). You can still export; use Check for game to fix them.`;
-}
-
-export function objectLegendEntries(map: WorldMap): number[] {
-  const used = new Set(map.layers.object);
-  return OBJECTS.filter((d) => d.id && used.has(d.id)).map((d) => d.id);
 }

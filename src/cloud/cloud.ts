@@ -104,19 +104,22 @@ export async function upgradeGuest(): Promise<number> {
 
 /**
  * Google sign-in. On iPhone and iPad it goes to Google and back in the same tab, which works in
- * browsers built into other apps too; elsewhere it opens a popup.
+ * browsers built into other apps too; elsewhere it opens a popup. `beforeLeaving` (the work being
+ * kept in the browser) is waited for before the page goes to Google.
  */
-export async function signIn(): Promise<void> {
+export async function signIn(beforeLeaving?: Promise<unknown>): Promise<void> {
   const provider = new GoogleAuthProvider();
   if (sameSiteAuth && isIos) {
+    await beforeLeaving;
     await signInWithRedirect(auth, provider);
     return;
   }
   try {
     await signInWithPopup(auth, provider);
   } catch (e) {
-    if (errorCode(e) === 'auth/popup-blocked') await signInWithRedirect(auth, provider);
-    else throw e;
+    if (errorCode(e) !== 'auth/popup-blocked') throw e;
+    await beforeLeaving;
+    await signInWithRedirect(auth, provider);
   }
 }
 

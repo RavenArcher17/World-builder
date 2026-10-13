@@ -17,6 +17,7 @@ import { exportRpgdc, gameExportSummary, openCheckDialog } from './gameUi';
 import { export3dModel } from './map3dUi';
 import { exportUnderkeep, isUnderkeep } from './underkeepUi';
 import { DEFAULT_VIEW, baseUnitPx, renderMapCanvas, renderTileset, safeScale } from './render';
+import { overviewWanted } from './overview';
 
 function gridSelect(value: string, includeKeep = false): HTMLSelectElement {
   const sel = h('select');
@@ -182,8 +183,20 @@ export function openExportDialog(app: App, map: WorldMap): void {
         const base = slug(map.name);
         switch (format.value) {
           case 'png': {
-            const s = safeScale(out, Number(cellPx.value) || 16, 12000);
-            const canvas = renderMapCanvas(out, s, { ...DEFAULT_VIEW, grid: withGrid.checked, features: withPlaces.checked, labels: withPlaces.checked }, withPlaces.checked);
+            const g = new Grid(out.grid, out.width, out.height);
+            const b = g.renderBounds();
+            let s = safeScale(out, Number(cellPx.value) || 16, 12000);
+            // Phones can't hold a canvas of more than about 16 million pixels: a big map's image is smaller there.
+            const phone = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+            if (phone) s = Math.max(1, Math.min(s, Math.sqrt(16_000_000 / (b.w * b.h))));
+            if (g.size > 250_000) {
+              toast('Drawing the map image… a big map takes a few seconds');
+              await new Promise((r) => setTimeout(r, 60));
+            }
+            // A computer draws every cell (cells only a few pixels across are an overview); a phone
+            // draws a big map as an overview, which is far quicker.
+            const opts = phone ? {} : { overview: overviewWanted(g, s, 0, false) };
+            const canvas = renderMapCanvas(out, s, { ...DEFAULT_VIEW, grid: withGrid.checked, features: withPlaces.checked, labels: withPlaces.checked }, withPlaces.checked, true, undefined, opts);
             await downloadCanvas(`${base}.png`, canvas);
             break;
           }
@@ -387,10 +400,11 @@ export function openHelpDialog(): void {
         li('Paint', 'Ground (grass, path, water, cobbles, crypt floor and wall, wooden floors, and the new lands’ sand, mud, bog, snow, gravel and ice), Objects (trees, rocks, cacti, ore, stations, fishing spots, herbs, stairs), Grove and Ore brushes, and Zones on the overworld.'),
         li('Place', 'spawn point, monster spawns (kind, count, radius), bosses, braziers, stairs and door links, buildings, townspeople, forts and the merchant. Tap a place to edit its fields; for a link, choose the map and tap “Pick arrival tile”.'),
         li('Check for game', 'in the Map panel lists every problem; tap one to jump to its tile. Export → RPG-DC maps writes rpg-dc.maps.json for the game.'),
+        li('Sizes', 'the overworld is square, 128 to 1024 tiles a side (the game’s is 768); dungeon floors 16 to 64, insides 4 to 32. A big overworld is best edited on a computer.'),
       ),
       h('p', { class: 'hint' }, 'Touch: one finger paints, places or selects; two fingers pinch to zoom and drag to pan; double-tap a linked place to open its map.'),
       h('p', { class: 'hint' }, 'Shortcuts: S select · H pan · P paint · F place · Space+drag or right-drag pans · wheel zooms · Esc clears · Del deletes the selected place.'),
-      h('p', { class: 'hint' }, 'Your project autosaves in this browser. Use Save to download a project file you can re-open anywhere.'),
+      h('p', { class: 'hint' }, 'Your project autosaves in this browser a moment after each change, big ones too (in the browser’s database). If it’s too big to keep there (say, in private browsing) you’re told: then use Save to download a project file you can re-open anywhere, or ☁ save it to the cloud.'),
     ),
     [{ label: 'Got it', primary: true }],
   );

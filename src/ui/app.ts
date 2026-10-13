@@ -8,8 +8,10 @@ import { featureName } from '../core/names';
 import { paintCluster, paintGrove } from '../core/brushes';
 import { O, OBJECTS, objectDef } from '../core/objects';
 import { createProject, deleteMap, parseProjectReport, rootMaps, serializeProject } from '../core/project';
+import { restoreSnapshot, snapshotProject, snapshotsBytes, type PackedLayer, type ProjectSnapshot } from '../core/snapshot';
+import { Autosave, AutosaveError, browserTextStore, indexedDbStore } from './autosave';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
-import { OPEN_GROUND, PLACE_TYPES, defaultProps, gameMapId, isGameGround, isRpgdc, isWalkableAt, placeProps, zoneAt } from '../core/rpgdc/game';
+import { OPEN_GROUND, PLACE_TYPES, defaultProps, gameKind, gameMapId, isGameGround, isRpgdc, isWalkableAt, placeProps, zoneAt } from '../core/rpgdc/game';
 import { cloneMap, regenerateRegion } from '../core/region';
 import { Rng, parseSeed, randomSeed } from '../core/rng';
 import { SCALES, getScale } from '../core/scales';
@@ -21,15 +23,15 @@ import type * as CloudModule from '../cloud/cloud';
 import { openCloudDialog, openSignInDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
-import { artBase, gameArtReady, loadGameArt, onGameArtChange } from './gameArt';
-import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectLegendEntries } from './gameUi';
+import { artBase, gameArtReady, keepGuards, loadGameArt, onGameArtChange, townGuards } from './gameArt';
+import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions } from './gameUi';
 import { map3dPanel, sync3d } from './map3dUi';
 import { afterTilePaint, draw3dOverlay, is3dMode, modeOptions3d, paint3dAt, paint3dOptions, roomButton, status3d } from './build3dUi';
 import { is3d } from '../core/scene3d/options';
 import { fromUnderkeep, isUnderkeepFile } from '../core/underkeep/import';
 import { isUnderkeep, underkeepNewPlace, underkeepPlaceFields, underkeepPlaceOptions } from './underkeepUi';
 import { storeyLayers, storeyNumbers, storeyView } from '../core/scene3d/storeys';
-import { DEFAULT_VIEW, ViewOptions, baseUnitPx, cacheFit, cacheRegion, drawFeatures, renderMapCanvas, type RenderRegion } from './render';
+import { DEFAULT_VIEW, ViewOptions, baseUnitPx, cacheFit, cacheRegion, drawBase, drawFeatures, regionAround, renderMapCanvas, wantsOverview, type RenderRegion } from './render';
 
 type Tool = 'select' | 'pan' | 'paint' | 'feature';
 type PaintMode = 'tile' | 'road' | 'river' | 'erase-lines' | 'object' | 'grove' | 'ore' | 'zone' | 'height' | 'roof' | 'turn' | 'prop';
@@ -39,10 +41,16 @@ const GENERIC_PAINT_MODES: PaintMode[] = ['tile', 'road', 'river', 'erase-lines'
 const NATURE_GROUPS = new Set(['tree', 'rock', 'ore', 'wall']);
 const OBJECTS_LIST = OBJECTS.slice(1);
 
-const STORAGE_KEY = 'world-builder:project';
 /** `${uid}:${projectId}` of the project that auto-syncs to the cloud. */
 const CLOUD_LINK_KEY = 'world-builder:cloud-link';
 const CLOUD_SAVE_DELAY = 8000;
+/** Undo keeps this many steps, and no more than this many bytes of them (big maps' layers add up). */
+const UNDO_STEPS = 25;
+const UNDO_BYTES = 96_000_000;
+/** Maps with more cells than this (a 768-tile overworld) are best edited on a computer. */
+const BIG_MAP_CELLS = 300_000;
+/** A project with more cells than this is autosaved a little less eagerly. */
+const BIG_PROJECT_CELLS = 1_000_000;
 const KIND_ICON: Record<string, string> = { overland: '🌍', settlement: '🏘️', dungeon: '💀' };
 
 /** Typical elevation for painted overland tiles so hill shading still makes sense. */
@@ -91,13 +99,26 @@ export class App {
   private lastPointerType = 'mouse';
   private refreshing = false;
   private refreshAgain = false;
-  private undoStack: string[] = [];
-  private redoStack: string[] = [];
+  /** Snapshots of the project before each change (see core/snapshot.ts), with the map that was open. */
+  private undoStack: { snap: ProjectSnapshot; current: string | null }[] = [];
+  private redoStack: { snap: ProjectSnapshot; current: string | null }[] = [];
+  /** The layers of the newest snapshot: unchanged layers are shared with it. */
+  private undoBase: Map<string, PackedLayer> | undefined;
   private version = 0;
-  /** The map image drawn under everything: the whole map, or (on a big map) the part around the view. */
-  private cache: { canvas: HTMLCanvasElement; s: number; key: string; region: RenderRegion; whole: boolean; at: number } | null = null;
+  /**
+   * The map image drawn under everything: the whole map, or (on a big map) the part around the
+   * view, drawn cell by cell or as an overview (one pixel per cell, zoomed out).
+   */
+  private cache: { canvas: HTMLCanvasElement; s: number; key: string; region: RenderRegion; whole: boolean; overview: boolean; at: number } | null = null;
   private cacheTimer = 0;
   private saveTimer = 0;
+  private autosave = new Autosave(indexedDbStore(), browserTextStore());
+  /** Autosave state: off until the saved project has been read, or paused when it can't be. */
+  private saveState: 'loading' | 'on' | 'paused' = 'loading';
+  private saving = false;
+  private saveAgain = false;
+  /** The last autosave problem told to the user (each is told once). */
+  private saveWarned = '';
   private genSettings: Settings = {};
   private canvas = byId<HTMLCanvasElement>('map-canvas');
   private ctx = this.canvas.getContext('2d')!;
@@ -118,12 +139,47 @@ export class App {
   private cloudAgain = false;
 
   constructor() {
-    this.project = this.loadSaved() ?? createProject('My World');
+    this.project = createProject('My World');
     this.buildStaticUi();
     this.bindCanvas();
     this.bindKeys();
     new ResizeObserver(() => this.resize()).observe(byId('canvas-wrap'));
     this.resize();
+    byId('empty-state').classList.add('loading');
+    this.refreshPanels();
+    this.initCloud();
+    // Keep the latest changes when the page is put away or closed (phones rarely say goodbye).
+    const flush = () => {
+      if (this.saveTimer) void this.saveLocalNow();
+    };
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
+    window.addEventListener('pagehide', flush);
+    void this.start();
+  }
+
+  /** Open the project kept in this browser (or start one), then autosave from here on. */
+  private async start(): Promise<void> {
+    let moveToDb = false;
+    try {
+      const saved = await this.autosave.load();
+      // A project opened while the saved one was being read wins (and is autosaved over it).
+      if (this.version > 0) {
+        this.saveState = 'on';
+        byId('empty-state').classList.remove('loading');
+        this.scheduleSave();
+        return;
+      }
+      if (saved) {
+        this.project = saved.project;
+        byId<HTMLInputElement>('project-name').value = saved.project.name;
+        moveToDb = saved.moveToDb || saved.migrated.length > 0;
+      }
+      this.saveState = 'on';
+    } catch (e) {
+      this.saveState = 'paused';
+      toast(e instanceof AutosaveError ? e.message : `Couldn't open the autosaved project: ${(e as Error).message}`);
+    }
+    byId('empty-state').classList.remove('loading');
     const first = rootMaps(this.project)[0];
     if (first) this.openMap(first.id);
     else {
@@ -131,7 +187,8 @@ export class App {
       this.generateNew();
     }
     this.refreshPanels();
-    this.initCloud();
+    // A project left in localStorage by an older version moves to the browser's database now.
+    if (moveToDb) void this.saveLocalNow();
   }
 
   get map(): WorldMap | null {
@@ -140,28 +197,43 @@ export class App {
 
   // ---- persistence & undo -----------------------------------------------------------------
 
-  private loadSaved(): Project | null {
-    try {
-      const text = localStorage.getItem(STORAGE_KEY);
-      return text ? parseProjectReport(text).project : null;
-    } catch {
-      return null;
-    }
-  }
-
   private scheduleSave(): void {
     this.scheduleCloudSave();
+    if (this.saveState !== 'on') return;
     clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => this.saveLocalNow(), 600);
+    // A big project takes a moment to pack: wait for a pause in the editing.
+    let cells = 0;
+    for (const m of Object.values(this.project.maps)) cells += m.width * m.height;
+    this.saveTimer = window.setTimeout(() => void this.saveLocalNow(), cells > BIG_PROJECT_CELLS ? 1500 : 600);
   }
 
-  /** Autosave to this browser now (e.g. before leaving the page to sign in). */
-  saveLocalNow(): void {
+  /**
+   * Autosave to this browser now (e.g. before leaving the page to sign in): into its database,
+   * or localStorage where that can't be used. Tells the user, once, when the project is too big
+   * to keep.
+   */
+  async saveLocalNow(): Promise<void> {
     clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    if (this.saveState !== 'on') return;
+    if (this.saving) {
+      this.saveAgain = true;
+      return;
+    }
+    this.saving = true;
     try {
-      localStorage.setItem(STORAGE_KEY, serializeProject(this.project));
-    } catch {
-      toast('Autosave skipped (project too large for browser storage) — use Save.');
+      await this.autosave.save(this.project);
+      this.saveWarned = '';
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg !== this.saveWarned) toast(msg);
+      this.saveWarned = msg;
+    } finally {
+      this.saving = false;
+      if (this.saveAgain) {
+        this.saveAgain = false;
+        void this.saveLocalNow();
+      }
     }
   }
 
@@ -172,7 +244,7 @@ export class App {
     byId<HTMLInputElement>('project-name').value = project.name;
     this.currentId = null;
     const first = rootMaps(project)[0];
-    if (first) this.openMap(first.id);
+    if (first) this.openMap(first.id, true, true);
     this.changed();
     // Link after changed() so opening a cloud copy does not immediately write it back.
     if (opts.cloud && this.user) {
@@ -306,18 +378,37 @@ export class App {
     }
   }
 
-  /** Snapshot the project before a change. */
+  /**
+   * Snapshot the project before a change. Layers that haven't changed since the last snapshot are
+   * shared with it, so a step on a big map costs only the layers it changes.
+   */
   pushUndo(): void {
-    this.undoStack.push(JSON.stringify({ p: this.project, c: this.currentId }));
-    if (this.undoStack.length > 25) this.undoStack.shift();
+    const snap = snapshotProject(this.project, this.undoBase);
+    this.undoBase = snap.layers;
+    this.undoStack.push({ snap, current: this.currentId });
+    if (this.undoStack.length > UNDO_STEPS) this.undoStack.shift();
     this.redoStack = [];
+    this.trimUndo();
     this.updateUndoButtons();
   }
 
-  private restore(snapshot: string): void {
-    const { p, c } = JSON.parse(snapshot) as { p: Project; c: string | null };
+  /** Forget the oldest steps while undo holds more than UNDO_BYTES. */
+  private trimUndo(): void {
+    const all = () => [...this.undoStack, ...this.redoStack].map((e) => e.snap);
+    while (this.undoStack.length > 1 && snapshotsBytes(all()) > UNDO_BYTES) this.undoStack.shift();
+  }
+
+  /** Step from the project as it is now to a snapshot, keeping it for going back (on `other`). */
+  private stepTo(entry: { snap: ProjectSnapshot; current: string | null }, other: { snap: ProjectSnapshot; current: string | null }[]): void {
+    const live = new Map<string, unknown[]>();
+    const now = snapshotProject(this.project, this.undoBase, live);
+    other.push({ snap: now, current: this.currentId });
+    // Layers the snapshot shares with the project as it is now are kept as they are.
+    const p = restoreSnapshot(entry.snap, (key, packed) => (now.layers.get(key) === packed ? live.get(key) : undefined));
+    this.undoBase = entry.snap.layers;
     this.project = p;
     byId<HTMLInputElement>('project-name').value = p.name;
+    const c = entry.current;
     this.currentId = c && p.maps[c] ? c : rootMaps(p)[0]?.id ?? null;
     this.selectedFeature = null;
     this.changed();
@@ -327,16 +418,12 @@ export class App {
 
   undo(): void {
     const s = this.undoStack.pop();
-    if (!s) return;
-    this.redoStack.push(JSON.stringify({ p: this.project, c: this.currentId }));
-    this.restore(s);
+    if (s) this.stepTo(s, this.redoStack);
   }
 
   redo(): void {
     const s = this.redoStack.pop();
-    if (!s) return;
-    this.undoStack.push(JSON.stringify({ p: this.project, c: this.currentId }));
-    this.restore(s);
+    if (s) this.stepTo(s, this.undoStack);
   }
 
   private updateUndoButtons(): void {
@@ -344,10 +431,16 @@ export class App {
     byId<HTMLButtonElement>('btn-redo').disabled = !this.redoStack.length;
   }
 
-  /** Call after any change to the project. */
-  changed(): void {
+  /**
+   * Call after any change to the project. `imageKept`: the map image was already brought up to
+   * date with it (a paint stroke, see patchCache).
+   */
+  changed(imageKept = false): void {
+    const map = this.map;
+    const kept = imageKept && map && this.cache?.key === this.cacheKey(map);
     this.version++;
-    this.cache = null;
+    if (kept) this.cache!.key = this.cacheKey(map);
+    else this.cache = null;
     this.scheduleSave();
     this.refreshPanels();
     this.draw();
@@ -355,7 +448,8 @@ export class App {
 
   // ---- maps -------------------------------------------------------------------------------
 
-  openMap(id: string, fit = true): void {
+  /** Open a map; `quiet` leaves the panels and the drawing to the caller (which is about to call changed()). */
+  openMap(id: string, fit = true, quiet = false): void {
     if (!this.project.maps[id]) return;
     if (this.pick && id !== this.pick.targetId) this.cancelPick();
     if (id !== this.currentId) this.storey = 0;
@@ -367,6 +461,7 @@ export class App {
     this.loadSpecIntoPanel(this.map);
     if (fit) this.fit();
     this.setTool(this.tool);
+    if (quiet) return;
     this.refreshPanels();
     this.draw();
   }
@@ -877,6 +972,9 @@ export class App {
       h('h2', {}, 'Map'),
       h('label', {}, 'Name', name),
       h('p', { class: 'hint' }, `${getScale(map.scaleId).label} · ${GRID_TYPES.find((g) => g.id === map.grid)?.label} · ${map.width}×${map.height} · seed ${map.seed}`),
+      map.width * map.height > BIG_MAP_CELLS && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
+        ? h('p', { class: 'hint' }, `📱 This map is big (${map.width}×${map.height}): it's best edited on a computer. It works here, but drawing, painting and checks can be slow.`)
+        : '',
       h(
         'div',
         { class: 'btn-row' },
@@ -1050,7 +1148,7 @@ export class App {
   private refreshLegend(): void {
     const box = byId('legend');
     box.replaceChildren();
-    const used = new Set(this.map?.layers.terrain ?? []);
+    const used = this.usedOnMap().terrain;
     for (const t of TILES) {
       if (used.size && !used.has(t.id) && t.id !== this.paintTile) continue;
       box.append(
@@ -1071,7 +1169,7 @@ export class App {
         ),
       );
     }
-    for (const id of this.map ? objectLegendEntries(this.map) : []) {
+    for (const id of this.usedOnMap().objects) {
       const d = objectDef(id)!;
       box.append(
         h(
@@ -1089,6 +1187,31 @@ export class App {
         ),
       );
     }
+  }
+
+  private used: { key: string; terrain: Set<number>; objects: number[] } | null = null;
+  /** The ground and objects used on the open map (kept until it changes: a big map has a lot of cells to look at). */
+  private usedOnMap(): { terrain: Set<number>; objects: number[] } {
+    const map = this.map;
+    if (!map) return { terrain: new Set(), objects: [] };
+    const key = `${map.id}:${this.version}`;
+    if (this.used?.key !== key) {
+      // Flags by id (quicker than a Set of every cell on a big map).
+      const flags = (layer: number[]) => {
+        const seen = new Set<number>();
+        const small = new Uint8Array(1024);
+        for (let i = 0; i < layer.length; i++) {
+          const v = layer[i];
+          if (v >= 0 && v < 1024 && v === (v | 0)) small[v] = 1;
+          else seen.add(v);
+        }
+        small.forEach((f, v) => f && seen.add(v));
+        return seen;
+      };
+      const objects = flags(map.layers.object);
+      this.used = { key, terrain: flags(map.layers.terrain), objects: OBJECTS.filter((d) => d.id && objects.has(d.id)).map((d) => d.id) };
+    }
+    return this.used;
   }
 
   // ---- viewport ---------------------------------------------------------------------------
@@ -1132,9 +1255,14 @@ export class App {
     return new Grid(map.grid, map.width, map.height).pixelToCell(x, y);
   }
 
-  private ensureCache(map: WorldMap): void {
+  /** What the map image shows: the map, storey and version, and the view options it's drawn with. */
+  private cacheKey(map: WorldMap): string {
     const v = this.view;
-    const key = `${map.id}:${this.storey}:${this.version}:${v.grid}:${v.hillshade}:${v.rivers}:${v.roads}:${v.objects}:${v.zones}:${v.gameArt && gameArtReady()}`;
+    return `${map.id}:${this.storey}:${this.version}:${v.grid}:${v.hillshade}:${v.rivers}:${v.roads}:${v.objects}:${v.zones}:${v.gameArt && gameArtReady()}`;
+  }
+
+  private ensureCache(map: WorldMap): void {
+    const key = this.cacheKey(map);
     // What's on screen, in render units.
     const seen = {
       x0: -this.ox / this.scale,
@@ -1171,16 +1299,61 @@ export class App {
       if (fit === 'ok' || fit === 'detail' || busy) return;
     }
     const { region, s, whole } = cacheRegion(map, seen, this.scale);
-    this.cache = { canvas: this.renderStorey(map, s, whole ? undefined : region), s, key, region, whole, at: performance.now() };
+    const overview = wantsOverview(map, s, this.view, whole ? undefined : region);
+    this.cache = { canvas: this.renderStorey(map, s, whole ? undefined : region, overview), s, key, region, whole, overview, at: performance.now() };
+  }
+
+  /**
+   * Bring the map image up to date after painting some cells, redrawing just around them (so a
+   * stroke on a big map stays quick), or let it be drawn again when that can't be done. `before`
+   * is the image's key from before the change.
+   */
+  private patchCache(map: WorldMap, cells: number[] | null, before: string, guards: { x: number; y: number }[] | null): void {
+    const cache = this.cache;
+    if (!cache || cache.key !== before || !cells || storeyNumbers(map).length > 1) {
+      this.cache = null;
+      return;
+    }
+    const g = new Grid(map.grid, map.width, map.height);
+    const dirty = [...cells];
+    // Painting by the town can move a gate, and the guard the art shows there.
+    if (guards) {
+      const now = townGuards(map, this.version).posts;
+      const same = now.length === guards.length && now.every((p, k) => p.x === guards[k].x && p.y === guards[k].y);
+      if (!same) for (const p of [...guards, ...now]) dirty.push(p.y * map.width + p.x);
+    }
+    const s = cache.s;
+    const ctx = cache.canvas.getContext('2d')!;
+    for (const r of regionAround(g, dirty)) {
+      // Whole pixels of the image, inside it.
+      const px0 = Math.max(0, Math.floor((r.x0 - cache.region.x0) * s));
+      const py0 = Math.max(0, Math.floor((r.y0 - cache.region.y0) * s));
+      const px1 = Math.min(cache.canvas.width, Math.ceil((r.x1 - cache.region.x0) * s));
+      const py1 = Math.min(cache.canvas.height, Math.ceil((r.y1 - cache.region.y0) * s));
+      if (px1 <= px0 || py1 <= py0) continue;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.beginPath();
+      ctx.rect(px0, py0, px1 - px0, py1 - py0);
+      ctx.clip();
+      ctx.fillStyle = '#1b1f27';
+      ctx.fillRect(px0, py0, px1 - px0, py1 - py0);
+      ctx.translate(-cache.region.x0 * s, -cache.region.y0 * s);
+      const region = { x0: cache.region.x0 + px0 / s, y0: cache.region.y0 + py0 / s, x1: cache.region.x0 + px1 / s, y1: cache.region.y0 + py1 / s };
+      drawBase(ctx, map, s, this.view, region, { overview: cache.overview, stamp: this.version });
+      ctx.restore();
+    }
+    cache.key = this.cacheKey(map);
   }
 
   /** The map image for the storey being edited; on an upper or lower storey the one below shows through, dimmed. */
-  private renderStorey(map: WorldMap, s: number, region?: RenderRegion): HTMLCanvasElement {
+  private renderStorey(map: WorldMap, s: number, region: RenderRegion | undefined, overview: boolean): HTMLCanvasElement {
     const zs = storeyNumbers(map);
-    if (zs.length < 2) return renderMapCanvas(map, s, this.view, false, true, region);
+    const opts = { overview, stamp: this.version };
+    if (zs.length < 2) return renderMapCanvas(map, s, this.view, false, true, region, opts);
     const k = zs.indexOf(this.storey);
-    const top = renderMapCanvas(storeyView(map, this.storey), s, this.view, false, false, region);
-    const out = renderMapCanvas(k > 0 ? storeyView(map, zs[k - 1]) : storeyView(map, this.storey), s, this.view, false, true, region);
+    const top = renderMapCanvas(storeyView(map, this.storey), s, this.view, false, false, region, opts);
+    const out = renderMapCanvas(k > 0 ? storeyView(map, zs[k - 1]) : storeyView(map, this.storey), s, this.view, false, true, region, opts);
     const ctx = out.getContext('2d')!;
     if (k > 0) {
       ctx.fillStyle = 'rgba(14,16,20,0.68)';
@@ -1271,7 +1444,7 @@ export class App {
       ctx.stroke();
     }
     if (is3d(map)) draw3dOverlay(ctx, this, map, this.storey);
-    drawFeatures(ctx, storeyView(map, this.storey), this.scale, this.ox, this.oy, this.view, this.selectedFeature);
+    drawFeatures(ctx, storeyView(map, this.storey), this.scale, this.ox, this.oy, this.view, this.selectedFeature, this.version);
   }
 
   private pathScreen(pts: [number, number][]): void {
@@ -1470,7 +1643,9 @@ export class App {
         }
         this.refreshPanels();
         this.draw();
-      } else if (d.kind === 'paint' || d.kind === 'move-feature') {
+      } else if (d.kind === 'paint') {
+        this.changed(true);
+      } else if (d.kind === 'move-feature') {
         this.changed();
       }
     };
@@ -1582,6 +1757,12 @@ export class App {
   private paintAt(map: WorldMap, g: Grid, cell: number, last: number, d: { buildingId: number; stamp: number }): void {
     const L = storeyLayers(map, this.storey);
     const game = isRpgdc(map);
+    const before = this.cacheKey(map);
+    // The cells this changes, when that's just the brush (the map image is then redrawn around them).
+    const brushed = ['tile', 'object', 'zone'].includes(this.paintMode) && !is3d(map) ? this.brushCells(g, cell) : null;
+    // Painting by the town, or zones, can move the guards (that the game's art draws; indoors, the mayor's).
+    const guardsMove = !game || !brushed || gameKind(map) !== 'overworld' || this.paintMode === 'zone' || nearSafe(map, brushed);
+    const guards = brushed && game && guardsMove && this.view.gameArt ? townGuards(map, this.version).posts : null;
     if (is3dMode(this.paintMode)) {
       paint3dAt(map, this.storey, this.paintMode, this.paintMode === 'turn' ? [cell] : this.brushCells(g, cell), last < 0, d);
     } else if (this.paintMode === 'tile') {
@@ -1630,7 +1811,8 @@ export class App {
       }
     }
     this.version++;
-    this.cache = null;
+    if (!guardsMove) keepGuards(map, this.version - 1, this.version);
+    this.patchCache(map, brushed, before, guards);
   }
 
   private updateStatus(map: WorldMap, g: Grid, cell: number): void {
@@ -1694,6 +1876,24 @@ export class App {
       }
     });
   }
+}
+
+/** Whether any of these cells, or one next to it, is in the Safe zone (where the town's gates are). */
+function nearSafe(map: WorldMap, cells: number[]): boolean {
+  const w = map.width;
+  const zone = map.layers.zone;
+  for (const i of cells) {
+    const x = i % w;
+    const y = (i - x) / w;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < w && ny < map.height && zone[ny * w + nx] === 1) return true;
+      }
+    }
+  }
+  return false;
 }
 
 function featureAt(map: WorldMap, g: Grid, cell: number): Feature | undefined {

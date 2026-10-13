@@ -376,7 +376,7 @@ describe('game checks catch broken maps', () => {
     };
     p.maps[map.id] = map;
     const issues = checkGameMaps(p);
-    expect(issues.filter((i) => i.severity === 'error').map((i) => i.message)).toEqual(['The game needs the overworld to be square, 128 to 512 tiles a side; this map is 20×20.']);
+    expect(issues.filter((i) => i.severity === 'error').map((i) => i.message)).toEqual(['The game needs the overworld to be square, 128 to 1024 tiles a side; this map is 20×20.']);
     expect(issues.map((i) => i.message).join('\n')).toMatch(/1 cell\(s\) use ground or objects the game doesn't have/);
   });
 });

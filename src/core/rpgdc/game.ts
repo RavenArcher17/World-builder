@@ -4,7 +4,7 @@
  */
 import { Grid } from '../grid';
 import { O, OBJECTS, objectDef } from '../objects';
-import { T, tile } from '../tiles';
+import { T, TILES, tile } from '../tiles';
 import type { Feature, Project, WorldMap } from '../types';
 
 export function isRpgdc(map: WorldMap | null | undefined): boolean {
@@ -79,6 +79,28 @@ export function gameObject(objectId: number): number {
 /** Walkable in the game: walkable ground with nothing standing on it, and not inside a building's walls. */
 export function isWalkable(map: WorldMap, i: number, mask: Uint8Array = buildingMask(map)): boolean {
   return GROUND_WALKABLE[gameGround(map.layers.terrain[i])] && gameObject(map.layers.object[i]) === 0 && !mask[i];
+}
+
+/** Whether each World Builder tile is ground the game walks on (by tile id), worked out once. */
+const WALKABLE_TILE = TILES.map((t) => GROUND_WALKABLE[gameGround(t.id)]);
+
+/**
+ * 1 for every tile you can walk on (as isWalkable), for the whole map at once: much quicker than
+ * asking tile by tile on a big map.
+ */
+export function walkableTiles(map: WorldMap, mask: Uint8Array = buildingMask(map)): Uint8Array {
+  const n = map.width * map.height;
+  const out = new Uint8Array(n);
+  const terrain = map.layers.terrain;
+  const object = map.layers.object;
+  const objects = OBJECT_LEGEND.length;
+  for (let i = 0; i < n; i++) {
+    const t = terrain[i];
+    const o = object[i];
+    const ground = WALKABLE_TILE[t] ?? GROUND_WALKABLE[gameGround(t)];
+    if (ground && !(o > 0 && o < objects) && !mask[i]) out[i] = 1;
+  }
+  return out;
 }
 
 // ---- buildings ---------------------------------------------------------------------------
@@ -244,32 +266,32 @@ export function besideTile(map: WorldMap, x: number, y: number): { x: number; y:
  * Tiles reachable on foot from `starts`: 8 directions, and no cutting a corner past a blocked
  * tile (the game's pathfinding rule).
  */
-export function reachable(map: WorldMap, starts: { x: number; y: number }[]): Uint8Array {
+export function reachable(map: WorldMap, starts: { x: number; y: number }[], walk: Uint8Array = walkableTiles(map)): Uint8Array {
   const w = map.width;
-  const seen = new Uint8Array(w * map.height);
-  const queue: number[] = [];
-  const mask = buildingMask(map);
-  const walkable = (x: number, y: number) => isWalkableAt(map, x, y, mask);
+  const h = map.height;
+  const seen = new Uint8Array(w * h);
+  const queue = new Int32Array(w * h);
+  let tail = 0;
   for (const s of starts) {
-    if (!walkable(s.x, s.y)) continue;
+    if (s.x < 0 || s.y < 0 || s.x >= w || s.y >= h) continue;
     const i = s.y * w + s.x;
-    if (!seen[i]) {
-      seen[i] = 1;
-      queue.push(i);
-    }
+    if (!walk[i] || seen[i]) continue;
+    seen[i] = 1;
+    queue[tail++] = i;
   }
-  for (let h = 0; h < queue.length; h++) {
-    const cx = queue[h] % w;
-    const cy = Math.floor(queue[h] / w);
+  for (let head = 0; head < tail; head++) {
+    const i = queue[head];
+    const cx = i % w;
+    const cy = (i - cx) / w;
     for (const [dx, dy] of NEIGHBOURS) {
       const nx = cx + dx;
       const ny = cy + dy;
-      if (!walkable(nx, ny)) continue;
-      if (dx && dy && (!walkable(cx + dx, cy) || !walkable(cx, cy + dy))) continue;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
       const k = ny * w + nx;
-      if (seen[k]) continue;
+      if (!walk[k] || seen[k]) continue;
+      if (dx && dy && (!walk[cy * w + nx] || !walk[ny * w + cx])) continue;
       seen[k] = 1;
-      queue.push(k);
+      queue[tail++] = k;
     }
   }
   return seen;
@@ -283,13 +305,23 @@ export function reachable(map: WorldMap, starts: { x: number; y: number }[]): Ui
  * Safe ground too, and only one guard within 2 tiles. `outside` is where criminals and murderers
  * come back after dying: 3 tiles out of the first gate (or just outside it), or null with no gate.
  */
-export function guardPosts(map: WorldMap): { posts: { x: number; y: number }[]; outside: { x: number; y: number } | null } {
+export function guardPosts(map: WorldMap, walk?: Uint8Array): { posts: { x: number; y: number }[]; outside: { x: number; y: number } | null } {
   const posts: { x: number; y: number }[] = [];
   let outside: { x: number; y: number } | null = null;
   if (gameKind(map) !== 'overworld') return { posts, outside };
-  const mask = buildingMask(map);
-  const open = (x: number, y: number) => isWalkableAt(map, x, y, mask);
-  const safe = (x: number, y: number) => zoneAt(map, y * map.width + x)?.key === 'safe';
+  const w = map.width;
+  const zone = map.layers.zone;
+  const SAFE = ZONES.find((z) => z.key === 'safe')!.id;
+  // Only the town is Safe: look at the open tiles there (the walkable tiles worked out just for it).
+  let tiles = walk;
+  if (!tiles) {
+    let any = false;
+    for (let i = 0; i < zone.length && !any; i++) any = zone[i] === SAFE;
+    if (!any) return { posts, outside };
+  }
+  const mask = tiles ? null : buildingMask(map);
+  const open = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < map.height && (tiles ? tiles[y * w + x] === 1 : isWalkable(map, y * w + x, mask!));
+  const safe = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < map.height && zone[y * w + x] === SAFE;
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
       // The zone first: it's quick, and only the town is Safe, so this stays fast on a big overworld.

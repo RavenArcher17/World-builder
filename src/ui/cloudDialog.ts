@@ -152,10 +152,7 @@ export function openSignInDialog(app: App): void {
         label: 'Sign in with Google',
         primary: true,
         // On phones sign-in may leave the page for Google and come back: keep the work first.
-        action: run(() => {
-          app.saveLocalNow();
-          return cloud.signIn();
-        }),
+        action: run(() => cloud.signIn(app.saveLocalNow())),
       },
     ],
   );

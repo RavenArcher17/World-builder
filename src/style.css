@@ -306,6 +306,13 @@ details.group > div {
 .empty p {
   max-width: 520px;
 }
+/* While the project kept in the browser is being opened. */
+.empty.loading > * {
+  display: none;
+}
+.empty.loading::after {
+  content: 'Opening your project…';
+}
 .statusbar {
   padding: 4px 10px;
   font-size: 12px;

@@ -23,6 +23,7 @@ import {
 import { T } from '../core/tiles';
 import type { WorldMap } from '../core/types';
 import { paintOrder } from './drawObjects';
+import type { OverviewColours } from './overview';
 
 export const DEFAULT_ART_BASE = 'https://rpg-dc.onrender.com/art/';
 export const ART_CREDITS_URL = 'https://rpg-dc.onrender.com/art/CREDITS.md';
@@ -356,11 +357,12 @@ const CHARACTER_MIN_TILE_PX = 20;
 
 /**
  * Draw the map with the game's art at `s` pixels per render unit. Returns false (and draws
- * nothing) when the art isn't loaded or the map isn't an isometric game map. With `inView`, only
- * the cells marked 1 are drawn (a big overworld is drawn just around what's on screen, as the
- * game draws it a chunk at a time).
+ * nothing) when the art isn't loaded or the map isn't an isometric game map. With `cells` (in
+ * paint order), only those are drawn (a big overworld is drawn just around what's on screen, as
+ * the game draws it a chunk at a time). `stamp` names the map's state, so the guards' posts
+ * worked out for it can be kept.
  */
-export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: number, inView: Uint8Array | null = null): boolean {
+export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: number, cells: number[] | null = null, stamp?: number): boolean {
   const art = loaded;
   if (!art || map.grid !== 'iso') return false;
   const g = new Grid(map.grid, map.width, map.height);
@@ -389,8 +391,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
   const count = (sheetName: string, what: string) => art.sheets[sheetName]?.counts?.[what] ?? 1;
   const variant = (what: string, x: number, y: number, salt = 0, sheetName = home) => `${what}/${Math.floor(tileHash(x, y, salt) * count(sheetName, what))}`;
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < map.height ? y * w + x : -1);
-  const order = inView ? paintOrder(g).filter((i) => inView[i]) : paintOrder(g);
-  const characters = s * 2 >= CHARACTER_MIN_TILE_PX ? charactersOf(map) : new Map<number, Character>();
+  const order = cells ?? paintOrder(g);
+  const characters = s * 2 >= CHARACTER_MIN_TILE_PX ? charactersOf(map, stamp) : new Map<number, Character>();
   /** The monster, townsperson or guard standing on cell i, if any, in the game's clothes and pose. */
   const drawCharacter = (i: number) => {
     const c = characters.get(i);
@@ -713,15 +715,14 @@ interface Character {
  * of them), the travelling merchant, and the guards the game posts (at the town's gates, and
  * indoors with the mayor).
  */
-function charactersOf(map: WorldMap): Map<number, Character> {
+function charactersOf(map: WorldMap, stamp?: number): Map<number, Character> {
   const out = new Map<number, Character>();
   const w = map.width;
   const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < map.height;
   const hero = (layers: Record<string, Layer>, x: number, y: number, dir = FACING_SE) => {
     if (inside(x, y)) out.set(y * w + x, { layers, hero: true, dir, alpha: 1 });
   };
-  const posts = gameKind(map) === 'overworld' ? guardPosts(map).posts : houseGuards(map);
-  for (const p of posts) hero(GUARD, p.x, p.y);
+  for (const p of townGuards(map, stamp).posts) hero(GUARD, p.x, p.y);
   for (const f of map.features) {
     if (!inside(f.c, f.r)) continue;
     if (f.type === 'monster_spawn' || f.type === 'boss') {
@@ -740,6 +741,96 @@ function charactersOf(map: WorldMap): Map<number, Character> {
     }
   }
   return out;
+}
+
+const guardMemo = new WeakMap<WorldMap, { stamp: number; value: ReturnType<typeof guardPosts> }>();
+/**
+ * The guards the game posts on a map (at the town's gates on the overworld, with the mayor
+ * indoors) and where criminals come back. Finding the gates means a look at every tile, so with
+ * a `stamp` (the editor's count of changes) the answer is kept until the map changes.
+ */
+export function townGuards(map: WorldMap, stamp?: number): ReturnType<typeof guardPosts> {
+  const kept = stamp === undefined ? undefined : guardMemo.get(map);
+  if (kept && kept.stamp === stamp) return kept.value;
+  const value = gameKind(map) === 'overworld' ? guardPosts(map) : { posts: houseGuards(map), outside: null };
+  if (stamp !== undefined) guardMemo.set(map, { stamp, value });
+  return value;
+}
+
+/** The map changed (to `to`) in a way that can't move the guards: keep the posts worked out at `from`. */
+export function keepGuards(map: WorldMap, from: number, to: number): void {
+  const kept = guardMemo.get(map);
+  if (kept && kept.stamp === from) kept.stamp = to;
+}
+
+/** The average colour of a frame's solid pixels, as 0xRRGGBB (null if the art can't be read). */
+const frameColours = new Map<string, number | null>();
+function frameColour(sheetName: string, frame: string): number | null {
+  const key = `${sheetName}|${frame}`;
+  if (frameColours.has(key)) return frameColours.get(key)!;
+  let out: number | null = null;
+  const f = loaded?.sheets[sheetName]?.frames[frame];
+  const img = f && loaded?.images[sheetName]?.[f[0]];
+  if (f && img) {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 24;
+      c.height = 24;
+      const x = c.getContext('2d', { willReadFrequently: true })!;
+      x.drawImage(img, f[1], f[2], f[3], f[4], 0, 0, 24, 24);
+      const d = x.getImageData(0, 0, 24, 24).data;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let n = 0;
+      for (let k = 0; k < d.length; k += 4) {
+        if (d[k + 3] < 128) continue;
+        r += d[k];
+        g += d[k + 1];
+        b += d[k + 2];
+        n++;
+      }
+      if (n) out = (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
+    } catch {
+      out = null;
+    }
+  }
+  frameColours.set(key, out);
+  return out;
+}
+
+/**
+ * Colours for a big map's overview (zoomed out) with the game's art on: each ground and tree the
+ * average colour of its art, so the map keeps its look as you zoom out.
+ */
+export function gameArtColours(map: WorldMap): OverviewColours | null {
+  if (!loaded || gameKind(map) !== 'overworld') return null;
+  const home = 'world';
+  const grounds = new Map<number, number | null>();
+  const things = new Map<number, number | null>();
+  const groundOf = (t: number) => {
+    const ground = GROUND_OF[t] ?? (OPEN_GROUND.has(t) || t === T.GRASS ? 'grass' : null);
+    return ground ? frameColour(home, `${ground}/0`) ?? frameColour(home, `${wet(ground) ? 'water' : 'grass'}/0`) : null;
+  };
+  const objectOf = (o: number, snow: boolean) => {
+    if (TREES[o]) return frameColour(home, `${snow ? (o === O.YEW ? 'snowyew' : 'snowtree') : TREES[o]}/0`) ?? frameColour(home, 'tree/0');
+    if (o === O.DEAD_TREE) return frameColour(home, 'deadtree/0');
+    if (o === O.CACTUS) return frameColour(home, 'cactus/0');
+    if (o === O.BOULDER) return frameColour(home, `${snow ? 'snowrock' : 'rock'}/0`);
+    return null;
+  };
+  // Looked up once per kind of ground and object (a big map asks for each of its cells).
+  return {
+    ground: (t) => {
+      if (!grounds.has(t)) grounds.set(t, groundOf(t));
+      return grounds.get(t)!;
+    },
+    object: (o, t) => {
+      const key = o * 2 + (t === T.SNOW ? 1 : 0);
+      if (!things.has(key)) things.set(key, objectOf(o, t === T.SNOW));
+      return things.get(key)!;
+    },
+  };
 }
 
 /** The game draws fishing spots as a pale ring on the water. */

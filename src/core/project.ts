@@ -48,8 +48,12 @@ export function parseProject(text: string): Project {
 
 /** Parse a project file, upgrading older formats. `migrated` lists maps converted on the way. */
 export function parseProjectReport(text: string): { project: Project; migrated: string[] } {
-  const data = JSON.parse(text);
-  if (!data || data.format !== 'world-builder-project' || typeof data.maps !== 'object') {
+  return upgradeProject(JSON.parse(text));
+}
+
+/** Check a project read from a file or the browser's storage, upgrading older formats (see parseProjectReport). */
+export function upgradeProject(data: unknown): { project: Project; migrated: string[] } {
+  if (!data || typeof data !== 'object' || (data as Project).format !== 'world-builder-project' || typeof (data as Project).maps !== 'object') {
     throw new Error('Not a World Builder project file');
   }
   const project = data as Project;
