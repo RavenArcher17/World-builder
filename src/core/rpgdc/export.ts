@@ -20,7 +20,7 @@ import {
 
 export type RpgdcPlace =
   | { type: 'spawn_point'; x: number; y: number }
-  | { type: 'monster_spawn'; x: number; y: number; kind: string; count: number; radius: number }
+  | { type: 'monster_spawn'; x: number; y: number; kind: string; count: number; radius?: number }
   | { type: 'boss'; x: number; y: number; kind: string }
   | { type: 'brazier'; x: number; y: number }
   | { type: 'link'; x: number; y: number; toMap: string; toX: number; toY: number }
@@ -30,7 +30,8 @@ export type RpgdcPlace =
   | { type: 'merchant'; x: number; y: number }
   | { type: 'landmark'; x: number; y: number; id: string; name: string; radius: number }
   | { type: 'lever'; x: number; y: number; toX: number; toY: number }
-  | { type: 'lock'; x: number; y: number; key: string };
+  | { type: 'lock'; x: number; y: number; key: string }
+  | { type: 'ferry'; x: number; y: number; toX: number; toY: number; fare: number; name: string };
 
 export interface RpgdcMap {
   id: string;
@@ -89,7 +90,7 @@ function exportMap(map: WorldMap): RpgdcMap {
 
 function exportPlaces(map: WorldMap): RpgdcPlace[] {
   const out: RpgdcPlace[] = [];
-  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc', 'fort', 'merchant', 'landmark', 'lever', 'lock'];
+  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc', 'fort', 'merchant', 'landmark', 'lever', 'lock', 'ferry'];
   const features = map.features.filter((f) => order.includes(f.type)).sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
   for (const f of features) {
     const p = placeProps(f);
@@ -99,9 +100,12 @@ function exportPlaces(map: WorldMap): RpgdcPlace[] {
       case 'spawn_point':
         out.push({ type: 'spawn_point', x, y });
         break;
-      case 'monster_spawn':
-        out.push({ type: 'monster_spawn', x, y, kind: String(p.kind), count: Math.max(1, Math.round(Number(p.count) || 1)), radius: Math.max(0, Math.round(Number(p.radius) || 0)) });
+      case 'monster_spawn': {
+        // A spawn opened without a radius (the monster's normal range, to the game) is written without one.
+        const radius = f.props?.radius === undefined ? {} : { radius: Math.max(0, Math.round(Number(p.radius) || 0)) };
+        out.push({ type: 'monster_spawn', x, y, kind: String(p.kind), count: Math.max(1, Math.round(Number(p.count) || 1)), ...radius });
         break;
+      }
       case 'boss':
         out.push({ type: 'boss', x, y, kind: String(p.kind) });
         break;
@@ -145,6 +149,17 @@ function exportPlaces(map: WorldMap): RpgdcPlace[] {
         break;
       case 'lock':
         out.push({ type: 'lock', x, y, key: String(p.key ?? '').trim() });
+        break;
+      case 'ferry':
+        out.push({
+          type: 'ferry',
+          x,
+          y,
+          toX: Math.round(Number(p.toX) || 0),
+          toY: Math.round(Number(p.toY) || 0),
+          fare: Math.round(Number(p.fare) || 0),
+          name: String(p.name ?? '').trim(),
+        });
         break;
     }
   }

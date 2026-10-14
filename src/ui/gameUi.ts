@@ -17,6 +17,7 @@ import {
   PLACE_TYPES,
   ZONES,
   doorLocks,
+  ferries,
   findGameMap,
   gameKind,
   gameMapId,
@@ -25,6 +26,7 @@ import {
   leverWires,
   mapTheme,
   mapZone,
+  namedLabel,
   placeProps,
   withProp,
   zoneByKey,
@@ -37,17 +39,18 @@ import { ART_CREDITS_URL, artBase } from './gameArt';
 
 export type GamePaintMode = 'tile' | 'object' | 'grove' | 'ore' | 'zone';
 
-/** Groves of one tree, or of the new lands' scenery (cacti in the desert, dead trees in the swamp). */
-const GROVE_OBJECTS = [O.TREE, O.OAK, O.WILLOW, O.YEW, O.CACTUS, O.DEAD_TREE];
+/** Groves of one tree, or of the new lands' scenery (cacti in the desert, dead trees in the swamp, palms on an island). */
+const GROVE_OBJECTS = [O.TREE, O.OAK, O.WILLOW, O.YEW, O.CACTUS, O.DEAD_TREE, O.PALM];
 /** The ground palette, in groups: the first seven grounds, then the new lands' (from sand on). */
 const GROUND_GROUPS: [string, number[]][] = [
   ['', GROUND_TILES.slice(0, 7)],
   ['New lands', GROUND_TILES.slice(7)],
 ];
+/** The object palette's headings and the groups under each, in the order they're listed. */
 const OBJECT_GROUPS: [string, string[]][] = [
   ['Nature', ['tree', 'rock', 'ore', 'fishing', 'herb']],
   ['Runecrafting altars', ['altar']],
-  ['Fast travel', ['travel']],
+  ['Travel', ['travel']],
   ['Secrets', ['secret']],
   ['Ruins', ['ruin']],
   ['Dungeon puzzles', ['puzzle']],
@@ -94,10 +97,12 @@ export function gamePaintOptions(app: App, map: WorldMap): HTMLElement[] {
     }
   } else if (mode === 'object') {
     pal.append(palButton('Remove', '🧽', app.paintObject === 0, () => app.setPaint({ paintObject: 0 }), 'Remove objects'));
-    // In groups, so the long list is easy to find your way round on a phone.
+    // In groups, so the long list is easy to find your way round on a phone: under Nature the
+    // trees, then the rocks and scenery, the ore, the fishing spots and the herbs.
     for (const [title, groups] of OBJECT_GROUPS) {
       pal.append(h('div', { class: 'pal-heading' }, title));
-      for (const d of GAME_OBJECTS.filter((o) => groups.includes(o.group))) {
+      const listed = GAME_OBJECTS.filter((o) => groups.includes(o.group)).sort((a, b) => groups.indexOf(a.group) - groups.indexOf(b.group) || a.id - b.id);
+      for (const d of listed) {
         pal.append(palButton(d.name, d.icon, app.paintObject === d.id, () => app.setPaint({ paintObject: d.id })));
       }
     }
@@ -132,9 +137,11 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
   const props = placeProps(f);
   const set = (key: string, value: string | number) => {
     app.pushUndo();
-    // A fort's or landmark's label on the map is its name: renaming it renames the label too,
-    // unless the label was given a name of its own.
-    if (key === 'name' && NAMED_PLACES.has(f.type) && [String(placeProps(f).name), featureDef(f.type).label, ''].includes(f.name)) f.name = String(value);
+    // A fort's or landmark's label on the map is its name (a ferry's, "Ferry → " where it goes):
+    // renaming it renames the label too, unless the label was given a name of its own.
+    if (key === 'name' && NAMED_PLACES.has(f.type) && [namedLabel(f.type, placeProps(f).name), featureDef(f.type).label, ''].includes(f.name)) {
+      f.name = namedLabel(f.type, value) ?? featureDef(f.type).label;
+    }
     f.props = withProp(f, key, value);
     app.changed();
   };
@@ -186,6 +193,32 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
       ),
     );
   }
+  if (f.type === 'ferry') {
+    // Where it lands, on this map: picked by tapping it.
+    const tx = Number(props.toX);
+    const ty = Number(props.toY);
+    const boat = map.layers.object[f.r * map.width + f.c] === O.BOAT;
+    const ok = isWalkableAt(map, tx, ty);
+    const to = String(props.name ?? '').trim();
+    const fare = Number(props.fare);
+    box.append(
+      h(
+        'p',
+        { class: 'hint' },
+        !boat
+          ? "⚠ This place isn't on a boat: put it on a Ferry boat object."
+          : ok
+            ? `Sails to ${to || '(name it above)'} at (${tx}, ${ty}) (the line on the map), ${fare ? `for ${fare} coins` : 'for free'}.`
+            : `⚠ (${tx}, ${ty}) can't be walked on: pick where the ferry lands.`,
+      ),
+      h(
+        'div',
+        { class: 'btn-row' },
+        h('button', { class: 'primary', title: 'Tap the tile players land on', onclick: () => app.startLandingPick(map, f) }, '🎯 Pick the landing'),
+        ok ? h('button', { onclick: () => app.focusCell(map.id, tx, ty) }, 'Go to the landing') : '',
+      ),
+    );
+  }
   if (f.type === 'link') {
     const target = findGameMap(app.project, props.toMap);
     const tx = Number(props.toX);
@@ -214,11 +247,16 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
 }
 
 /**
- * What the status bar says about a gate, lever or locked door at (x, y) on a game map: how many
- * levers open a gate, which gates a lever opens, which key a door wants. Null for anything else.
+ * What the status bar says about a gate, lever, locked door or boat at (x, y) on a game map: how
+ * many levers open a gate, which gates a lever opens, which key a door wants, where a boat sails.
+ * Null for anything else.
  */
-export function puzzleStatus(map: WorldMap, x: number, y: number): string | null {
+export function objectStatus(map: WorldMap, x: number, y: number): string | null {
   const o = map.layers.object[y * map.width + x];
+  if (o === O.BOAT) {
+    const sails = ferries(map).filter((f) => f.x === x && f.y === y);
+    return sails.length ? sails.map((f) => `sails to ${f.name || '?'} (${f.toX}, ${f.toY}), ${f.fare ? `${f.fare} coins` : 'free'}`).join('; ') : 'no ferry';
+  }
   if (o === O.GATE) {
     const n = leverWires(map).filter((l) => l.toX === x && l.toY === y).length;
     return n ? `opened by ${n} lever${n === 1 ? '' : 's'}` : 'no lever opens it';

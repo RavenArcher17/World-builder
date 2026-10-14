@@ -40,7 +40,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zone": null,
   "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks", "sand", "mud", "bog", "snow", "stone", "ice"],
   "ground": [0, 0, 1, ...],
-  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin", "gate", "lever", "locked_door"],
+  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin", "gate", "lever", "locked_door", "boat", "palm", "wreck", "fishing_swordfish"],
   "objects": [0, 4, 0, ...],
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
@@ -49,7 +49,8 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
     { "type": "monster_spawn", "x": 171, "y": 115, "kind": "yeti", "count": 1, "radius": 8 },
     { "type": "link", "x": 284, "y": 284, "toMap": "crypt1", "toX": 19, "toY": 7 },
     { "type": "building", "x": 375, "y": 376, "w": 6, "h": 5, "style": "stone", "sign": "Bank", "roof": "slate", "walls": "grey" },
-    { "type": "landmark", "x": 386, "y": 456, "id": "fisher_lake", "name": "Moira's Lake", "radius": 16 }
+    { "type": "landmark", "x": 386, "y": 456, "id": "fisher_lake", "name": "Moira's Lake", "radius": 16 },
+    { "type": "ferry", "x": 36, "y": 360, "toX": 116, "toY": 624, "fare": 100, "name": "Wrecker's Isle" }
   ]
 }
 ```
@@ -64,11 +65,11 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
 | `theme` | string, optional | Dungeon floors only: how the floor looks in the game. `crypt` (dressed stone), `sewer` (damp stone; water is sewer water), `cave` (rough rock; water is lava) or `frost` (the Frozen Peaks: ice walls over snow and ice; water is thin ice). Without it, a floor with water looks like the sewers, otherwise the crypt. In World Builder: `settings.rpgdcTheme`, set with **Looks like** in the Map panel; written only when chosen. |
 | `groundLegend` | string[] | Ground kinds; `ground` values index into it. Always all thirteen, even if unused. (The game's own file lists just the ones each map uses, in any order; both read the same.) |
 | `ground` | integer[] (`width*height`) | Ground per tile. |
-| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `locked_door` (71 entries). |
+| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `fishing_swordfish` (75 entries). |
 | `objects` | integer[] (`width*height`) | What stands on each tile. |
 | `zoneLegend` | string[] | Zone keys; `zones` values index into it. Always all four. |
 | `zones` | integer[] (`width*height`) \| `null` | Overworld: zone per tile. Dungeons: `null` (use `zone`). |
-| `places` | array | Typed places (below), spawn point first, then links, bosses, monster spawns, braziers, buildings, townspeople, forts, the merchant's spot, landmarks, levers and locks. |
+| `places` | array | Typed places (below), spawn point first, then links, bosses, monster spawns, braziers, buildings, townspeople, forts, the merchant's spot, landmarks, levers, locks and ferries. |
 
 ### Ground
 
@@ -105,8 +106,8 @@ warns when a map has any.
 
 Any object blocks walking, except the `thicket`, which players push through; a `gate` or
 `locked_door` opens only for the players who open it (monsters never pass one). Stations, fishing
-spots, herbs, altars, waystones, caches, levers, doors, stairs, the grate and the crypt entrance
-are used from a neighbouring tile (any of the 8 around it).
+spots, herbs, altars, waystones, boats, caches, levers, doors, stairs, the grate and the crypt
+entrance are used from a neighbouring tile (any of the 8 around it).
 
 | Index | Key | Notes |
 |---|---|---|
@@ -139,6 +140,9 @@ are used from a neighbouring tile (any of the 8 around it).
 | 68 | `gate` | A dungeon puzzle: an iron portcullis, shut until every lever wired to it (by `lever` places) is pulled. It then stays open for whoever pulled them, and their party on that floor, until they leave the floor; for everyone else it's shut until they pull the levers too. Monsters never pass it. Every gate needs a lever. |
 | 69 | `lever` | A dungeon puzzle: pulled from any of the 8 tiles around it, like a station, to open the gates it's wired to (by `lever` places). Every lever is wired to a gate. |
 | 70 | `locked_door` | A dungeon puzzle: an iron-bound door, shut until a player brings its key (named by a `lock` place). The key is used up, and the door stays unlocked for that player for good (saved). Every locked door needs a lock. |
+| 71 | `boat` | A boat moored by a jetty, on the water: tapped from any of the 8 tiles around it, like a station, to sail where its `ferry` place (below) says, for its fare. Not walkable. Every boat needs a ferry. The game draws it lying along its jetty: `boat-y` (along y) when the tile west or east of it can be walked on, else `boat-x`. |
+| 72, 73 | `palm`, `wreck` | Wrecker's Isle's scenery: palms, and wrecked hulls on its beaches. In the way like boulders. The game draws one of three palms (`palm/0` to `palm/2`) and two wrecks, picked by the tile. |
+| 74 | `fishing_swordfish` | A fishing spot (on water): swordfish (Fishing 50), in the deep water off Wrecker's Isle. |
 
 ### Zones
 
@@ -156,7 +160,7 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `type` | Fields | Meaning |
 |---|---|---|
 | `spawn_point` | `x`, `y` | Where new players start. Exactly one, on the overworld, walkable, in the Safe zone. |
-| `monster_spawn` | `x`, `y`, `kind`, `count` (≥ 1), `radius` (tiles, ≥ 0) | `count` monsters of `kind` live here. They roam up to `radius` tiles from home (chasing that far, idling within half of it). `radius` 0: they stay on their tile, and only fight players who come next to them. A new spawn starts at its monster's normal range (below). |
+| `monster_spawn` | `x`, `y`, `kind`, `count` (≥ 1), `radius` (tiles, ≥ 0; optional) | `count` monsters of `kind` live here. They roam up to `radius` tiles from home (chasing that far, idling within half of it). `radius` 0: they stay on their tile, and only fight players who come next to them. Without `radius` they roam their monster's normal range (below): World Builder shows that, and writes a spawn opened without one without one again, until its radius is changed. A new spawn starts at its monster's normal range. |
 | `boss` | `x`, `y`, `kind` | A boss. |
 | `brazier` | `x`, `y` | A light (crypt floors). |
 | `link` | `x`, `y`, `toMap`, `toX`, `toY` | On a `crypt_entrance`, `stairs_down`, `stairs_up`, `door` or `sewer_grate` tile. Using it moves the player to tile (`toX`, `toY`) of map `toMap`, which is walkable. |
@@ -166,7 +170,8 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `landmark` | `x`, `y`, `id`, `name`, `radius` (optional) | A named place on the overworld, on its middle: the town, a lake, the crypt, a keep. Walking within `radius` tiles of (`x`, `y`) (a straight line: a circle, not a square) shows its `name`, and the first time counts as finding it. `id` is lower-case letters, digits and `_`, 2 to 31 of them, starting with a letter (players' finds are saved by it, so keep it once players have found the landmark), and unique; `name` is 1 to 40 letters ("Moira's Lake", "the Oasis"); `radius` is a whole number from 2 to 40, 10 when it's left out (World Builder always writes it). Its waystone is the `waystone` object that stands in it: within its radius, or, where landmarks overlap, in the one with the nearest middle. |
 | `lever` | `x`, `y`, `toX`, `toY` | On a `lever` object: wires it to the `gate` at (`toX`, `toY`) on the same map. A gate opens (for whoever pulled them, and their party on that floor) once every lever wired to it is pulled. One place per lever and gate: a lever wired to two gates has two places, and a gate with two levers needs both pulled. |
 | `lock` | `x`, `y`, `key` | On a `locked_door` object: `key` is the item that unlocks it, by the game's item id (`frost_key`). The key is used up and the door stays unlocked for that player. One lock to a door; the game refuses a key that isn't one of its items. |
-| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip), and outside town `hermit` (Old Ansel), `fisher` (Fisher Moira), `farmer` (Farmer Giles), `trapper` (Rook the trapper), `miner` (Dobbs, in the caverns) and `miller` (Hob the miller, in the windmill); or `slayer`, the Slayer master, who gives Slayer tasks. The talkers give quests: villagers by the map they're in (`home1` to `home4`, so keep those map ids), the rest by their role (so keep one of each). A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
+| `ferry` | `x`, `y`, `toX`, `toY`, `fare`, `name` | On a `boat` object: players beside the boat sail to tile (`toX`, `toY`) on the same map, which is walkable, for `fare` coins (a whole number from 0 to 10000; 0 is free). `name` is where it goes, 1 to 40 letters ("Wrecker's Isle"), shown to players ("the ferry to Wrecker's Isle"). One ferry to a boat: the way back is another boat by the landing, with a ferry of its own (the game's two: Gullhaven to Wrecker's Isle for 100 coins, and back for nothing). The game won't load a ferry whose landing is off the map, whose fare or name isn't one of those, or a second ferry from one boat. |
+| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip), and outside town `hermit` (Old Ansel), `fisher` (Fisher Moira), `farmer` (Farmer Giles), `trapper` (Rook the trapper), `miner` (Dobbs, in the caverns) and `miller` (Hob the miller, in the windmill), and by the sea `harbourmaster` (Harbourmaster Bligh, in Gullhaven by the ferry) and `castaway` (Marooned Meg, on Wrecker's Isle); or `slayer`, the Slayer master, who gives Slayer tasks. The talkers give quests: villagers by the map they're in (`home1` to `home4`, so keep those map ids), the rest by their role (so keep one of each); the harbourmaster and the castaway just talk, and villagers in Gullhaven's cottages (maps whose id starts `port_`) talk about the sea. A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
 
 Building colours. The game draws the roof, and the walls (the plaster of a timber house, the stone of
 a stone house or tower), again over the house, multiplied by the colour:
@@ -181,15 +186,17 @@ Monster kinds, with their normal range in tiles: `rat` 6, `goblin` 7, `wolf` 8, 
 lands' `scarab` 7, `mummy` 7 and `antlion` 6 (the desert), `bog_goblin` 7, `drowned` 7 and
 `swamp_wyvern` 8 (the swamp), `frost_ant` 7, `yeti` 8 and `ice_wyvern` 8 (the mountains); the
 Frozen Peaks' `ice_warden` 6 (it carries the key to the peaks' locked door), `frost_wraith` 8 (drawn
-see-through) and `frost_giant` 7 (their boss); and the
+see-through) and `frost_giant` 7 (their boss); Wrecker's Isle's `giant_crab` 5, `pirate` 8 and
+`pirate_captain` 7 (Captain Redhook, a boss placed with a `monster_spawn`); and the
 Slayer monsters, which only players with the Slayer level can hurt: `cave_crawler` 6 (Slayer 10),
 `banshee` 7 (25), `basilisk` 7 (45), `gargoyle` 6 (65). The game uses the normal range for a
 `monster_spawn` that has no `radius`.
 Town guards and townspeople aren't monster kinds here: townspeople come from `npc` places, and the
 game posts guards itself, at each gate of the Safe zone: every walkable Safe tile beside a walkable
 tile outside it (north, south, east or west) is a gate, its guard stands one step further in (if
-that's open Safe ground), and there's only one guard within 2 tiles. Criminals and murderers who
-die come back 3 tiles out of the first gate found (scanning rows from the top), or just outside it.
+that's open Safe ground), and there's only one guard within 2 tiles (so Gullhaven, a second Safe
+town, has its own). Criminals and murderers who die come back 3 tiles out of a gate, or just
+outside it: of those, the one nearest the spawn point (the home town's, not Gullhaven's).
 Indoors, the game keeps a guard with each townsperson worth robbing (the mayor, in the Town Hall),
 since the town's guards can't come in: two steps from them, on the first open floor tile scanning
 rows from the north-west, where no other townsperson stands. World Builder shows the guards (💂)
@@ -207,7 +214,7 @@ standing inside them; tapping one shows every landmark the player has found that
 travel to. The game uses the first waystone in each landmark (scanning rows from the top) and
 ignores waystones in the Deep. In World Builder, a landmark is a **Landmark** place (label: its
 name; a faint circle shows its radius, a stronger one when it's selected), and the waystone is
-under **Fast travel** in the object palette.
+under **Travel** in the object palette.
 
 Secrets and ruins. A `cache` hides under a cairn of stones off the paths, in hidden glades and down
 in the places outside town; a hidden glade is a ring of trees round a cache, with a `thicket`
@@ -229,6 +236,22 @@ is wired to the nearest gate, **🎯 Pick the gate** then a tap on a gate rewire
 selected a line joins the lever to its gate (and dashed lines the gate's other levers); tapping a
 gate shows its levers' lines too. A **Lock** place goes on a locked door and names its key.
 
+The sea. Gullhaven, a fishing port on the overworld's west coast (a second Safe town, out in the
+Wilderness), has a jetty with a `boat` at its end; its `ferry` place sails to Wrecker's Isle, an
+island out at sea in the Wilderness, where a second boat sails back. The island has palms,
+wrecks, swordfish off its shores, giant crabs, pirates and Captain Redhook, and the castaway's hut
+(`isle_hut`); Gullhaven's bank, store, inn and cottages are insides (`port_bank`, `port_store`,
+`port_inn`, `port_home1`, `port_home2`). In World Builder the boat is under **Travel** in the
+object palette (with the waystone), palms and wrecks under **Nature** with the rocks and scenery,
+and the swordfish with the fishing spots; the Grove brush scatters palms too. A **Ferry →
+landing** place goes on a boat: a new one lands beside the nearest other boat (named after the
+landmark it lands in), **🎯 Pick the landing** then a tap on a tile moves where it lands, and
+while it's selected (or its landing is tapped) a dashed line shows its route; its label on the map
+is "Ferry → " and where it goes. With the game's art, palms and wrecks are drawn from the world
+sheet's `palm/*` and `wreck/*` frames (picked by tile, like cacti) and a boat as `boat-x` or
+`boat-y`, as the game lays it; as their plain symbols on a game server without that art. In 3D:
+a leaning palm, a broken hull, and a sailing boat lying along its jetty.
+
 Links come in pairs: going down from map A to B (a link on A's entrance, stairs down or grate) is
 matched by a link on one of B's stairs up back to A, and a door into B by a door on B back to A. Going down, the arrival tile is normally
 just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs down.
@@ -238,10 +261,11 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 **Check for game** reports each problem with its map and tile (tap one to jump there):
 
 - exactly one spawn point, on the overworld, on walkable ground in the Safe zone;
-- every station, altar, waystone, cache, lever and fishing spot has a walkable neighbour reachable on foot from the spawn point
+- every station, altar, waystone, boat, cache, lever and fishing spot has a walkable neighbour reachable on foot from the spawn point
   (on dungeon floors: from where links arrive), moving in 8 directions without cutting corners
   past blocked tiles (thickets are walked through, so a glade behind one counts, and gates and
-  locked doors count as open, since players open them);
+  locked doors count as open, since players open them); from a tile beside a boat, players sail
+  to its ferry's landing, so an island counts as reached;
 - every entrance, staircase, door and grate has a link to an existing map and a walkable target
   tile, and links come in pairs;
 - no stairs on a dungeon floor with a wall just east, south or south-east of them: the game draws
@@ -253,14 +277,14 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 - there's one overworld, square and 128 to 1024 tiles a side; dungeon floors are 16 to 64 tiles a
   side, insides 4 to 32;
 - herb patches (warnings): out of their zones or off their ground, unreachable, next to a blocked
-  tile, or within 2 tiles of a tree (which hides them in the game); and a reminder that the game
+  tile, or within 2 tiles of a tree or a palm (which hides them in the game); and a reminder that the game
   then stops scattering its own;
 - tiles using ground or objects the game doesn't have (a warning);
 - a look (theme) only on dungeon floors, and one of `crypt`, `sewer`, `cave` or `frost`;
 - a Safe zone with no gate, so no town guards (a warning);
 - altars and essence rocks (warnings): an altar in the Safe zone, or either within 2 tiles of a
-  tree (or a thicket, which the game draws as one), which can hide it and take the taps meant for
-  it; and runite outside the Deep.
+  tree (or a thicket, which the game draws as one, or a palm), which can hide it and take the taps
+  meant for it; and runite outside the Deep.
 - guild forts: on the overworld, with an id and a name, their whole yard in the Deep, and the
   banner and chest on open ground reachable from the spawn point; a gap in the palisade is a warning;
 - the travelling merchant: one spot, on the overworld, on open Safe ground players can reach;
@@ -274,7 +298,10 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
   twice to the same one), every gate wired to a lever, every lever object to a gate, every locked
   door with a lock, and every lock on a locked door (one to a door) with a key: an item id (the
   game refuses a key that isn't one of its items; a key World Builder doesn't know, which is any
-  but `frost_key`, is a warning).
+  but `frost_key`, is a warning);
+- ferries: every ferry place on a boat (one to a boat), landing on a tile of its map players can
+  walk on, with a fare of 0 to 10000 whole coins and a name of 1 to 40 letters; and every boat
+  with a ferry place.
 
 ## Opening the game's maps
 

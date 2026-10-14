@@ -95,7 +95,7 @@ Empty nodes under `Markers` mark:
 
 - every place on the map;
 - every object a game interacts with: stations, fishing spots, stairs and entrances, doors, herbs,
-  altars, waystones, caches, gates, levers and locked doors;
+  altars, waystones, boats, caches, gates, levers and locked doors;
 - every light, loot and danger prop;
 - every named room (at its middle).
 

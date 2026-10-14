@@ -5,11 +5,13 @@ import { checkGameMaps } from '../src/core/rpgdc/checks';
 import { toRpgdcMaps, type RpgdcMapsFile } from '../src/core/rpgdc/export';
 import { createProject } from '../src/core/project';
 import {
+  boatFacing,
   buildingMask,
   buildings,
   doorFacing,
   doorLocks,
   dungeonTheme,
+  ferries,
   gameKind,
   GROUND_LEGEND,
   GROUND_TILES,
@@ -22,11 +24,13 @@ import {
   leverWires,
   mapTheme,
   MONSTER_KINDS,
+  namedLabel,
   normalRange,
   newPlaceProps,
   NPC_ROLES,
   OBJECT_LEGEND,
   passableTiles,
+  placeProps,
   reachable,
   walkableTiles,
   withProp,
@@ -35,8 +39,8 @@ import {
 import { isWater, T } from '../src/core/tiles';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import { emptyLayers, type Feature, type Project, type WorldMap } from '../src/core/types';
-import { cacheFit, cacheRegion, MAX_CACHE_PIXELS, wiresShown } from '../src/ui/render';
-import { caveGround, caveTheme, icePatch, isWindmill, puzzleFrame, ruinPieces, thicketLooksLike } from '../src/ui/gameArt';
+import { cacheFit, cacheRegion, ferriesShown, MAX_CACHE_PIXELS, wiresShown } from '../src/ui/render';
+import { caveGround, caveTheme, icePatch, isWindmill, puzzleFrame, ruinPieces, seaFrame, thicketLooksLike } from '../src/ui/gameArt';
 
 /** The game's own map file (shared/maps/rpg-dc.maps.json in RPG-DC), with the town, its insides and the sewers. */
 const FILE = readFileSync(new URL('./fixtures/rpg-dc.maps.json', import.meta.url), 'utf8');
@@ -73,8 +77,8 @@ describe('opening the game’s map file', () => {
     const bank = byGameId(p, 'bank');
     expect(bank.features.filter((f) => f.type === 'npc').map((f) => f.props?.role)).toEqual(['banker', 'banker']);
     const world = byGameId(p, 'overworld');
-    // The town's 18, and the windmill by Giles's Farm.
-    expect(world.features.filter((f) => f.type === 'building').length).toBe(19);
+    // The town's 18, the windmill by Giles's Farm, Gullhaven's five and the hut on Wrecker's Isle.
+    expect(world.features.filter((f) => f.type === 'building').length).toBe(25);
   });
 
   it('passes every game check, with no warnings', () => {
@@ -105,6 +109,7 @@ describe('opening the game’s map file', () => {
       'essence_rock', 'air_altar', 'mind_altar', 'water_altar', 'earth_altar', 'fire_altar', 'chaos_altar', 'law_altar',
       'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door',
+      'boat', 'palm', 'wreck', 'fishing_swordfish',
     ]);
   });
 
@@ -113,7 +118,8 @@ describe('opening the game’s map file', () => {
     const bank = buildings(world).find((b) => b.sign === 'Bank')!;
     expect([bank.roof, bank.walls]).toEqual(['slate', 'grey']);
     expect(world.layers.object.filter((o) => o === O.LAMP_POST).length).toBeGreaterThan(4);
-    expect(world.layers.object.filter((o) => o === O.WELL).length).toBe(1);
+    // The town's well, and Gullhaven's.
+    expect(world.layers.object.filter((o) => o === O.WELL).length).toBe(2);
     // Townspeople who just talk.
     const roles = Object.values(project().maps).flatMap((m) => m.features.filter((f) => f.type === 'npc').map((f) => f.props?.role));
     expect(roles).toEqual(expect.arrayContaining(['mayor', 'captain', 'villager', 'slayer']));
@@ -147,11 +153,12 @@ describe('opening the game’s map file', () => {
 
   it('posts town guards where the game does, one at each gate, and one with the mayor', () => {
     // RPG-DC's server (World.placeGuards and placeHouseGuards), on this file: guards at these
-    // tiles, criminals come back at (383, 361), and a guard stands two steps from the mayor in the
-    // Town Hall.
+    // tiles (Gullhaven's two gates and the town's four), criminals come back outside the town's
+    // gate nearest the spawn point, at (383, 407), not Gullhaven's, and a guard stands two steps
+    // from the mayor in the Town Hall.
     const { posts, outside } = guardPosts(byGameId(project(), 'overworld'));
-    expect(posts.map((p) => [p.x, p.y])).toEqual([[383, 365], [365, 383], [403, 383], [383, 403]]);
-    expect(outside).toEqual({ x: 383, y: 361 });
+    expect(posts.map((p) => [p.x, p.y])).toEqual([[81, 359], [383, 365], [65, 371], [365, 383], [403, 383], [383, 403]]);
+    expect(outside).toEqual({ x: 383, y: 407 });
     expect(guardPosts(byGameId(project(), 'bank')).posts).toEqual([]);
     expect(houseGuards(byGameId(project(), 'town_hall'))).toEqual([{ x: 4, y: 1 }]);
     expect(houseGuards(byGameId(project(), 'bank'))).toEqual([]);
@@ -436,12 +443,15 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
 
   it('opens the new lands’ objects the game placed: yews, cacti, dead trees, eels and lobsters', () => {
     const world = byGameId(project(), 'overworld');
-    expect([O.CACTUS, O.DEAD_TREE, O.YEW, O.FISHING_EEL, O.FISHING_LOBSTER].map((o) => count(world, o))).toEqual([881, 1777, 70, 30, 35]);
+    expect([O.CACTUS, O.DEAD_TREE, O.YEW, O.FISHING_EEL, O.FISHING_LOBSTER].map((o) => count(world, o))).toEqual([881, 1777, 70, 30, 41]);
     // They stand in the way, like everything else.
     const yew = world.layers.object.indexOf(O.YEW);
     expect(isWalkableAt(world, yew % world.width, Math.floor(yew / world.width))).toBe(false);
     const out = toRpgdcMaps(project()).maps.find((m) => m.id === 'overworld')!;
-    expect(out.objectLegend.slice(56)).toEqual(['cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap', 'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door']);
+    expect(out.objectLegend.slice(56)).toEqual([
+      'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
+      'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish',
+    ]);
   });
 
   it('needs eel and lobster spots reachable, like every fishing spot', () => {
@@ -545,21 +555,22 @@ describe('landmarks and waystones (fast travel)', () => {
     const p = project();
     const world = byGameId(p, 'overworld');
     const marks = world.features.filter((f) => f.type === 'landmark');
-    // Sixteen, and the ruined chapel, the smugglers' cove and the Frozen Peaks (which have no waystone).
-    expect(marks).toHaveLength(19);
+    // Seventeen with Gullhaven, and the ruined chapel, the smugglers' cove, the Frozen Peaks and
+    // Wrecker's Isle (which have no waystone).
+    expect(marks).toHaveLength(21);
     const town = marks.find((f) => f.props?.id === 'town')!;
     expect([town.c, town.r, town.name, town.props]).toEqual([384, 384, 'the Town', { id: 'town', name: 'the Town', radius: 22 }]);
     expect(marks.find((f) => f.props?.id === 'fisher_lake')!.name).toBe("Moira's Lake");
-    // Nine waystones, the town's in town, each in a landmark of its own (as the game finds them),
+    // Ten waystones, the town's in town, each in a landmark of its own (as the game finds them),
     // standing in the way like any object.
     const stones = stonesIn(gameWorld());
-    expect(stones).toHaveLength(9);
-    expect(world.layers.object.filter((o) => o === O.WAYSTONE).length).toBe(9);
+    expect(stones).toHaveLength(10);
+    expect(world.layers.object.filter((o) => o === O.WAYSTONE).length).toBe(10);
     expect(world.layers.object[382 * world.width + 387]).toBe(O.WAYSTONE);
     expect(isWalkableAt(world, 387, 382)).toBe(false);
     const list = landmarks(world);
     expect(stones.map(([x, y]) => landmarkAt(list, x, y)?.id).sort()).toEqual([
-      'crypt', 'drowned_shrine', 'fisher_lake', 'frostmere', 'hermit_lake', 'oasis', 'town', 'trapper_lodge', 'westshore',
+      'crypt', 'drowned_shrine', 'fisher_lake', 'frostmere', 'gullhaven', 'hermit_lake', 'oasis', 'town', 'trapper_lodge', 'westshore',
     ]);
     // Exported again: the same landmark places (id, name, radius), in the same order, and the same waystones.
     const out = toRpgdcMaps(p).maps.find((m) => m.id === 'overworld')!;
@@ -712,7 +723,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
   it('opens the game’s caches, thickets and ruins as objects, and exports them as they were', () => {
     const p = project();
     const world = byGameId(p, 'overworld');
-    expect([O.CACHE, O.THICKET, O.RUIN].map((o) => count(world, o))).toEqual([32, 16, 31]);
+    expect([O.CACHE, O.THICKET, O.RUIN].map((o) => count(world, o))).toEqual([34, 16, 31]);
     for (const id of ['chapel_cellar', 'smugglers_cove']) expect(count(byGameId(p, id), O.CACHE)).toBe(1);
     // A cache and a ruin stand in the way like any object; a thicket doesn't.
     const ow = gameMap('overworld');
@@ -732,7 +743,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
         expect(cellsOf(again.maps.find((m) => m.id === id)!, key)).toEqual(before);
       }
     }
-    expect(out.maps[0].objectLegend.slice(64)).toEqual(['waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door']);
+    expect(out.maps[0].objectLegend.slice(64)).toEqual(['waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish']);
   });
 
   it('opens the places outside town: the windmill and its miller, the chapel’s cellar, the smugglers’ cove', () => {
@@ -761,7 +772,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
     expect(out.maps.find((m) => m.id === 'windmill')!.places).toContainEqual({ type: 'npc', x: 3, y: 3, role: 'miller' });
     expect(out.maps.find((m) => m.id === 'overworld')!.places).toContainEqual({ type: 'building', x: 341, y: 396, w: 3, h: 3, style: 'tower', sign: 'Mill', roof: 'brown', walls: 'cream' });
     expect(out.maps.find((m) => m.id === 'smugglers_cove')!.theme).toBe('cave');
-    expect(NPC_ROLES.map((r) => r.value).slice(-6)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
+    expect(NPC_ROLES.map((r) => r.value).slice(-8, -2)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
   });
 
   it('knows a windmill: a tower whose sign says mill', () => {
@@ -1179,5 +1190,232 @@ describe('the Frozen Peaks: gates, levers, locked doors and the frost look', () 
     }
     // As the game has them (its icePatch, on the same tile hash).
     expect([icePatch(0, 0), icePatch(4, 0), icePatch(6, 9)].map((v) => v.toFixed(6))).toEqual(ICE_PATCH);
+  });
+});
+
+describe('the sea: Gullhaven, Wrecker’s Isle and the ferry between them', () => {
+  const gameMap = (id: string) => file().maps.find((m) => m.id === id)!;
+  /** Where a map in the file has an object, [x, y] in row order (none if its legend hasn't it). */
+  const cellsOf = (m: RpgdcMapsFile['maps'][number], key: string) => {
+    const k = m.objectLegend.indexOf(key);
+    return k < 0 ? [] : m.objects.flatMap((v, i) => (v === k ? [[i % m.width, Math.floor(i / m.width)]] : []));
+  };
+  const count = (m: WorldMap, id: number) => m.layers.object.filter((o) => o === id).length;
+  const SEA = ['boat', 'palm', 'wreck', 'fishing_swordfish'];
+  const INSIDES = ['port_bank', 'port_store', 'port_inn', 'port_home1', 'port_home2', 'isle_hut'];
+
+  it('opens the port, the island and their insides, their boats, palms, wrecks, swordfish, people and monsters, and exports them as they were', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    expect(OBJECT_LEGEND.slice(71)).toEqual(SEA);
+    expect([O.BOAT, O.PALM, O.WRECK, O.FISHING_SWORDFISH]).toEqual([71, 72, 73, 74]);
+    expect([O.BOAT, O.PALM, O.WRECK, O.FISHING_SWORDFISH].map((o) => count(world, o))).toEqual([2, 176, 3, 10]);
+    // All four stand in the way, like any object but the thicket.
+    for (const key of SEA) {
+      const [x, y] = cellsOf(gameMap('overworld'), key)[0];
+      expect(isWalkableAt(world, x, y), key).toBe(false);
+    }
+    for (const id of INSIDES) expect([gameKind(byGameId(p, id)), byGameId(p, id).settings.rpgdcZone], id).toEqual(['interior', 'safe']);
+    // The two ferries, labelled with where they go.
+    expect(ferries(world).map((f) => [f.x, f.y, f.toX, f.toY, f.fare, f.name, f.feature.name])).toEqual([
+      [36, 360, 116, 624, 100, "Wrecker's Isle", "Ferry → Wrecker's Isle"],
+      [116, 623, 37, 360, 0, 'Gullhaven', 'Ferry → Gullhaven'],
+    ]);
+    // The harbourmaster by the jetty, and the castaway in her hut.
+    const npc = (m: WorldMap) => m.features.filter((f) => f.type === 'npc').map((f) => [f.c, f.r, f.props?.role, f.name]);
+    expect(npc(world)).toEqual([[40, 357, 'harbourmaster', 'Harbourmaster (Bligh, by the ferry)']]);
+    expect(npc(byGameId(p, 'isle_hut'))).toEqual([[3, 2, 'castaway', 'Castaway (Marooned Meg)']]);
+    // Crabs, pirates and their captain, each roaming its normal range (the file gives them no radius).
+    const spawns = world.features.filter((f) => f.type === 'monster_spawn' && ['giant_crab', 'pirate', 'pirate_captain'].includes(String(f.props?.kind)));
+    expect(spawns.map((f) => f.props?.kind).sort()).toEqual(['giant_crab', 'giant_crab', 'giant_crab', 'giant_crab', 'pirate', 'pirate', 'pirate_captain']);
+    expect(['giant_crab', 'pirate', 'pirate_captain'].map(normalRange)).toEqual([5, 8, 7]);
+    for (const f of spawns) {
+      expect(f.props?.radius).toBeUndefined();
+      expect(placeProps(f).radius).toBe(normalRange(f.props?.kind));
+    }
+    // Exported, and opened from that export, the same again: objects, ferries, people and spawns.
+    const out = toRpgdcMaps(p);
+    const again = toRpgdcMaps(fromRpgdcMaps(out));
+    const ours = (places: RpgdcMapsFile['maps'][number]['places']) =>
+      places.filter((pl) => pl.type === 'ferry' || pl.type === 'npc' || (pl.type === 'monster_spawn' && ['giant_crab', 'pirate', 'pirate_captain'].includes(pl.kind))).map(placeKey).sort();
+    for (const f of [out, again]) {
+      const ow = f.maps.find((m) => m.id === 'overworld')!;
+      for (const key of SEA) expect(cellsOf(ow, key), key).toEqual(cellsOf(gameMap('overworld'), key));
+      expect(ours(ow.places)).toEqual(ours(gameMap('overworld').places));
+      for (const id of INSIDES) expect(f.maps.find((m) => m.id === id)!.places.map(placeKey).sort(), id).toEqual(gameMap(id).places.map(placeKey).sort());
+    }
+    expect(out.maps[0].places).toContainEqual({ type: 'ferry', x: 36, y: 360, toX: 116, toY: 624, fare: 100, name: "Wrecker's Isle" });
+    expect(out.maps[0].places).toContainEqual({ type: 'monster_spawn', x: 97, y: 656, kind: 'pirate_captain', count: 1 });
+    // A spawn given a radius of its own writes it.
+    spawns[0].props = withProp(spawns[0], 'radius', 3);
+    expect(toRpgdcMaps(p).maps[0].places).toContainEqual(expect.objectContaining({ x: spawns[0].c, y: spawns[0].r, radius: 3 }));
+  });
+
+  it('reaches the island by the ferry, as the game does: without its ferries, nothing there can be reached', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    const spawn = world.features.find((f) => f.type === 'spawn_point')!;
+    const reached = reachable(world, [{ x: spawn.c, y: spawn.r }]);
+    expect([reached[624 * 768 + 116], reached[360 * 768 + 37]]).toEqual([1, 1]);
+    expect(errors(p)).toEqual([]);
+    world.features = world.features.filter((f) => f.type !== 'ferry');
+    expect(reachable(world, [{ x: spawn.c, y: spawn.r }])[624 * 768 + 116]).toBe(0);
+    const found = errors(p).map((i) => i.message);
+    expect(found.filter((m) => /^Fishing spot: swordfish .* has no walkable neighbour that can be reached from the spawn point\.$/.test(m))).toHaveLength(10);
+    expect(found).toContain('Hidden cache (91, 660) has no walkable neighbour that can be reached from the spawn point.');
+    expect(found).toContain('Ferry boat (116, 623) has no walkable neighbour that can be reached from the spawn point.');
+    expect(found.slice(-2)).toEqual([
+      'Boat (36, 360) has no ferry place: put a ferry place on it, saying where it sails.',
+      'Boat (116, 623) has no ferry place: put a ferry place on it, saying where it sails.',
+    ]);
+  });
+
+  /**
+   * A bare 128×128 overworld of grass, Safe round the spawn point (3, 3) and Frontier beyond, with a
+   * channel of water down columns 60 to 69: a boat at (60, 10) by the west shore sails to (70, 10)
+   * on the east, where a cache stands at (90, 20).
+   */
+  const ferry = (x: number, y: number, toX: number, toY: number, fare: number | string, name: string, id = `fy-${x}-${y}-${toX}-${toY}`): Feature => ({
+    id, type: 'ferry', c: x, r: y, name: `Ferry → ${name}`, props: { toX, toY, fare, name },
+  });
+  const sea = () => {
+    const w = 128;
+    const p = createProject('sea');
+    const L = emptyLayers(w * w);
+    L.terrain.fill(T.GRASS);
+    L.zone.fill(2);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) L.zone[y * w + x] = 1;
+    for (let y = 0; y < w; y++) for (let x = 60; x < 70; x++) L.terrain[y * w + x] = T.WATER;
+    L.object[10 * w + 60] = O.BOAT;
+    L.object[20 * w + 90] = O.CACHE;
+    const map: WorldMap = {
+      id: 'ow', name: 'World', kind: 'overland', scaleId: 'local', grid: 'iso', width: w, height: w, seed: 1,
+      settings: { rpgdcMapId: 'overworld' }, layers: L, children: [],
+      features: [{ id: 's', type: 'spawn_point', c: 3, r: 3, name: 'start' }, ferry(60, 10, 70, 10, 50, 'the East Bank')],
+    };
+    p.maps[map.id] = map;
+    return { p, map };
+  };
+  const issues = (p: Project) => checkGameMaps(p).map((i) => [i.severity, i.message]);
+  const broken = (fn: (map: WorldMap) => void) => {
+    const { p, map } = sea();
+    fn(map);
+    return issues(p);
+  };
+  const CACHE = ['error', 'Hidden cache (90, 20) has no walkable neighbour that can be reached from the spawn point.'];
+
+  it('passes a boat with its ferry, and exports and opens it', () => {
+    const { p, map } = sea();
+    expect(issues(p)).toEqual([]);
+    const out = toRpgdcMaps(p).maps[0];
+    expect([out.objectLegend[out.objects[10 * 128 + 60]], out.objects[10 * 128 + 60]]).toEqual(['boat', 71]);
+    expect(out.places).toContainEqual({ type: 'ferry', x: 60, y: 10, toX: 70, toY: 10, fare: 50, name: 'the East Bank' });
+    const back = Object.values(fromRpgdcMaps(toRpgdcMaps(p)).maps)[0];
+    expect(back.layers.object[10 * 128 + 60]).toBe(O.BOAT);
+    expect(ferries(back).map((f) => [f.x, f.y, f.toX, f.toY, f.fare, f.name, f.feature.name])).toEqual([[60, 10, 70, 10, 50, 'the East Bank', 'Ferry → the East Bank']]);
+    // Only from beside the boat: with the jetty gone (water all round it), neither the boat nor the far bank can be reached.
+    expect(reachable(map, [{ x: 3, y: 3 }])[20 * 128 + 89]).toBe(1);
+    for (let y = 0; y < 128; y++) map.layers.terrain[y * 128 + 59] = T.WATER;
+    expect(issues(p)).toEqual([['error', 'Ferry boat (60, 10) has no walkable neighbour that can be reached from the spawn point.'], CACHE]);
+  });
+
+  it('catches every broken ferry and boat, as the game does', () => {
+    // A ferry place off its boat (still beside the shore): the boat then has none.
+    expect(broken((m) => { m.features[1].c = 59; })).toEqual([
+      ['error', "The ferry to the East Bank (59, 10) isn't on a boat: put it on a Ferry boat object."],
+      ['error', 'Boat (60, 10) has no ferry place: put a ferry place on it, saying where it sails.'],
+    ]);
+    // Two ferries from one boat (the game won't load that).
+    expect(broken((m) => { m.features.push(ferry(60, 10, 71, 11, 0, 'the Far Bank')); })).toEqual([
+      ['error', "The ferry to the Far Bank (60, 10): there's already a ferry from this boat."],
+    ]);
+    // Landing on water, or off the map: nothing over there is reached.
+    expect(broken((m) => { m.features[1].props!.toX = 65; })).toEqual([
+      CACHE,
+      ['error', "The ferry to the East Bank (60, 10) lands on (65, 10), which you can't walk on: pick where it lands."],
+    ]);
+    expect(broken((m) => { m.features[1].props!.toX = 500; })).toEqual([
+      CACHE,
+      ['error', "The ferry to the East Bank (60, 10) lands on (500, 10), which you can't walk on: pick where it lands."],
+    ]);
+    // Landing on a boulder.
+    expect(broken((m) => { m.layers.object[10 * 128 + 70] = O.BOULDER; })).toEqual([
+      CACHE,
+      ['error', "The ferry to the East Bank (60, 10) lands on (70, 10), which you can't walk on: pick where it lands."],
+    ]);
+    // A fare that isn't 0 to 10000 whole coins.
+    for (const fare of [-1, 10001, 2.5, 'lots']) {
+      expect(broken((m) => { m.features[1].props!.fare = fare; }), String(fare)).toEqual([
+        ['error', "The ferry to the East Bank (60, 10)'s fare must be a whole number of coins from 0 to 10000."],
+      ]);
+    }
+    expect(broken((m) => { m.features[1].props!.fare = 0; })).toEqual([]);
+    expect(broken((m) => { m.features[1].props!.fare = 10000; })).toEqual([]);
+    // No name, or one longer than 40 letters.
+    expect(broken((m) => { m.features[1].props!.name = '  '; })).toEqual([['error', 'The ferry (60, 10) needs a name: where it goes, in up to 40 letters.']]);
+    expect(broken((m) => { m.features[1].props!.name = 'x'.repeat(41); })).toEqual([['error', `The ferry to ${'x'.repeat(41)} (60, 10) needs a name: where it goes, in up to 40 letters.`]]);
+    // A boat with no ferry.
+    expect(broken((m) => { m.features.pop(); })).toEqual([CACHE, ['error', 'Boat (60, 10) has no ferry place: put a ferry place on it, saying where it sails.']]);
+    // A boat and its ferry back from the far bank: still fine.
+    expect(broken((m) => { m.layers.object[12 * 128 + 69] = O.BOAT; m.features.push(ferry(69, 12, 59, 12, 0, 'the West Bank')); })).toEqual([]);
+  });
+
+  it('gives a new ferry a landing beside the nearest other boat, named after the landmark there', () => {
+    const world = byGameId(project(), 'overworld');
+    expect(newPlaceProps(world, 'ferry', { x: 36, y: 360 })).toEqual({ toX: 116, toY: 624, fare: 0, name: "Wrecker's Isle" });
+    expect(newPlaceProps(world, 'ferry', { x: 116, y: 623 })).toEqual({ toX: 37, toY: 360, fare: 0, name: 'Gullhaven' });
+    // With no other boat, the defaults: pick the landing, and name it.
+    const { map } = sea();
+    expect(newPlaceProps(map, 'ferry', { x: 60, y: 10 })).toEqual({ toX: 0, toY: 0, fare: 0, name: '' });
+    // A second boat: beside it (in the game's order: east first), with no landmark to name it after.
+    map.layers.object[30 * 128 + 69] = O.BOAT;
+    expect(newPlaceProps(map, 'ferry', { x: 60, y: 10 })).toEqual({ toX: 70, toY: 30, fare: 0, name: '' });
+    expect([namedLabel('ferry', " Wrecker's Isle "), namedLabel('landmark', 'the Oasis'), namedLabel('ferry', ' '), namedLabel('lever', 'x')]).toEqual([
+      "Ferry → Wrecker's Isle", 'the Oasis', null, null,
+    ]);
+  });
+
+  it('shows the route of a selected ferry, or of a tapped boat or landing, and no others', () => {
+    const world = byGameId(project(), 'overworld');
+    const [out, back] = world.features.filter((f) => f.type === 'ferry');
+    const at = (x: number, y: number) => y * world.width + x;
+    const shown = (sel: string | null, focus?: number) => ferriesShown(world, sel, focus).map((f) => f.name);
+    expect(shown(null)).toEqual([]);
+    expect(shown(out.id)).toEqual(["Wrecker's Isle"]);
+    expect(shown(back.id)).toEqual(['Gullhaven']);
+    expect(shown(null, at(36, 360))).toEqual(["Wrecker's Isle"]);
+    expect(shown(null, at(116, 624))).toEqual(["Wrecker's Isle"]);
+    expect(shown(null, at(37, 360))).toEqual(['Gullhaven']);
+    expect(shown(null, at(200, 200))).toEqual([]);
+  });
+
+  it('lays a boat along its jetty and picks palms and wrecks by tile, as the game draws them', () => {
+    const world = byGameId(project(), 'overworld');
+    // The jetty runs north–south east of Gullhaven's boat: it lies along y. The island's boat has
+    // its jetty to the south: along x.
+    expect([boatFacing(world, 36, 360), boatFacing(world, 116, 623)]).toEqual(['y', 'x']);
+    expect([seaFrame(world, 36, 360), seaFrame(world, 116, 623)]).toEqual(['boat-y', 'boat-x']);
+    const frames = (o: number, n: number) => {
+      const seen = new Map<string, number>();
+      world.layers.object.forEach((v, i) => {
+        if (v !== o) return;
+        const f = seaFrame(world, i % world.width, Math.floor(i / world.width), n)!;
+        seen.set(f, (seen.get(f) ?? 0) + 1);
+      });
+      return [...seen.keys()].sort();
+    };
+    expect(frames(O.PALM, 3)).toEqual(['palm/0', 'palm/1', 'palm/2']);
+    expect(frames(O.WRECK, 2)).toEqual(['wreck/0', 'wreck/1']);
+    // Without counts in the art (an older game server), the first of each.
+    expect(frames(O.PALM, 1)).toEqual(['palm/0']);
+    expect(seaFrame(world, 384, 384)).toBeNull();
+  });
+
+  it('counts a palm as a tree that can hide an altar, as the game draws it', () => {
+    const { p, map } = sea();
+    map.layers.object[30 * 128 + 30] = O.AIR_ALTAR;
+    expect(checkGameMaps(p).some((i) => /Altar: air .* within 2 tiles of a tree/.test(i.message))).toBe(false);
+    map.layers.object[31 * 128 + 31] = O.PALM;
+    expect(checkGameMaps(p).some((i) => /Altar: air \(30, 30\) is within 2 tiles of a tree/.test(i.message))).toBe(true);
   });
 });

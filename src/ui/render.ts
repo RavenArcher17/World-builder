@@ -8,7 +8,7 @@ import { TILESET_COLUMNS, tilePixels } from '../core/export/formats';
 import { cellMetrics, drawObject, drawPattern, paintOrder } from './drawObjects';
 import { drawGameArt, gameArtColours, gameArtReady, townGuards } from './gameArt';
 import { O } from '../core/objects';
-import { gameKind, isRpgdc, leverWires, placeProps } from '../core/rpgdc/game';
+import { ferries, gameKind, isRpgdc, isWalkableAt, leverWires, placeProps } from '../core/rpgdc/game';
 import { OVERVIEW_MIN_CELLS, cellsAbout, drawOverview, overviewWanted } from './overview';
 
 export interface ViewOptions {
@@ -437,7 +437,7 @@ export function safeScale(map: WorldMap, wanted: number, maxDim = 8000): number 
 /**
  * Draw feature icons and labels. `s` is screen pixels per render unit, (ox, oy) the screen
  * position of render origin. `focus` is a cell tapped or jumped to (on a game map, a gate there
- * shows the wires from its levers).
+ * shows the wires from its levers, a landing the ferries that sail there).
  */
 export function drawFeatures(
   ctx: CanvasRenderingContext2D,
@@ -465,6 +465,7 @@ export function drawFeatures(
   if (game) {
     drawLandmarkAreas(ctx, map, g, s, ox, oy, selectedId);
     drawLeverWires(ctx, map, g, s, ox, oy, selectedId, focus);
+    drawFerryRoutes(ctx, map, g, s, ox, oy, selectedId, focus);
   }
   // Labels are placed most-important first and skipped when they would overlap.
   const labels: { x: number; y: number; text: string; size: number; bold: boolean; selected?: boolean }[] = [];
@@ -624,6 +625,55 @@ function drawLeverWires(ctx: CanvasRenderingContext2D, map: WorldMap, g: Grid, s
     ctx.setLineDash([]);
     ctx.beginPath();
     g.cornersCR(l.toX, l.toY).forEach(([x, y], k) => (k ? ctx.lineTo(ox + x * s, oy + y * s) : ctx.moveTo(ox + x * s, oy + y * s)));
+    ctx.closePath();
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * Which ferries' routes to show, given the selected place and a tapped cell: the selected ferry
+ * place, and any that sails from a boat or lands on a tile at the tapped cell. Pure, for the tests.
+ */
+export function ferriesShown(map: WorldMap, selectedId: string | null, focus?: number): ReturnType<typeof ferries> {
+  const fx = focus === undefined ? -1 : focus % map.width;
+  const fy = focus === undefined ? -1 : Math.floor(focus / map.width);
+  return ferries(map).filter((f) => f.feature.id === selectedId || (f.x === fx && f.y === fy) || (f.toX === fx && f.toY === fy));
+}
+
+/**
+ * Ferries' routes on a game map, when a ferry place is selected or its boat or landing tapped: a
+ * dashed line from the boat to the tile it lands on, which is outlined. Pale blue, or red when the
+ * landing can't be walked on.
+ */
+function drawFerryRoutes(ctx: CanvasRenderingContext2D, map: WorldMap, g: Grid, s: number, ox: number, oy: number, selectedId: string | null, focus?: number): void {
+  const shown = ferriesShown(map, selectedId, focus).filter((f) => g.inBounds(f.toX, f.toY));
+  if (!shown.length) return;
+  const screen = (c: number, r: number): [number, number] => {
+    const [x, y] = g.centerCR(c, r);
+    return [ox + x * s, oy + y * s];
+  };
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const f of shown) {
+    const colour = isWalkableAt(map, f.toX, f.toY) ? 'rgba(140,210,255,0.95)' : 'rgba(255,80,80,0.95)';
+    const [ax, ay] = screen(f.x, f.y);
+    const [bx, by] = screen(f.toX, f.toY);
+    ctx.setLineDash([10, 6]);
+    for (const [style, width] of [['rgba(0,0,0,0.45)', 4.5], [colour, 2]] as const) {
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+    // The landing tile.
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    g.cornersCR(f.toX, f.toY).forEach(([x, y], k) => (k ? ctx.lineTo(ox + x * s, oy + y * s) : ctx.moveTo(ox + x * s, oy + y * s)));
     ctx.closePath();
     ctx.strokeStyle = colour;
     ctx.lineWidth = 2.5;

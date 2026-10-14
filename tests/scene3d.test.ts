@@ -238,6 +238,49 @@ describe('3D scene', () => {
       expect(along.z).toBeGreaterThan(along.x * 2);
     }
   });
+
+  it('models a boat lying along its jetty, a palm and a wreck, and marks the boat', () => {
+    /** Water, with land at `land` and one object at (5, 5). */
+    const build = (o: number, land: [number, number][]) => {
+      const m = with3d(make('town', 'square', 2, [12, 12]));
+      m.layers.terrain.fill(T.WATER);
+      m.layers.building.fill(0);
+      m.layers.object.fill(0);
+      m.features = [];
+      for (const [c, r] of land) m.layers.terrain[r * 12 + c] = T.GRASS;
+      m.layers.object[5 * 12 + 5] = o;
+      return buildScene(m);
+    };
+    const extent = (s: Scene3D) => {
+      const p = s.parts.find((q) => q.kind === 'objects')!.mesh.positions;
+      const span = (k: number) => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let i = k; i < p.length; i += 3) {
+          lo = Math.min(lo, p[i]);
+          hi = Math.max(hi, p[i]);
+        }
+        return hi - lo;
+      };
+      return { x: span(0), y: span(1), z: span(2) };
+    };
+    for (const o of [O.BOAT, O.PALM, O.WRECK]) {
+      const s = build(o, [[4, 5]]);
+      expect(meshProblems(s), OBJECTS[o].key).toEqual([]);
+      expect(windingProblems(s), OBJECTS[o].key).toBe(0);
+      expect(s.markers.filter((k) => k.data.kind === 'object').map((k) => k.data.key)).toEqual(o === O.BOAT ? ['boat'] : []);
+    }
+    // A jetty west (or east) of it: the boat lies along z (north–south); one north of it, or none, along x.
+    const alongZ = extent(build(O.BOAT, [[4, 5], [4, 4], [4, 6]]));
+    expect(alongZ.z).toBeGreaterThan(alongZ.x * 2);
+    for (const land of [[[5, 4], [4, 4], [6, 4]], []] as [number, number][][]) {
+      const alongX = extent(build(O.BOAT, land));
+      expect(alongX.x).toBeGreaterThan(alongX.z * 2);
+    }
+    // A palm stands tall; a wreck lies low.
+    expect(extent(build(O.PALM, [])).y).toBeGreaterThan(2.5);
+    expect(extent(build(O.WRECK, [])).y).toBeLessThan(1.5);
+  });
 });
 
 describe('.glb export', () => {

@@ -9,6 +9,7 @@ import {
   OPEN_GROUND,
   ROOF_COLOURS,
   WALL_COLOURS,
+  boatFacing,
   buildingMask,
   buildings,
   doorFace,
@@ -273,7 +274,21 @@ const HERB_ART: Partial<Record<number, { frame: string; tint: string }>> = {
   [O.HERB_BOGMYRTLE]: { frame: 'plant/13', tint: '#d8a0ff' },
   [O.HERB_FROSTCAP]: { frame: 'plant/7', tint: '#b0e8ff' },
 };
-const FISHING = new Set<number>([O.FISHING_SHRIMP, O.FISHING_TROUT, O.FISHING_SALMON, O.FISHING_EEL, O.FISHING_LOBSTER]);
+const FISHING = new Set<number>([O.FISHING_SHRIMP, O.FISHING_TROUT, O.FISHING_SALMON, O.FISHING_EEL, O.FISHING_LOBSTER, O.FISHING_SWORDFISH]);
+/** The sea's things, from the world sheet: palms and wrecks (one of each kind's, picked by tile, like cacti) and the ferry's boat. */
+const SEA_ART: Partial<Record<number, string>> = { [O.PALM]: 'palm', [O.WRECK]: 'wreck', [O.BOAT]: 'boat' };
+
+/**
+ * The world sheet's frame for a palm, wreck or boat at (x, y), as the game picks it: `palm/0` to
+ * `palm/<count - 1>` and the same for wrecks, by the tile's hash; a boat lying along y (`boat-y`)
+ * when its jetty is west or east of it, else along x (`boat-x`). Null for anything else.
+ */
+export function seaFrame(map: WorldMap, x: number, y: number, count = 1): string | null {
+  const o = map.layers.object[y * map.width + x];
+  if (o === O.BOAT) return `boat-${boatFacing(map, x, y)}`;
+  const what = SEA_ART[o];
+  return what ? `${what}/${Math.floor(tileHash(x, y) * count)}` : null;
+}
 /** A thicket is drawn as one of the trees beside it, a shade darker (the game's setTint(0xdce6d2)). */
 const THICKET_TINT = '#dce6d2';
 
@@ -393,6 +408,9 @@ const NPC_OUTFITS: Record<string, Record<string, [string, string?]>> = {
   miner: { head: ['head_bald'], chest: ['leather_chest', '#707070'], hands: ['leather_gloves', '#5a5a5a'], legs: ['cloth_pants', '#5a5040'], feet: ['leather_boots', '#5a5a5a'], main: ['war_hammer'] },
   // Hob the miller, in the windmill, white with flour.
   miller: { head: ['leather_hood', '#f4f0e4'], chest: ['cloth_shirt', '#f4f0e4'], hands: ['default_hands'], legs: ['cloth_pants', '#d8d0bc'], feet: ['leather_boots', '#b8a888'] },
+  // Gullhaven's harbourmaster in a navy coat and cap; the castaway on Wrecker's Isle in sun-faded rags.
+  harbourmaster: { head: ['leather_hood', '#34466a'], chest: ['leather_chest', '#3a5480'], hands: ['default_hands'], legs: ['cloth_pants', '#e0d8c4'], feet: ['leather_boots', '#3a3430'] },
+  castaway: { head: ['head_short'], chest: ['cloth_shirt', '#e0d0a8'], hands: ['default_hands'], legs: ['cloth_pants', '#9a8a68'], feet: ['cloth_sandals'] },
 };
 /** Villagers' shirts and trousers, so no two neighbours look alike (the game varies them by id). */
 const VILLAGER_CLOTHES: [string, string][] = [
@@ -493,6 +511,14 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
   const putDecor = (o: number, i: number) => putOr('world', DECOR_ART[o]!, o, i);
   /** A gate, lever or locked door, from the dungeon sheet (in dungeons of any look, and insides). */
   const putPuzzle = (i: number) => putOr('dungeon', puzzleFrame(map, i % w, Math.floor(i / w))!, L.object[i], i);
+  /**
+   * A palm, wreck or boat, from the world sheet (wherever it stands); its plain symbol until the
+   * game server has the art for it.
+   */
+  const putSea = (i: number) => {
+    const what = SEA_ART[L.object[i]]!;
+    putOr('world', seaFrame(map, i % w, Math.floor(i / w), art.sheets.world?.counts?.[what] ?? 1)!, L.object[i], i);
+  };
   const count = (sheetName: string, what: string) => art.sheets[sheetName]?.counts?.[what] ?? 1;
   const variant = (what: string, x: number, y: number, salt = 0, sheetName = home) => `${what}/${Math.floor(tileHash(x, y, salt) * count(sheetName, what))}`;
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < map.height ? y * w + x : -1);
@@ -602,6 +628,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         putOr(home, 'cairn', O.CACHE, i);
       } else if (PUZZLES.has(L.object[i])) {
         putPuzzle(i);
+      } else if (SEA_ART[L.object[i]]) {
+        putSea(i);
       } else if (DECOR_ART[L.object[i]]) {
         putDecor(L.object[i], i);
       } else if (ORE_ART[L.object[i]]) {
@@ -682,6 +710,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     else if (o === O.BOULDER) put(variant(snow ? either('snowrock', 'rock') : 'rock', x, y), i);
     else if (o === O.CACTUS) put(variant(either('cactus', 'rock'), x, y), i);
     else if (o === O.DEAD_TREE) put(variant(either('deadtree', 'tree'), x, y), i);
+    // Wrecker's Isle's palms and wrecks, and the ferry's boat (along its jetty).
+    else if (SEA_ART[o]) putSea(i);
     else if (o === O.THICKET) drawThicket(i, x, y, snow);
     else if (o === O.CACHE) putOr('world', 'cairn', o, i);
     else if (o === O.RUIN) drawRuin(i, x, y);
@@ -1030,6 +1060,8 @@ export function gameArtColours(map: WorldMap): OverviewColours | null {
     if (o === O.RUIN) return frameColour(home, 'ruin-post/0');
     if (o === O.DEAD_TREE) return frameColour(home, 'deadtree/0');
     if (o === O.CACTUS) return frameColour(home, 'cactus/0');
+    if (o === O.PALM || o === O.WRECK) return frameColour(home, `${SEA_ART[o]}/0`);
+    if (o === O.BOAT) return frameColour(home, 'boat-x');
     if (o === O.BOULDER) return frameColour(home, `${snow ? 'snowrock' : 'rock'}/0`);
     return null;
   };

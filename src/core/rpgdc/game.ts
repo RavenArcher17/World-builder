@@ -48,7 +48,7 @@ const GROUND_WALKABLE = [true, true, false, true, true, false, true, true, true,
 export const OPEN_GROUND = new Set<number>([T.GRASS, T.SAND, T.MUD, T.SNOW, T.STONE, T.ICE]);
 
 /** How many objects the game knows: World Builder's first ones, in the same order. */
-const GAME_OBJECT_COUNT = 71;
+const GAME_OBJECT_COUNT = 75;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
 export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
 export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
@@ -244,6 +244,9 @@ export const NPC_ROLES = [
   { value: 'trapper', label: 'Trapper (Rook)' },
   { value: 'miner', label: 'Miner (Dobbs)' },
   { value: 'miller', label: 'Miller (Hob, in the windmill)' },
+  // Gullhaven's harbourmaster, by the ferry, and the castaway out on Wrecker's Isle (they just talk).
+  { value: 'harbourmaster', label: 'Harbourmaster (Bligh, by the ferry)' },
+  { value: 'castaway', label: 'Castaway (Marooned Meg)' },
 ];
 /** Townspeople worth robbing, who keep a guard indoors with them (the game's `guarded` in thieving.ts). */
 export const GUARDED_ROLES = new Set(['mayor']);
@@ -298,13 +301,15 @@ export function passableTiles(map: WorldMap, walk: Uint8Array = walkableTiles(ma
 /**
  * Tiles reachable on foot from `starts`: 8 directions, and no cutting a corner past a blocked
  * tile (the game's pathfinding rule). Gates and locked doors count as open, as in the game's
- * checks, unless `walk` says otherwise.
+ * checks, unless `walk` says otherwise. From beside a boat you can sail where its ferry lands
+ * (the game's reachableFrom), so an island counts as reached.
  */
 export function reachable(map: WorldMap, starts: { x: number; y: number }[], walk: Uint8Array = passableTiles(map)): Uint8Array {
   const w = map.width;
   const h = map.height;
   const seen = new Uint8Array(w * h);
   const queue = new Int32Array(w * h);
+  const sails = ferryHops(map);
   let tail = 0;
   for (const s of starts) {
     if (s.x < 0 || s.y < 0 || s.x >= w || s.y >= h) continue;
@@ -322,6 +327,15 @@ export function reachable(map: WorldMap, starts: { x: number; y: number }[], wal
       const ny = cy + dy;
       if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
       const k = ny * w + nx;
+      // A boat beside this tile: where its ferries land is reached too.
+      const landings = sails?.get(k);
+      if (landings) {
+        for (const t of landings) {
+          if (!walk[t] || seen[t]) continue;
+          seen[t] = 1;
+          queue[tail++] = t;
+        }
+      }
       if (!walk[k] || seen[k]) continue;
       if (dx && dy && (!walk[cy * w + nx] || !walk[ny * w + cx])) continue;
       seen[k] = 1;
@@ -337,7 +351,8 @@ export function reachable(map: WorldMap, starts: { x: number; y: number }[], wal
  * Where the game posts its town guards, as its server does: at each gate of the Safe zone (a
  * walkable Safe tile beside a walkable tile outside it), one step further in where that's open
  * Safe ground too, and only one guard within 2 tiles. `outside` is where criminals and murderers
- * come back after dying: 3 tiles out of the first gate (or just outside it), or null with no gate.
+ * come back after dying: 3 tiles out of a gate (or just outside it), the one nearest the spawn
+ * point, so not another town's gate (Gullhaven's); null with no gate.
  */
 export function guardPosts(map: WorldMap, walk?: Uint8Array): { posts: { x: number; y: number }[]; outside: { x: number; y: number } | null } {
   const posts: { x: number; y: number }[] = [];
@@ -356,6 +371,8 @@ export function guardPosts(map: WorldMap, walk?: Uint8Array): { posts: { x: numb
   const mask = tiles ? null : buildingMask(map);
   const open = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < map.height && (tiles ? tiles[y * w + x] === 1 : isWalkable(map, y * w + x, mask!));
   const safe = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < map.height && zone[y * w + x] === SAFE;
+  const spawn = map.features.find((f) => f.type === 'spawn_point');
+  const fromSpawn = (p: { x: number; y: number }) => Math.max(Math.abs(p.x - (spawn?.c ?? 0)), Math.abs(p.y - (spawn?.r ?? 0)));
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
       // The zone first: it's quick, and only the town is Safe, so this stays fast on a big overworld.
@@ -368,7 +385,8 @@ export function guardPosts(map: WorldMap, walk?: Uint8Array): { posts: { x: numb
         if (posts.some((p) => Math.max(Math.abs(p.x - post.x), Math.abs(p.y - post.y)) <= 2)) continue;
         posts.push(post);
         const far = { x: x + dx * 3, y: y + dy * 3 };
-        outside ??= open(far.x, far.y) && !safe(far.x, far.y) ? far : { x: ox, y: oy };
+        const there = open(far.x, far.y) && !safe(far.x, far.y) ? far : { x: ox, y: oy };
+        if (!outside || fromSpawn(there) < fromSpawn(outside)) outside = there;
       }
     }
   }
@@ -505,6 +523,11 @@ export const MONSTER_KINDS: { key: string; name: string; range: number }[] = [
   { key: 'ice_warden', name: 'Ice warden (Frozen Peaks)', range: 6 },
   { key: 'frost_wraith', name: 'Frost wraith (Frozen Peaks)', range: 8 },
   { key: 'frost_giant', name: 'Frost Giant (boss)', range: 7 },
+  // Wrecker's Isle, out in the sea: giant crabs on its beaches, the pirates who lure ships onto its
+  // rocks, and their captain (a boss, placed with a monster spawn).
+  { key: 'giant_crab', name: "Giant crab (Wrecker's Isle)", range: 5 },
+  { key: 'pirate', name: "Pirate (Wrecker's Isle)", range: 8 },
+  { key: 'pirate_captain', name: 'Captain Redhook (pirate boss)', range: 7 },
   // Only players with the Slayer level can hurt these.
   { key: 'cave_crawler', name: 'Cave crawler (Slayer 10)', range: 6 },
   { key: 'banshee', name: 'Banshee (Slayer 25)', range: 7 },
@@ -535,7 +558,7 @@ const kindField = (def: string): PlaceField => ({
   default: def,
 });
 
-export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant', 'landmark', 'lever', 'lock'] as const;
+export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant', 'landmark', 'lever', 'lock', 'ferry'] as const;
 
 /** A guild fort's yard: this far round its banner (the game's FORT_RADIUS); its palisade is one further out. */
 export const FORT_RADIUS = 4;
@@ -653,15 +676,19 @@ export function doorFacing(map: WorldMap, x: number, y: number): 'x' | 'y' {
   return wall(x - 1) || wall(x + 1) ? 'x' : 'y';
 }
 
-/** The gate nearest (x, y) on a map (a straight line; the first of those as near, scanning rows), or null with none. */
-export function nearestGate(map: WorldMap, x: number, y: number): { x: number; y: number } | null {
+/**
+ * The object `o` nearest (x, y) on a map (a straight line; the first of those as near, scanning
+ * rows), leaving out the one on (x, y) itself if `others`; null with none.
+ */
+function nearestObject(map: WorldMap, o: number, x: number, y: number, others = false): { x: number; y: number } | null {
   let best: { x: number; y: number } | null = null;
   let bestD = Infinity;
   const object = map.layers.object;
   for (let i = 0; i < object.length; i++) {
-    if (object[i] !== O.GATE) continue;
+    if (object[i] !== o) continue;
     const gx = i % map.width;
     const gy = Math.floor(i / map.width);
+    if (others && gx === x && gy === y) continue;
     const d = Math.hypot(gx - x, gy - y);
     if (d < bestD) {
       best = { x: gx, y: gy };
@@ -671,10 +698,67 @@ export function nearestGate(map: WorldMap, x: number, y: number): { x: number; y
   return best;
 }
 
+/** The gate nearest (x, y) on a map (a straight line; the first of those as near, scanning rows), or null with none. */
+export function nearestGate(map: WorldMap, x: number, y: number): { x: number; y: number } | null {
+  return nearestObject(map, O.GATE, x, y);
+}
+
+// ---- the sea: boats and their ferries (the game's WorldMap.ferries) ----------------------
+
+/** What a ferry can cost, in whole coins, and how long the name of where it goes can be (the game refuses others). */
+export const FERRY_FARE = { min: 0, max: 10000 } as const;
+export const FERRY_NAME_MAX = 40;
+
+/**
+ * A ferry place as the game reads it: the boat at (x, y) sails to (toX, toY) on the same map, for
+ * `fare` coins; `name` (trimmed) is where it goes ("Wrecker's Isle").
+ */
+export interface GameFerry {
+  x: number;
+  y: number;
+  toX: number;
+  toY: number;
+  fare: number;
+  name: string;
+  feature: Feature;
+}
+
+/** The ferry places on a map, in the order the game reads them. */
+export function ferries(map: WorldMap): GameFerry[] {
+  return map.features
+    .filter((f) => f.type === 'ferry')
+    .map((f) => {
+      const p = placeProps(f);
+      return { x: f.c, y: f.r, toX: Number(p.toX), toY: Number(p.toY), fare: Number(p.fare), name: String(p.name ?? '').trim(), feature: f };
+    });
+}
+
+/** Where each boat's ferries land, by the boat's cell (both on the map), or null with no ferry. */
+function ferryHops(map: WorldMap): Map<number, number[]> | null {
+  let hops: Map<number, number[]> | null = null;
+  const inside = (x: number, y: number) => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < map.width && y < map.height;
+  for (const f of ferries(map)) {
+    if (!inside(f.x, f.y) || !inside(f.toX, f.toY)) continue;
+    hops ??= new Map();
+    const k = f.y * map.width + f.x;
+    hops.set(k, [...(hops.get(k) ?? []), f.toY * map.width + f.toX]);
+  }
+  return hops;
+}
+
+/**
+ * Which way the game lays a boat at (x, y) in the water: along y (its `boat-y` art) when the jetty,
+ * a tile you can walk on, is west or east of it; else along x (`boat-x`).
+ */
+export function boatFacing(map: WorldMap, x: number, y: number): 'x' | 'y' {
+  return isWalkableAt(map, x - 1, y) || isWalkableAt(map, x + 1, y) ? 'y' : 'x';
+}
+
 /**
  * Fields for a new place on `map` (at `at`, when it's known): the defaults; for a landmark an id
  * and a name not used on the map yet (landmark_2, "Landmark 2"), to change in its fields; for a
- * lever, wired to the nearest gate.
+ * lever, wired to the nearest gate; for a ferry, landing beside the nearest other boat (the way
+ * back is usually its pair), named after the landmark it lands in.
  */
 export function newPlaceProps(map: WorldMap, type: string, at?: { x: number; y: number }): Record<string, string | number> | undefined {
   const props = defaultProps(type);
@@ -692,11 +776,30 @@ export function newPlaceProps(map: WorldMap, type: string, at?: { x: number; y: 
       props.toY = gate.y;
     }
   }
+  if (type === 'ferry' && props && at) {
+    const boat = nearestObject(map, O.BOAT, at.x, at.y, true);
+    const landing = boat && besideTile(map, boat.x, boat.y);
+    if (landing) {
+      props.toX = landing.x;
+      props.toY = landing.y;
+      props.name = landmarkAt(landmarks(map), landing.x, landing.y)?.name ?? '';
+    }
+  }
   return props;
 }
 
-/** Places whose `name` field is what the map shows as their label (the editor keeps the two together). */
-export const NAMED_PLACES = new Set(['fort', 'landmark']);
+/** Places whose `name` field gives their label on the map (the editor keeps the two together). */
+export const NAMED_PLACES = new Set(['fort', 'landmark', 'ferry']);
+
+/**
+ * The label a named place shows on the map, from its name: a fort's or a landmark's name, and
+ * "Ferry → Wrecker's Isle" for a ferry. Null without a name, or for other places.
+ */
+export function namedLabel(type: string, name: unknown): string | null {
+  const n = String(name ?? '').trim();
+  if (!n || !NAMED_PLACES.has(type)) return null;
+  return type === 'ferry' ? `Ferry → ${n}` : n;
+}
 
 export const PLACE_FIELDS: Record<string, PlaceField[]> = {
   spawn_point: [],
@@ -736,6 +839,12 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
     { key: 'toY', label: 'Opens the gate at y (row)', type: 'number', min: 0, max: 1023, default: 0 },
   ],
   lock: [{ key: 'key', label: 'Key (the item that unlocks it)', type: 'text', options: KEY_ITEMS, default: KEY_ITEMS[0].value }],
+  ferry: [
+    { key: 'toX', label: 'Lands at x (column)', type: 'number', min: 0, max: 1023, default: 0 },
+    { key: 'toY', label: 'Lands at y (row)', type: 'number', min: 0, max: 1023, default: 0 },
+    { key: 'fare', label: 'Fare (coins; 0 is free)', type: 'number', min: FERRY_FARE.min, max: FERRY_FARE.max, default: 0 },
+    { key: 'name', label: "Where it goes (shown to players, like Wrecker's Isle)", type: 'text', default: '' },
+  ],
 };
 
 export const PLACE_HELP: Record<string, string> = {
@@ -752,13 +861,18 @@ export const PLACE_HELP: Record<string, string> = {
   landmark: `A named place on the overworld (the town, a lake, a keep), on its middle: walking within its radius (${LANDMARK_RADIUS.min} to ${LANDMARK_RADIUS.max} tiles, a circle) shows its name, and the first time counts as finding it. Put one Waystone object inside it (not in the Deep) for fast travel between the landmarks players have found.`,
   lever: 'On a Lever object: wires it to a Gate on this map (tap 🎯 Pick the gate, then the gate). A gate opens, for whoever pulled them and their party on that floor, once every lever wired to it is pulled; one place per lever and gate, so a lever can open several gates and a gate can need several levers. Monsters never pass a gate.',
   lock: "On a Locked door object: the item that unlocks it (the game's item id, like frost_key). A player who brings the key uses it up, and the door stays unlocked for them for good.",
-  npc: "A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller); the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
+  ferry: `On a Ferry boat object, moored by a jetty: players beside the boat tap it to sail to the landing tile on this map (tap 🎯 Pick the landing, then the tile) for its fare, ${FERRY_FARE.min} to ${FERRY_FARE.max} coins (0 is free). Its name is where it goes, shown to players ("the ferry to Wrecker's Isle"). One ferry per boat: for the way back, moor a boat by the landing with a ferry of its own. What players can reach from the landing counts as reached from beside the boat.`,
+  npc: "A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller), Gullhaven's harbourmaster and the castaway on Wrecker's Isle; the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
 };
 
-/** A place's props with defaults filled in. */
+/**
+ * A place's props with defaults filled in. A monster spawn without a radius (the game's file leaves
+ * some out) roams its monster's normal range, as in the game.
+ */
 export function placeProps(f: Feature): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {};
   for (const field of PLACE_FIELDS[f.type] ?? []) out[field.key] = f.props?.[field.key] ?? field.default;
+  if (f.type === 'monster_spawn' && f.props?.radius === undefined) out.radius = normalRange(out.kind);
   return out;
 }
 

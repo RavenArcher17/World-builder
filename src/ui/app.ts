@@ -11,7 +11,7 @@ import { createProject, deleteMap, parseProjectReport, rootMaps, serializeProjec
 import { restoreSnapshot, snapshotProject, snapshotsBytes, type PackedLayer, type ProjectSnapshot } from '../core/snapshot';
 import { Autosave, AutosaveError, browserTextStore, indexedDbStore } from './autosave';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
-import { NAMED_PLACES, OPEN_GROUND, PLACE_TYPES, gameKind, gameMapId, isGameGround, isRpgdc, isWalkableAt, newPlaceProps, placeProps, zoneAt } from '../core/rpgdc/game';
+import { OPEN_GROUND, PLACE_TYPES, gameKind, gameMapId, isGameGround, isRpgdc, isWalkableAt, namedLabel, newPlaceProps, placeProps, zoneAt } from '../core/rpgdc/game';
 import { cloneMap, regenerateRegion } from '../core/region';
 import { Rng, parseSeed, randomSeed } from '../core/rng';
 import { SCALES, getScale } from '../core/scales';
@@ -24,7 +24,7 @@ import { openCloudDialog, openSignInDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
 import { artBase, gameArtReady, keepGuards, loadGameArt, onGameArtChange, townGuards } from './gameArt';
-import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, puzzleStatus } from './gameUi';
+import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectStatus } from './gameUi';
 import { map3dPanel, sync3d } from './map3dUi';
 import { afterTilePaint, draw3dOverlay, is3dMode, modeOptions3d, paint3dAt, paint3dOptions, roomButton, status3d } from './build3dUi';
 import { is3d } from '../core/scene3d/options';
@@ -89,9 +89,10 @@ export class App {
   storey = 0;
   /**
    * Picking a tile on a map for a place: a link's arrival tile (the link lives on `sourceId`, the
-   * tile on `targetId`), or the gate a lever opens (both on the lever's map).
+   * tile on `targetId`), the gate a lever opens or the tile a ferry lands on (both on the place's
+   * own map).
    */
-  private pick: { sourceId: string; featureId: string; targetId: string; what: 'arrival' | 'gate' } | null = null;
+  private pick: { sourceId: string; featureId: string; targetId: string; what: 'arrival' | 'gate' | 'landing' } | null = null;
   /** A tile tapped with Select where no place stands (a gate shows its levers' wires). */
   private tapped: { mapId: string; cell: number } | null = null;
   /** A tile to highlight after jumping to a problem from the checks. */
@@ -521,6 +522,16 @@ export class App {
     this.draw();
   }
 
+  /** Pick the tile a ferry place lands on: tap it on the boat's own map (shown first where it lands now). */
+  startLandingPick(map: WorldMap, f: Feature): void {
+    this.pick = { sourceId: map.id, featureId: f.id, targetId: map.id, what: 'landing' };
+    const x = Number(f.props?.toX);
+    const y = Number(f.props?.toY);
+    if (Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < map.width && y < map.height && (x || y)) this.focusCell(map.id, x, y);
+    this.showPickBanner();
+    this.draw();
+  }
+
   private showPickBanner(): void {
     const banner = byId('pick-banner');
     const target = this.pick ? this.project.maps[this.pick.targetId] : null;
@@ -530,7 +541,15 @@ export class App {
     }
     banner.hidden = false;
     banner.replaceChildren(
-      h('span', {}, this.pick.what === 'gate' ? '🎯 Tap the gate this lever opens. Drag or pinch to move around.' : `🎯 Tap the tile players arrive on in ${target.name}. Drag or pinch to move around.`),
+      h(
+        'span',
+        {},
+        this.pick.what === 'gate'
+          ? '🎯 Tap the gate this lever opens. Drag or pinch to move around.'
+          : this.pick.what === 'landing'
+            ? '🎯 Tap the tile the ferry lands on. Drag or pinch to move around.'
+            : `🎯 Tap the tile players arrive on in ${target.name}. Drag or pinch to move around.`,
+      ),
       h('button', { onclick: () => this.cancelPick(true) }, 'Cancel'),
     );
   }
@@ -562,6 +581,16 @@ export class App {
       this.tapped = null;
       this.changed();
       toast(target.layers.object[cell] === O.GATE ? `The lever now opens the gate at (${x}, ${y})` : `⚠ (${x}, ${y}) isn't a gate — pick the gate the lever opens`);
+      return;
+    }
+    if (pick.what === 'landing') {
+      f.props = { ...(f.props ?? {}), toX: x, toY: y };
+      this.pick = null;
+      this.showPickBanner();
+      this.selectedFeature = f.id;
+      this.tapped = null;
+      this.changed();
+      toast(isWalkableAt(target, x, y) ? `The ferry now lands at (${x}, ${y})` : `⚠ (${x}, ${y}) can't be walked on — pick where the ferry lands`);
       return;
     }
     f.props = { ...(f.props ?? {}), toMap: gameMapId(target), toX: x, toY: y };
@@ -1668,7 +1697,7 @@ export class App {
           const f = featureAt(storeyView(map, this.storey), g, cell);
           this.selection = null;
           this.selectedFeature = f?.id ?? null;
-          // A gate with no place on it shows the wires from its levers.
+          // A gate with no place on it shows the wires from its levers; a ferry's landing, its route.
           this.tapped = f ? null : { mapId: map.id, cell };
           this.flash = null;
           const now = performance.now();
@@ -1784,11 +1813,12 @@ export class App {
       r: g.row(cell),
       ...(this.storey && { z: this.storey }),
     };
-    // A new lever place is wired to the nearest gate.
+    // A new lever place is wired to the nearest gate; a new ferry lands beside the nearest other boat.
     const props = game ? newPlaceProps(map, type, { x: g.col(cell), y: g.row(cell) }) : uk?.props;
     if (props) f.props = props;
-    // A new landmark (or fort) is labelled with its name.
-    if (game && NAMED_PLACES.has(type) && props?.name) f.name = String(props.name);
+    // A new landmark (or fort) is labelled with its name, a ferry with where it goes.
+    const label = game ? namedLabel(type, props?.name) : null;
+    if (label) f.name = label;
     map.features.push(f);
     this.selectedFeature = f.id;
     this.changed();
@@ -1873,8 +1903,8 @@ export class App {
     if (isRpgdc(map)) {
       const z = zoneAt(map, cell);
       parts.push(z ? `${z.name} zone` : 'no zone', isWalkableAt(map, g.col(cell), g.row(cell)) ? 'walkable' : 'blocked');
-      const puzzle = puzzleStatus(map, g.col(cell), g.row(cell));
-      if (puzzle) parts.push(puzzle);
+      const about = objectStatus(map, g.col(cell), g.row(cell));
+      if (about) parts.push(about);
     } else if (L.zone[cell]) {
       parts.push(`zone ${L.zone[cell]}`);
     }

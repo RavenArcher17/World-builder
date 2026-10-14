@@ -122,6 +122,13 @@ export const OBJECTS: ObjectDef[] = [
   o(68, 'gate', 'Gate (opened by levers)', '#5a5e66', '🚧', 'gate', 'puzzle'),
   o(69, 'lever', 'Lever', '#d8a84a', '🕹️', 'lever', 'puzzle', true),
   o(70, 'locked_door', 'Locked door (needs a key)', '#7a4a22', '🔒', 'lockdoor', 'puzzle'),
+  // RPG-DC's sea: a boat moored by a jetty, used from beside it to sail where its ferry place says
+  // (to an island and back), the island's palms and the wrecks on its beaches (in the way like
+  // boulders), and the swordfish off its shores.
+  o(71, 'boat', 'Ferry boat', '#3a6a9a', '⛵', 'icon', 'travel', true),
+  o(72, 'palm', 'Palm', '#4f9a3f', '🌴', 'icon', 'rock'),
+  o(73, 'wreck', 'Wreck', '#7a5a3a', '🛶', 'icon', 'rock'),
+  o(74, 'fishing_swordfish', 'Fishing spot: swordfish', '#6a7aa8', '🦈', 'icon', 'fishing', true),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -194,7 +201,11 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'RUIN'
   | 'GATE'
   | 'LEVER'
-  | 'LOCKED_DOOR',
+  | 'LOCKED_DOOR'
+  | 'BOAT'
+  | 'PALM'
+  | 'WRECK'
+  | 'FISHING_SWORDFISH',
   number
 >;
 

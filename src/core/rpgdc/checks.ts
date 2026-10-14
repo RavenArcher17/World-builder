@@ -9,6 +9,8 @@ import {
   ARENA_MAP_ID,
   BACK,
   BUILDING_SIZES,
+  FERRY_FARE,
+  FERRY_NAME_MAX,
   FORT_ID,
   FORT_RADIUS,
   LANDMARK_ID,
@@ -21,6 +23,7 @@ import {
   ITEM_ID,
   KEY_ITEMS,
   doorLocks,
+  ferries,
   fortChest,
   leverWires,
   BUILDING_STYLES,
@@ -89,8 +92,8 @@ const HERBS: Record<number, { name: string; ground: number; zones: string[] }> =
   [O.HERB_BOGMYRTLE]: { name: 'Bog myrtle', ground: T.MUD, zones: WILD },
   [O.HERB_FROSTCAP]: { name: 'Frostcap', ground: T.SNOW, zones: WILD },
 };
-/** What the game draws as a tree (a thicket looks like the trees round it), which can hide what's near it. */
-const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW, O.YEW, O.THICKET]);
+/** What the game draws as a tree (a thicket looks like the trees round it, and palms are see-through like trees), which can hide what's near it. */
+const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW, O.YEW, O.THICKET, O.PALM]);
 /** Objects used from a tile beside them, which must be one players can walk to (and caches and levers, below). */
 const USED_FROM_BESIDE = new Set(['station', 'fishing', 'altar', 'travel']);
 const groundName = (t: number) => tile(t).name.toLowerCase();
@@ -199,9 +202,10 @@ export function checkGameMaps(project: Project): GameIssue[] {
       }
     }
 
-    // Stations, altars, waystones, caches, levers and fishing spots must be usable from a tile you
-    // can walk to (thickets are walked through, so a glade behind one is reachable; players open
-    // gates and locked doors, so they count as open too, as in the game's checks).
+    // Stations, altars, waystones, boats, caches, levers and fishing spots must be usable from a
+    // tile you can walk to (thickets are walked through, so a glade behind one is reachable; players
+    // open gates and locked doors, so they count as open too, as in the game's checks; and from
+    // beside a boat they can sail where its ferry lands).
     const starts = m === overworld ? owSpawns.map((s) => ({ x: s.f.c, y: s.f.r })) : arrivals.get(m) ?? [];
     const walk = walkableTiles(m);
     const walkAt = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < m.height && walk[y * w + x] === 1;
@@ -340,14 +344,31 @@ export function checkGameMaps(project: Project): GameIssue[] {
         add('warning', m, l.x, l.y, `${label} wants "${l.key}", which isn't a key World Builder knows (${KEY_ITEMS.map((key) => key.value).join(', ')}): the game won't load a lock whose key isn't one of its items, so check it has one called that.`);
       }
     });
+    // Ferries (the game's checks, and what it won't load): each ferry place on a boat, one to a
+    // boat, landing on a tile of this map players can walk on, for a whole number of coins, with a
+    // name (where it goes); and every boat has its ferry.
+    const sailings = ferries(m);
+    sailings.forEach((f, k) => {
+      const label = `The ferry ${f.name ? `to ${f.name} ` : ''}(${f.x}, ${f.y})`;
+      if (objectOn(f.x, f.y) !== O.BOAT) add('error', m, f.x, f.y, `${label} isn't on a boat: put it on a Ferry boat object.`);
+      else if (sailings.slice(0, k).some((o) => o.x === f.x && o.y === f.y)) add('error', m, f.x, f.y, `${label}: there's already a ferry from this boat.`);
+      if (!Number.isInteger(f.toX) || !Number.isInteger(f.toY) || !isWalkableAt(m, f.toX, f.toY)) {
+        add('error', m, f.x, f.y, `${label} lands on (${f.toX}, ${f.toY}), which you can't walk on: pick where it lands.`);
+      }
+      if (!Number.isInteger(f.fare) || f.fare < FERRY_FARE.min || f.fare > FERRY_FARE.max) {
+        add('error', m, f.x, f.y, `${label}'s fare must be a whole number of coins from ${FERRY_FARE.min} to ${FERRY_FARE.max}.`);
+      }
+      if (!f.name || f.name.length > FERRY_NAME_MAX) add('error', m, f.x, f.y, `${label} needs a name: where it goes, in up to ${FERRY_NAME_MAX} letters.`);
+    });
     for (const i of things) {
       const o = L.object[i];
-      if (o !== O.GATE && o !== O.LEVER && o !== O.LOCKED_DOOR) continue;
+      if (o !== O.GATE && o !== O.LEVER && o !== O.LOCKED_DOOR && o !== O.BOAT) continue;
       const x = i % w;
       const y = Math.floor(i / w);
       if (o === O.GATE && !wires.some((l) => l.toX === x && l.toY === y)) add('error', m, x, y, `Gate (${x}, ${y}) has no lever to open it: put a lever place on a Lever and point it at this gate.`);
       if (o === O.LEVER && !wires.some((l) => l.x === x && l.y === y)) add('error', m, x, y, `Lever (${x}, ${y}) isn't wired to a gate: put a lever place on it and point it at the gate it opens.`);
       if (o === O.LOCKED_DOOR && !locks.some((l) => l.x === x && l.y === y)) add('error', m, x, y, `Locked door (${x}, ${y}) has no lock: put a lock place on it, naming the key that opens it.`);
+      if (o === O.BOAT && !sailings.some((f) => f.x === x && f.y === y)) add('error', m, x, y, `Boat (${x}, ${y}) has no ferry place: put a ferry place on it, saying where it sails.`);
     }
 
     // Thickets (a warning): the game lets players push through one wherever it stands, so one on

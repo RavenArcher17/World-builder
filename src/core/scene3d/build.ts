@@ -534,9 +534,17 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
       const [cx, cz] = centres[i];
       const set = Ez && Ez.facing[i] >= 0 ? Ez.facing[i] : -1;
       // A gate or door spans the passage it stands in: east–west between walls to its west or
-      // east, else north–south (the way RPG-DC's doorFacing turns its art).
+      // east, else north–south (the way RPG-DC's doorFacing turns its art). A boat lies alongside
+      // its jetty: north–south when land is west or east of it, else east–west (RPG-DC's boat-y and boat-x).
       const spans = def?.shape === 'gate' || def?.shape === 'lockdoor';
-      const facing = set >= 0 ? angleOfFacing(set) : spans ? spanAngle(i, centres, across, sol) : facingAngle(i, centres, across, sol);
+      const facing =
+        set >= 0
+          ? angleOfFacing(set)
+          : spans
+            ? spanAngle(i, centres, across, sol)
+            : def?.key === 'boat'
+              ? mooredAngle(i, centres, across, Lz.terrain)
+              : facingAngle(i, centres, across, sol);
       if (def) {
         objectModel(objMesh, def, cx * S, y, cz * S, S, i, facing, (dir) => {
           // Fence rails run to neighbouring fences (and ruined walls to neighbouring ruins).
@@ -1017,6 +1025,15 @@ function spanAngle(i: number, centres: [number, number][], across: number[][], s
   return wallBeside ? 0 : Math.PI / 2;
 }
 
+/**
+ * The way a boat at cell i lies (radians, 0 = along x): along z (north–south) when there's land,
+ * not water, to its west or east (on its row), else along x.
+ */
+function mooredAngle(i: number, centres: [number, number][], across: number[][], terrain: ArrayLike<number>): number {
+  const landBeside = across[i].some((n) => n >= 0 && !isWater(terrain[n]) && Math.abs(centres[n][1] - centres[i][1]) < 0.25);
+  return landBeside ? Math.PI / 2 : 0;
+}
+
 function stairs(out: MeshBuilder, centre: [number, number], ang: number, S: number, y: number, dir: 1 | -1): void {
   const steps = 5;
   const run = S * 0.8;
@@ -1257,6 +1274,73 @@ function objectModel(
         const az = z + Math.sin(a) * 0.36 * k * side;
         out.cylinder(ax, y + h * k, az, 0.13 * k, 0.11 * k, 0.6 * k, 6, c);
       }
+      return;
+    }
+    case 'palm': {
+      // A ringed trunk leaning one way as it rises, coconuts under a crown of drooping fronds.
+      const a = r * Math.PI * 2;
+      const H = 3.2 * k;
+      const segs = 5;
+      const lean = (t: number): [number, number] => [x + Math.cos(a) * 0.6 * k * t * t, z + Math.sin(a) * 0.6 * k * t * t];
+      for (let n = 0; n < segs; n++) {
+        const [sx, sz] = lean(n / segs);
+        out.cylinder(sx, y + (H * n) / segs, sz, (0.17 - 0.02 * n) * k, (0.15 - 0.02 * n) * k, H / segs + 0.03, 6, shade(trunk, n % 2 ? 0.85 : 1.1));
+      }
+      const [tx, tz] = lean(1);
+      const top = y + H;
+      for (let n = 0; n < 3; n++) out.blob(tx + Math.cos(a + n * 2.1) * 0.13 * k, top - 0.12 * k, tz + Math.sin(a + n * 2.1) * 0.13 * k, 0.1 * k, 0.1 * k, 0.1 * k, rgba('#5a4a2a'));
+      for (let n = 0; n < 7; n++) {
+        // A frond: arching up from the crown, then down to its tip, seen from above and below.
+        const b = a + (n / 7) * Math.PI * 2 + r;
+        const [dx, dz] = [Math.cos(b), Math.sin(b)];
+        const len = 1.35 * k;
+        const wd = 0.24 * k;
+        const base: V3 = [tx, top, tz];
+        const tip: V3 = [tx + dx * len, top - 0.55 * k, tz + dz * len];
+        const left: V3 = [tx + dx * len * 0.5 - dz * wd, top + 0.12 * k, tz + dz * len * 0.5 + dx * wd];
+        const right: V3 = [tx + dx * len * 0.5 + dz * wd, top + 0.12 * k, tz + dz * len * 0.5 - dx * wd];
+        for (const up of [1, -1]) {
+          out.face([base, left, tip], up > 0 ? c : shade(c, 0.7), [0, up, 0]);
+          out.face([base, tip, right], up > 0 ? c : shade(c, 0.7), [0, up, 0]);
+        }
+      }
+      return;
+    }
+    case 'wreck': {
+      // A boat's hull run aground: its keel, one side standing and the other stove in to its ribs,
+      // and the stump of its mast; turned at random.
+      const turn = r * Math.PI;
+      const [ca, sa] = [Math.cos(turn), Math.sin(turn)];
+      const at = (u: number, v: number): [number, number] => [x + ca * u - sa * v, z + sa * u + ca * v];
+      out.box(x, y, z, 2.2 * k, 0.3 * k, 0.9 * k, c, turn);
+      const [ux, uz] = at(0, -0.45 * k);
+      out.box(ux, y, uz, 2.0 * k, 0.95 * k, 0.12 * k, shade(c, 1.1), turn);
+      for (let n = 0; n < 4; n++) {
+        const [rx, rz] = at((-0.75 + n * 0.5) * k, 0.42 * k);
+        out.box(rx, y, rz, 0.1 * k, (0.5 + 0.2 * (n % 2)) * k, 0.1 * k, shade(c, 0.75), turn);
+      }
+      const [px, pz] = at(-0.5 * k, 0.4 * k);
+      out.box(px, y, pz, 0.7 * k, 0.35 * k, 0.1 * k, shade(c, 1.1), turn);
+      out.cylinder(x + ca * 0.2 * k, y + 0.3 * k, z + sa * 0.2 * k, 0.08 * k, 0.07 * k, 0.9 * k, 6, shade(c, 0.85));
+      return;
+    }
+    case 'boat': {
+      // A small sailing boat on the water, along `facing`: a wooden hull painted along the top, a
+      // pointed bow, a mast and a sail set along it.
+      const [ca, sa] = [Math.cos(facing), Math.sin(facing)];
+      const at = (u: number): [number, number] => [x + ca * u, z + sa * u];
+      out.box(x, y - 0.35, z, 2.2, 0.6, 0.95, wood, facing);
+      out.box(x, y + 0.25, z, 2.25, 0.14, 1.0, c, facing);
+      const [bx, bz] = at(1.3);
+      out.box(bx, y - 0.3, bz, 0.45, 0.6, 0.6, wood, facing);
+      out.box(bx, y + 0.25, bz, 0.5, 0.14, 0.64, c, facing);
+      const [mx, mz] = at(-0.15);
+      out.cylinder(mx, y + 0.25, mz, 0.06, 0.05, 2.6, 6, shade(wood, 0.8));
+      const foot: V3 = [mx, y + 0.55, mz];
+      const head: V3 = [mx, y + 2.75, mz];
+      const [sx, sz] = at(-1.05);
+      const clew: V3 = [sx, y + 0.55, sz];
+      for (const side of [1, -1]) out.face([foot, head, clew], rgba('#efe6d2'), [-sa * side, 0, ca * side]);
       return;
     }
     case 'dead_tree': {
