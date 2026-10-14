@@ -48,7 +48,7 @@ const GROUND_WALKABLE = [true, true, false, true, true, false, true, true, true,
 export const OPEN_GROUND = new Set<number>([T.GRASS, T.SAND, T.MUD, T.SNOW, T.STONE, T.ICE]);
 
 /** How many objects the game knows: World Builder's first ones, in the same order. */
-const GAME_OBJECT_COUNT = 80;
+const GAME_OBJECT_COUNT = 82;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
 export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
 export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
@@ -260,6 +260,8 @@ export const NPC_ROLES = [
   { value: 'castaway', label: 'Castaway (Marooned Meg)' },
   // Farming: Martha sells seeds and compost at Giles's Farm (a shop, like the General Store).
   { value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" },
+  // Land and houses: Pemberton sells plots of land, in town by the bank and in Gullhaven.
+  { value: 'land_agent', label: 'Land agent (Pemberton, sells plots of land)' },
 ];
 /** Townspeople worth robbing, who keep a guard indoors with them (the game's `guarded` in thieving.ts). */
 export const GUARDED_ROLES = new Set(['mayor']);
@@ -571,7 +573,7 @@ const kindField = (def: string): PlaceField => ({
   default: def,
 });
 
-export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant', 'landmark', 'lever', 'lock', 'ferry'] as const;
+export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant', 'landmark', 'lever', 'lock', 'ferry', 'plot'] as const;
 
 /** A guild fort's yard: this far round its banner (the game's FORT_RADIUS); its palisade is one further out. */
 export const FORT_RADIUS = 4;
@@ -767,11 +769,57 @@ export function boatFacing(map: WorldMap, x: number, y: number): 'x' | 'y' {
   return isWalkableAt(map, x - 1, y) || isWalkableAt(map, x + 1, y) ? 'y' : 'x';
 }
 
+// ---- land: plots players buy and build a house on (the game's land.ts) -------------------
+
+/** How many tiles a side a plot can be: 12, or 20 for a large one (room for a guild's hall). The game refuses others. */
+export const PLOT_SIZES = [12, 20] as const;
+/** Plot ids, as the game takes them (its FORT_ID: owners are saved by id, so keep it once players own the plot). */
+export const PLOT_ID = FORT_ID;
+
+/**
+ * A plot place as the game reads it: its id (trimmed), its north-west corner (x, y) and how many
+ * tiles a side it is.
+ */
+export interface GamePlot {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  feature: Feature;
+}
+
+/** The plot places on a map, in the order the game reads them. */
+export function plots(map: WorldMap): GamePlot[] {
+  return map.features
+    .filter((f) => f.type === 'plot')
+    .map((f) => {
+      const p = placeProps(f);
+      return { id: String(p.id ?? '').trim(), x: f.c, y: f.r, size: Number(p.size), feature: f };
+    });
+}
+
+/** Whether a plot's size is one the game takes (12 or 20). */
+export const plotSizeOk = (size: number): boolean => (PLOT_SIZES as readonly number[]).includes(size);
+
+/** The first plot (x, y) is on (the game's plotAt), or null. */
+export function plotAt(list: readonly GamePlot[], x: number, y: number): GamePlot | null {
+  return list.find((p) => x >= p.x && y >= p.y && x < p.x + p.size && y < p.y + p.size) ?? null;
+}
+
+/**
+ * Where a plot's sign stands (the game's plotSign): in the middle of its south edge, its front,
+ * where it says it's for sale and its owner taps to build. The house goes up at the back.
+ */
+export function plotSign(p: { x: number; y: number; size: number }): { x: number; y: number } {
+  return { x: p.x + Math.floor(p.size / 2), y: p.y + p.size - 1 };
+}
+
 /**
  * Fields for a new place on `map` (at `at`, when it's known): the defaults; for a landmark an id
  * and a name not used on the map yet (landmark_2, "Landmark 2"), to change in its fields; for a
  * lever, wired to the nearest gate; for a ferry, landing beside the nearest other boat (the way
- * back is usually its pair), named after the landmark it lands in.
+ * back is usually its pair), named after the landmark it lands in; for a plot, an id not used on
+ * the map yet (plot37).
  */
 export function newPlaceProps(map: WorldMap, type: string, at?: { x: number; y: number }): Record<string, string | number> | undefined {
   const props = defaultProps(type);
@@ -798,6 +846,12 @@ export function newPlaceProps(map: WorldMap, type: string, at?: { x: number; y: 
       props.name = landmarkAt(landmarks(map), landing.x, landing.y)?.name ?? '';
     }
   }
+  if (type === 'plot' && props) {
+    const taken = new Set(plots(map).map((p) => p.id));
+    let n = taken.size + 1;
+    while (taken.has(`plot${n}`)) n++;
+    props.id = `plot${n}`;
+  }
   return props;
 }
 
@@ -812,6 +866,18 @@ export function namedLabel(type: string, name: unknown): string | null {
   const n = String(name ?? '').trim();
   if (!n || !NAMED_PLACES.has(type)) return null;
   return type === 'ferry' ? `Ferry → ${n}` : n;
+}
+
+/** The field each labelled place's label comes from: a fort's, landmark's or ferry's name, a plot's id. */
+export const LABEL_FIELD: Record<string, string> = { fort: 'name', landmark: 'name', ferry: 'name', plot: 'id' };
+
+/**
+ * The label a place shows on the map, from its fields: a named place's (namedLabel), and a plot's
+ * id ("plot11"). Null when that field is empty, or for other places.
+ */
+export function placeLabel(type: string, props: Record<string, unknown> | undefined): string | null {
+  if (type !== 'plot') return namedLabel(type, props?.name);
+  return String(props?.id ?? '').trim() || null;
 }
 
 export const PLACE_FIELDS: Record<string, PlaceField[]> = {
@@ -858,6 +924,19 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
     { key: 'fare', label: 'Fare (coins; 0 is free)', type: 'number', min: FERRY_FARE.min, max: FERRY_FARE.max, default: 0 },
     { key: 'name', label: "Where it goes (shown to players, like Wrecker's Isle)", type: 'text', default: '' },
   ],
+  plot: [
+    { key: 'id', label: 'Id (letters, digits, _; keep it once players own the plot)', type: 'text', default: '' },
+    {
+      key: 'size',
+      label: 'Size (tiles a side)',
+      type: 'select',
+      options: [
+        { value: '12', label: '12 × 12' },
+        { value: '20', label: "20 × 20 (large: room for a guild's hall)" },
+      ],
+      default: 12,
+    },
+  ],
 };
 
 export const PLACE_HELP: Record<string, string> = {
@@ -875,7 +954,8 @@ export const PLACE_HELP: Record<string, string> = {
   lever: 'On a Lever object: wires it to a Gate on this map (tap 🎯 Pick the gate, then the gate). A gate opens, for whoever pulled them and their party on that floor, once every lever wired to it is pulled; one place per lever and gate, so a lever can open several gates and a gate can need several levers. Monsters never pass a gate.',
   lock: "On a Locked door object: the item that unlocks it (the game's item id, like frost_key). A player who brings the key uses it up, and the door stays unlocked for them for good.",
   ferry: `On a Ferry boat object, moored by a jetty: players beside the boat tap it to sail to the landing tile on this map (tap 🎯 Pick the landing, then the tile) for its fare, ${FERRY_FARE.min} to ${FERRY_FARE.max} coins (0 is free). Its name is where it goes, shown to players ("the ferry to Wrecker's Isle"). One ferry per boat: for the way back, moor a boat by the landing with a ferry of its own. What players can reach from the landing counts as reached from beside the boat.`,
-  npc: "A townsperson who stands here all day: tap them in the game to bank or trade (Martha, the seed seller, sells seeds and compost by the farm's field). The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller), Gullhaven's harbourmaster and the castaway on Wrecker's Isle; the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
+  plot: "A plot of land players buy from the land agent and build a house on: this tile is its north-west (top) corner, and it's 12 × 12 tiles, or 20 × 20 for a large one (the line on the map). On the overworld, out of the Safe zone, and all open ground players can walk to: nothing standing on it (no objects at all), no doors or stairs, townspeople, monster spawns, forts or the merchant, and not overlapping another plot. Its sign stands in the middle of its south edge, its front; the house goes up at the back. Keep its id once players own it.",
+  npc: "A townsperson who stands here all day: tap them in the game to bank or trade (Martha, the seed seller, sells seeds and compost by the farm's field; Pemberton, the land agent, sells plots of land). The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller), Gullhaven's harbourmaster and the castaway on Wrecker's Isle; the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
 };
 
 /**

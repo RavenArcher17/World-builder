@@ -20,6 +20,9 @@ import {
   guardPosts,
   houseGuards,
   placeProps,
+  plotSign,
+  plotSizeOk,
+  plots,
   type GameBuilding,
 } from '../core/rpgdc/game';
 import { T } from '../core/tiles';
@@ -212,6 +215,8 @@ const ORE_ART: Partial<Record<number, string>> = {
   [O.ADAMANT_ROCK]: 'ore-adamant',
   [O.RUNITE_ROCK]: 'ore-runite',
   [O.ESSENCE_ROCK]: 'ore-essence',
+  // Construction's limestone, in the Old Quarry.
+  [O.LIMESTONE_ROCK]: 'ore-limestone',
 };
 const ART_FOR: Partial<Record<number, string>> = {
   ...ORE_ART,
@@ -242,6 +247,8 @@ const INDOOR_ART: Partial<Record<number, string>> = {
   // Farming's workbenches: the spinning wheel (in the farmhouse and the Tailor's) and the windmill's millstones.
   [O.SPINNING_WHEEL]: 'spinning_wheel',
   [O.MILLSTONES]: 'millstones',
+  // Construction's workbench, in the carpenter's yard in town.
+  [O.SAWBENCH]: 'sawbench',
 };
 /** Farming's patches, from the world sheet: bare tilled beds, drawn flat on the ground (players walk over them). */
 const PATCH_ART: Partial<Record<number, string>> = {
@@ -258,6 +265,16 @@ const PATCH_ART: Partial<Record<number, string>> = {
 export function farmFrame(o: number): { sheet: 'world' | 'indoor'; frame: string; flat: boolean } | null {
   if (PATCH_ART[o]) return { sheet: 'world', frame: PATCH_ART[o]!, flat: true };
   if (o === O.SPINNING_WHEEL || o === O.MILLSTONES) return { sheet: 'indoor', frame: INDOOR_ART[o]!, flat: false };
+  return null;
+}
+/**
+ * The sheet and frame the game draws Construction's objects with, or null for anything else: the
+ * sawbench from the indoor sheet like the other workbenches, limestone from the world sheet like
+ * the ore rocks.
+ */
+export function constructionFrame(o: number): { sheet: 'world' | 'indoor'; frame: string } | null {
+  if (o === O.SAWBENCH) return { sheet: 'indoor', frame: INDOOR_ART[o]! };
+  if (o === O.LIMESTONE_ROCK) return { sheet: 'world', frame: ORE_ART[o]! };
   return null;
 }
 /** Things in the streets, from the world sheet wherever they stand (indoors too). */
@@ -430,6 +447,8 @@ const NPC_OUTFITS: Record<string, Record<string, [string, string?]>> = {
   miller: { head: ['leather_hood', '#f4f0e4'], chest: ['cloth_shirt', '#f4f0e4'], hands: ['default_hands'], legs: ['cloth_pants', '#d8d0bc'], feet: ['leather_boots', '#b8a888'] },
   // Martha, who sells seeds at Giles's Farm, in a green smock and a straw-coloured headscarf.
   seeds: { head: ['leather_hood', '#f0d890'], chest: ['cloth_shirt', '#9ac070'], hands: ['default_hands'], legs: ['cloth_pants', '#7a6a48'], feet: ['leather_boots', '#6a5038'] },
+  // Pemberton, the land agent, in a dark green coat and grey trousers: a man of business.
+  land_agent: { head: ['head_short'], chest: ['mage_vest_alt1', '#4a6a40'], hands: ['mage_sleeves_alt1', '#4a6a40'], legs: ['cloth_pants', '#6a6a70'], feet: ['leather_boots', '#3a3430'] },
   // Gullhaven's harbourmaster in a navy coat and cap; the castaway on Wrecker's Isle in sun-faded rags.
   harbourmaster: { head: ['leather_hood', '#34466a'], chest: ['leather_chest', '#3a5480'], hands: ['default_hands'], legs: ['cloth_pants', '#e0d8c4'], feet: ['leather_boots', '#3a3430'] },
   castaway: { head: ['head_short'], chest: ['cloth_shirt', '#e0d0a8'], hands: ['default_hands'], legs: ['cloth_pants', '#9a8a68'], feet: ['cloth_sandals'] },
@@ -540,6 +559,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     if (art.images.indoor && !art.sheets.indoor?.frames[INDOOR_ART[o]!]) symbol(o, i);
     else putFrom('indoor', INDOOR_ART[o]!, i);
   };
+  /** An ore rock (limestone too), from the world sheet wherever it is; its plain symbol until the game server has its art. */
+  const putOre = (o: number, i: number) => putOr('world', ORE_ART[o]!, o, i);
   /** A Farming patch, flat on the ground, from the world sheet; its plain symbol (a tilled bed) until the game server has the art. */
   const putPatch = (i: number) => putOr('world', PATCH_ART[L.object[i]]!, L.object[i], i);
   /** A gate, lever or locked door, from the dungeon sheet (in dungeons of any look, and insides). */
@@ -667,7 +688,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       } else if (DECOR_ART[L.object[i]]) {
         putDecor(L.object[i], i);
       } else if (ORE_ART[L.object[i]]) {
-        putFrom('world', ORE_ART[L.object[i]]!, i);
+        putOre(L.object[i], i);
       } else if (L.object[i] !== O.DOOR && INDOOR_ART[L.object[i]]) {
         putIndoor(L.object[i], i);
       }
@@ -736,6 +757,14 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     const c = fortChest(f.c, f.r);
     chests.add(at(c.x, c.y));
   }
+  // Plots of land: the game draws a signpost in the middle of each one's south edge (its outline
+  // on the ground is drawn over the map, with the places).
+  const signs = new Set<number>();
+  for (const p of plots(map)) {
+    if (!plotSizeOk(p.size)) continue;
+    const sign = plotSign(p);
+    signs.add(at(sign.x, sign.y));
+  }
   for (const i of order) {
     const x = i % w;
     const y = Math.floor(i / w);
@@ -757,7 +786,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     else if (DECOR_ART[o]) putDecor(o, i);
     else if (o === O.DOOR) {
       if (!inHouse(x, y)) put('door-timber-s', i);
-    } else if (o !== O.SEWER_GRATE && ART_FOR[o]) put(ART_FOR[o]!, i);
+    } else if (ORE_ART[o]) putOre(o, i);
+    else if (o !== O.SEWER_GRATE && ART_FOR[o]) put(ART_FOR[o]!, i);
     else if (INDOOR_ART[o]) putIndoor(o, i);
     else if (o === O.FENCE) {
       if (fence(x, y - 1)) put('fence-n', i);
@@ -769,6 +799,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     }
     if (chests.has(i)) put('bank', i, { tint: '#ffd27a' });
     if (banners.has(i)) drawBanner(i);
+    if (signs.has(i)) put('signpost', i);
     drawCharacter(i);
     const b = houses.get(i);
     if (b) drawHouse(b);

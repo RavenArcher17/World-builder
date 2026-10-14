@@ -77,6 +77,7 @@ export const FEATURE_DEFS: FeatureDef[] = [
   f('lever', 'Lever → gate', '🕹️', 'game', 3),
   f('lock', "Lock (a door's key)", '🔑', 'game', 3),
   f('ferry', 'Ferry → landing', '⛵', 'game', 5),
+  f('plot', 'Plot of land', '🏡', 'game', 4),
   // Underkeep maps (settings.underkeep; see underkeep/)
   f('uk_stair', 'Great Stair (entry and exit)', '🪜', 'game', 8),
   f('uk_exit', 'Way out', '🚪', 'game', 6),

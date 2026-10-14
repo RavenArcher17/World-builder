@@ -11,7 +11,7 @@ import {
   DUNGEON_THEMES,
   GAME_OBJECTS,
   GROUND_TILES,
-  NAMED_PLACES,
+  LABEL_FIELD,
   PLACE_FIELDS,
   PLACE_HELP,
   PLACE_TYPES,
@@ -26,8 +26,12 @@ import {
   leverWires,
   mapTheme,
   mapZone,
-  namedLabel,
+  placeLabel,
   placeProps,
+  plotAt,
+  plotSign,
+  plotSizeOk,
+  plots,
   withProp,
   zoneByKey,
 } from '../core/rpgdc/game';
@@ -59,7 +63,7 @@ const OBJECT_GROUPS: [string, string[]][] = [
   ['Streets', ['street']],
   ['Indoors', ['furniture']],
 ];
-const ORE_OBJECTS = [O.COPPER_ROCK, O.TIN_ROCK, O.IRON_ROCK, O.GOLD_ROCK, O.MITHRIL_ROCK, O.ADAMANT_ROCK, O.RUNITE_ROCK, O.ESSENCE_ROCK];
+const ORE_OBJECTS = [O.COPPER_ROCK, O.TIN_ROCK, O.IRON_ROCK, O.GOLD_ROCK, O.MITHRIL_ROCK, O.ADAMANT_ROCK, O.RUNITE_ROCK, O.ESSENCE_ROCK, O.LIMESTONE_ROCK];
 
 function palButton(label: string, icon: HTMLElement | string, active: boolean, onclick: () => void, title?: string): HTMLButtonElement {
   return h('button', { class: `pal${active ? ' active' : ''}`, title: title ?? label, onclick }, typeof icon === 'string' ? h('span', { class: 'pal-icon' }, icon) : icon, h('span', { class: 'pal-label' }, label));
@@ -138,10 +142,10 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
   const props = placeProps(f);
   const set = (key: string, value: string | number) => {
     app.pushUndo();
-    // A fort's or landmark's label on the map is its name (a ferry's, "Ferry → " where it goes):
-    // renaming it renames the label too, unless the label was given a name of its own.
-    if (key === 'name' && NAMED_PLACES.has(f.type) && [namedLabel(f.type, placeProps(f).name), featureDef(f.type).label, ''].includes(f.name)) {
-      f.name = namedLabel(f.type, value) ?? featureDef(f.type).label;
+    // A fort's or landmark's label on the map is its name (a ferry's, "Ferry → " where it goes; a
+    // plot's, its id): renaming it renames the label too, unless the label was given a name of its own.
+    if (key === LABEL_FIELD[f.type] && [placeLabel(f.type, placeProps(f)), featureDef(f.type).label, ''].includes(f.name)) {
+      f.name = placeLabel(f.type, { [key]: value }) ?? featureDef(f.type).label;
     }
     f.props = withProp(f, key, value);
     app.changed();
@@ -155,7 +159,8 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
           : field.options ?? [];
       for (const o of options) sel.append(h('option', { value: o.value }, o.label));
       sel.value = String(props[field.key] ?? '');
-      sel.onchange = () => set(field.key, sel.value);
+      // A choice of numbers (a plot's size) is kept as a number.
+      sel.onchange = () => set(field.key, typeof field.default === 'number' ? Number(sel.value) : sel.value);
       box.append(h('label', {}, field.label, sel));
     } else if (field.type === 'text') {
       // Ids and item ids are lower-case: no capitals or corrections from a phone's keyboard.
@@ -220,6 +225,22 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
       ),
     );
   }
+  if (f.type === 'plot') {
+    // Its tiles and its sign (the outline on the map).
+    const size = Number(props.size);
+    const sign = plotSign({ x: f.c, y: f.r, size });
+    box.append(
+      h(
+        'p',
+        { class: 'hint' },
+        !plotSizeOk(size)
+          ? '⚠ A plot is 12 or 20 tiles a side: choose its size.'
+          : f.c + size > map.width || f.r + size > map.height
+            ? '⚠ It runs off the map: move it or make it smaller.'
+            : `${size} × ${size} tiles, from (${f.c}, ${f.r}) to (${f.c + size - 1}, ${f.r + size - 1}) (the outline on the map); its sign stands at (${sign.x}, ${sign.y}). Drag it with Place to move it.`,
+      ),
+    );
+  }
   if (f.type === 'link') {
     const target = findGameMap(app.project, props.toMap);
     const tx = Number(props.toX);
@@ -271,6 +292,14 @@ export function objectStatus(map: WorldMap, x: number, y: number): string | null
     return lock ? `key: ${lock.key || 'none'}` : 'no lock';
   }
   return null;
+}
+
+/** What the status bar says about a tile on a plot of land: the plot, and its sign. Null off every plot. */
+export function plotStatus(map: WorldMap, x: number, y: number): string | null {
+  const p = plotAt(plots(map), x, y);
+  if (!p) return null;
+  const sign = plotSign(p);
+  return `plot ${p.id || '?'} (${p.size}×${p.size})${sign.x === x && sign.y === y ? ', its sign' : ''}`;
 }
 
 /** The RPG-DC section of the Map panel: game id, zones and their rules, checks and export. */

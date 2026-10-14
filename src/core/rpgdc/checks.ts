@@ -32,6 +32,8 @@ import {
   MONSTER_KINDS,
   NEIGHBOURS,
   NPC_ROLES,
+  PLOT_ID,
+  PLOT_SIZES,
   ROOF_COLOURS,
   WALL_COLOURS,
   buildingSizeOk,
@@ -52,6 +54,8 @@ import {
   mapZone,
   placeProps,
   passableTiles,
+  plotSizeOk,
+  plots,
   reachable,
   stairsDirection,
   zoneAt,
@@ -101,6 +105,8 @@ const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW, O.YEW, O.THICKET, O.PALM
  */
 const USED_FROM_BESIDE = new Set(['station', 'fishing', 'altar', 'travel', 'farm']);
 const groundName = (t: number) => tile(t).name.toLowerCase();
+/** "a boulder", "an allotment": an object's name in a sentence. */
+const anObject = (name: string) => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name.charAt(0).toLowerCase()}${name.slice(1)}`;
 
 export function checkGameMaps(project: Project): GameIssue[] {
   const issues: GameIssue[] = [];
@@ -290,6 +296,59 @@ export function checkGameMaps(project: Project): GameIssue[] {
       else if (zoneAt(m, i)?.key !== 'safe') add('error', m, f.c, f.r, `The travelling merchant's spot ${at(f)} isn't in the Safe zone.`);
       else if (!talkSpots(m, f.c, f.r).some((t) => reached[t.y * w + t.x])) add('error', m, f.c, f.r, `Players can't reach the travelling merchant ${at(f)} from the spawn point.`);
     }
+
+    // Plots of land (the game's land.ts, and what it won't load): on the overworld, with an id used
+    // by no other plot and a size of 12 or 20, not running off the map; then, as the game's
+    // checkMaps (the first problem it finds for each): out of the Safe zone, every tile open ground
+    // players can walk on and reach (nothing standing on it), no door or stairs, townsperson,
+    // monster spawn, fort or the merchant on it, and not overlapping another plot.
+    const land = plots(m);
+    land.forEach((p, k) => {
+      const f = p.feature;
+      const label = `The plot ${p.id || at(f)}`;
+      if (m !== overworld) {
+        add('error', m, p.x, p.y, `${label} isn't on the overworld: plots go on the overworld.`);
+        return;
+      }
+      const before = land.slice(0, k).find((o) => o.id === p.id);
+      if (!PLOT_ID.test(p.id)) add('error', m, p.x, p.y, `${label} needs an id of lower-case letters, digits and _ (like plot_mere).`);
+      else if (before) add('error', m, p.x, p.y, `${label} ${at(f)}: there's already a plot called ${p.id}, at (${before.x}, ${before.y}).`);
+      if (!plotSizeOk(p.size)) {
+        add('error', m, p.x, p.y, `${label}'s size must be ${PLOT_SIZES.join(' or ')} (tiles a side).`);
+        return;
+      }
+      if (p.x + p.size > w || p.y + p.size > m.height) {
+        add('error', m, p.x, p.y, `${label} runs off the map.`);
+        return;
+      }
+      let problem: string | null = null;
+      for (let y = p.y; y < p.y + p.size && !problem; y++) {
+        for (let x = p.x; x < p.x + p.size && !problem; x++) {
+          const i = y * w + x;
+          const thing = objectDef(L.object[i]);
+          if (zoneAt(m, i)?.key === 'safe') problem = `reaches into the Safe zone at (${x}, ${y}): plots are out in the wilds`;
+          else if (thing) problem = `has ${anObject(thing.name)} on it at (${x}, ${y}): a plot must be open ground`;
+          else if (!walk[i]) problem = `has ground you can't walk on at (${x}, ${y})`;
+          else if (!reached[i]) problem = `can't be reached from the spawn point at (${x}, ${y})`;
+        }
+      }
+      const inside = (t: Feature) => t.c >= p.x && t.r >= p.y && t.c < p.x + p.size && t.r < p.y + p.size;
+      const what = (t: Feature) => {
+        const q = placeProps(t);
+        if (t.type === 'link') return 'a door or stairs';
+        if (t.type === 'npc') return `the ${String(q.role).replace(/_/g, ' ')}`;
+        if (t.type === 'monster_spawn') return `a ${String(q.kind).replace(/_/g, ' ')} spawn`;
+        if (t.type === 'fort') return `the fort ${String(q.id).trim()}`;
+        return 'the travelling merchant';
+      };
+      const onIt = ['link', 'npc', 'monster_spawn', 'fort', 'merchant']
+        .flatMap((type) => m.features.filter((t) => t.type === type))
+        .find(inside);
+      if (!problem && onIt) problem = `has ${what(onIt)} on it at (${onIt.c}, ${onIt.r})`;
+      const other = land.find((q) => q !== p && plotSizeOk(q.size) && q.x < p.x + p.size && p.x < q.x + q.size && q.y < p.y + p.size && p.y < q.y + q.size);
+      if (!problem && other) problem = `overlaps the plot ${other.id || at(other.feature)}`;
+      if (problem) add('error', m, p.x, p.y, `${label} ${problem}.`);
+    });
 
     // Landmarks (the game's landmarks.ts): on the overworld, with an id, a name and a radius the game
     // takes (it won't load the maps otherwise).

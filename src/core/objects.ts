@@ -137,6 +137,10 @@ export const OBJECTS: ObjectDef[] = [
   { ...o(77, 'patch_tree', 'Tree patch', '#7c5438', '🌰', 'patch', 'farm', true), blocks: false },
   o(78, 'spinning_wheel', 'Spinning wheel', '#a87a4a', '🧶', 'icon', 'station', true),
   o(79, 'millstones', 'Millstones', '#9a948a', '⚙️', 'icon', 'station', true),
+  // RPG-DC's Construction: the sawbench, a workbench used from beside it (logs into planks,
+  // limestone into stone blocks), and limestone, mined like ore (Mining 20) in the Old Quarry.
+  o(80, 'sawbench', 'Sawbench', '#b08850', '🪚', 'icon', 'station', true),
+  o(81, 'limestone_rock', 'Limestone rock', '#e8e0c8', '⬜', 'ore', 'ore'),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -218,7 +222,9 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'PATCH_HERB'
   | 'PATCH_TREE'
   | 'SPINNING_WHEEL'
-  | 'MILLSTONES',
+  | 'MILLSTONES'
+  | 'SAWBENCH'
+  | 'LIMESTONE_ROCK',
   number
 >;
 

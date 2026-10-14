@@ -76,14 +76,15 @@ game mode; every other map behaves as above.
 - **Ground and objects:** paint the game's thirteen grounds (grass, path, water, town cobbles, crypt
   floor and wall, wooden floors, and the new lands' sand, mud, bog water, snow, bare rock / gravel
   and ice) and what stands on each tile, in groups: Nature (trees by species and yews, boulders,
-  cacti, dead trees, the island's palms and wrecks, ore from copper to runite and rune essence,
+  cacti, dead trees, the island's palms and wrecks, ore from copper to runite, rune essence and
+  the quarry's limestone,
   fishing spots from shrimp to eels, lobsters and swordfish, wild herbs from sunleaf to frostcap),
   Farming (allotments, herb patches and tree patches, beds players walk over), Runecrafting altars (air, mind, water, earth, fire, chaos, law), Travel (the waystone, and the
   boat a ferry sails from), Secrets (the hidden cache under its cairn,
   and the thicket you can walk through into a hidden glade, marked so it can be told from the trees),
   Ruins (the ruined chapel's walls), Dungeon puzzles (gates opened by levers, levers, and doors
   locked until a player brings their key), Town (fences, stations, workbenches with the spinning
-  wheel and the millstones, doors, stairs, the sewer grate), Streets (well, lamp posts, market stalls, flower beds, benches, signposts, the notice
+  wheel, the millstones and the sawbench, doors, stairs, the sewer grate), Streets (well, lamp posts, market stalls, flower beds, benches, signposts, the notice
   board) and Indoors (counters, bookshelves, tables, beds, barrels, crates, lecterns). Grove
   and Ore brushes scatter one species (or cacti, dead trees or palms) or ore at a time.
 - **Places with fields:** spawn point, monster spawns (kind, count, radius), bosses, braziers,
@@ -91,7 +92,8 @@ game mode; every other map behaves as above.
   it on the target map), buildings (style, size, name, roof and wall colours) and townspeople
   (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk,
   and the hermit, fisher, farmer, trapper, miner and miller out of town, Martha who sells seeds at
-  Giles's Farm, Gullhaven's harbourmaster and the castaway on Wrecker's Isle), guild forts (id and name), the
+  Giles's Farm, Pemberton the land agent, Gullhaven's harbourmaster and the castaway on Wrecker's
+  Isle), guild forts (id and name), the
   travelling merchant's spot, landmarks (id, name and radius): named places whose name shows as
   players arrive, drawn with their name and a faint circle for their radius; a waystone in one
   (one at most) is a stop for fast travel; levers (on a lever, wired to the gate it opens: a new
@@ -99,7 +101,9 @@ game mode; every other map behaves as above.
   it's selected, and tapping a gate shows the levers it needs), locks (on a locked door, naming
   its key) and ferries (on a boat: the tile it lands on, its fare and where it goes; a new one
   lands beside the nearest other boat, or tap 🎯 Pick the landing and then the tile; a dashed line
-  shows the route while it's selected). Monster spawns offer every monster, the new lands'
+  shows the route while it's selected) and plots of land players buy and build a house on (id
+  and size, 12 or 20 tiles a side, from the north-west corner: each outlined over its tiles,
+  stronger while it's selected or a tile in it is tapped; drag to move it). Monster spawns offer every monster, the new lands'
   scarabs, mummies, bog goblins, yetis and wyverns too, the Frozen Peaks' ice wardens, frost
   wraiths and Frost Giant, and Wrecker's Isle's giant crabs, pirates and Captain Redhook. The
   overworld shows where the game will post its town guards (💂, one at each gate of each town) and
@@ -120,8 +124,9 @@ game mode; every other map behaves as above.
   mine clutter, and the Frozen Peaks' ice walls, snow, glassy ice and thin ice; the new lands'
   snow, sand, mud, gravel, ice and bogs with their edges and shores, snowy pines and rocks, yews,
   cacti, dead trees, reeds and lily pads; Wrecker's Isle's palms and wrecks, and the ferry's boat
-  lying along its jetty; Farming's patches flat on the ground, the spinning wheel and the millstones
-  (each shown as its plain symbol until the live game has its art); and the
+  lying along its jetty; Farming's patches flat on the ground, the spinning wheel and the millstones;
+  the sawbench, the quarry's limestone and each plot's signpost (each shown as its plain symbol
+  until the live game has its art); and the
   monsters, townspeople (in their work clothes) and guards where they stand. **Looks like** (Map panel) sets a dungeon floor's look: crypt,
   sewers, caverns or the Frozen Peaks.
 

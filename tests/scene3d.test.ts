@@ -5,7 +5,7 @@ import { buildScene, type Scene3D } from '../src/core/scene3d/build';
 import { sceneToGlb } from '../src/core/scene3d/glb';
 import { MAP3D_KEYS, defaultOptions3d, is3d, options3d, set3d } from '../src/core/scene3d/options';
 import { T } from '../src/core/tiles';
-import type { WorldMap } from '../src/core/types';
+import { emptyLayers, type WorldMap } from '../src/core/types';
 import { GRIDS, make } from './helpers';
 
 /** Every triangle must wind counter-clockwise seen from its front (glTF), i.e. agree with its normals. */
@@ -317,6 +317,64 @@ describe('3D scene', () => {
     expect(height(build(O.PATCH_TREE))).toBeLessThan(1.5);
     expect(height(build(O.SPINNING_WHEEL))).toBeGreaterThan(0.9);
     expect(height(build(O.MILLSTONES))).toBeGreaterThan(0.9);
+  });
+
+  it('models Construction: the sawbench (marked, like the workbenches) and limestone (like the ore)', () => {
+    /** Grass, with one object at (5, 5). */
+    const build = (o: number) => {
+      const m = with3d(make('town', 'square', 2, [12, 12]));
+      m.layers.terrain.fill(T.GRASS);
+      m.layers.building.fill(0);
+      m.layers.object.fill(0);
+      m.features = [];
+      m.layers.object[5 * 12 + 5] = o;
+      return buildScene(m);
+    };
+    const height = (s: Scene3D) => {
+      const p = s.parts.find((q) => q.kind === 'objects')!.mesh.positions;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 1; i < p.length; i += 3) {
+        lo = Math.min(lo, p[i]);
+        hi = Math.max(hi, p[i]);
+      }
+      return hi - lo;
+    };
+    for (const o of [O.SAWBENCH, O.LIMESTONE_ROCK]) {
+      const s = build(o);
+      expect(meshProblems(s), OBJECTS[o].key).toEqual([]);
+      expect(windingProblems(s), OBJECTS[o].key).toBe(0);
+      expect(s.markers.filter((k) => k.data.kind === 'object').map((k) => k.data.key)).toEqual(o === O.SAWBENCH ? ['sawbench'] : []);
+    }
+    // A sawhorse with its log and saw stands waist-high; limestone is a low heap of slabs.
+    expect(height(build(O.SAWBENCH))).toBeGreaterThan(0.9);
+    expect(height(build(O.SAWBENCH))).toBeLessThan(1.5);
+    expect(height(build(O.LIMESTONE_ROCK))).toBeLessThan(1.2);
+  });
+
+  it("gives an RPG-DC plot of land just its signpost, in the middle of its south edge, and a marker on its corner", () => {
+    const w = 24;
+    const L = emptyLayers(w * w);
+    L.terrain.fill(T.GRASS);
+    L.elevation.fill(0.5);
+    const m = with3d({
+      id: 'ow', name: 'World', kind: 'overland', scaleId: 'local', grid: 'iso', width: w, height: w, seed: 1,
+      settings: { rpgdcMapId: 'overworld' }, layers: L, children: [],
+      features: [{ id: 'p1', type: 'plot', c: 3, r: 4, name: 'plot1', props: { id: 'plot1', size: 12 } }],
+    });
+    const s = buildScene(m);
+    expect(meshProblems(s)).toEqual([]);
+    expect(windingProblems(s)).toBe(0);
+    const S = Number(s.info.tileMetres);
+    // Every vertex of the places' models is by the sign, at (3 + 6, 4 + 11): none on the corner.
+    const p = s.parts.find((q) => q.kind === 'places')!.mesh.positions;
+    expect(p.length).toBeGreaterThan(0);
+    for (let i = 0; i < p.length; i += 3) {
+      expect(Math.abs(p[i] - 9.5 * S)).toBeLessThan(0.6);
+      expect(Math.abs(p[i + 2] - 15.5 * S)).toBeLessThan(0.6);
+    }
+    const marker = s.markers.find((k) => k.data.kind === 'place')!;
+    expect([marker.data.type, marker.data.col, marker.data.row, marker.data.props]).toEqual(['plot', 3, 4, { id: 'plot1', size: 12 }]);
   });
 });
 

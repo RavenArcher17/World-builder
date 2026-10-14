@@ -11,7 +11,7 @@ import { createProject, deleteMap, parseProjectReport, rootMaps, serializeProjec
 import { restoreSnapshot, snapshotProject, snapshotsBytes, type PackedLayer, type ProjectSnapshot } from '../core/snapshot';
 import { Autosave, AutosaveError, browserTextStore, indexedDbStore } from './autosave';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../core/rpgdc/import';
-import { OPEN_GROUND, PLACE_TYPES, gameKind, gameMapId, isGameGround, isRpgdc, isWalkableAt, namedLabel, newPlaceProps, placeProps, zoneAt } from '../core/rpgdc/game';
+import { OPEN_GROUND, PLACE_TYPES, gameKind, gameMapId, isGameGround, isRpgdc, isWalkableAt, newPlaceProps, placeLabel, placeProps, zoneAt } from '../core/rpgdc/game';
 import { cloneMap, regenerateRegion } from '../core/region';
 import { Rng, parseSeed, randomSeed } from '../core/rng';
 import { SCALES, getScale } from '../core/scales';
@@ -24,7 +24,7 @@ import { openCloudDialog, openSignInDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
 import { artBase, gameArtReady, keepGuards, loadGameArt, onGameArtChange, townGuards } from './gameArt';
-import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectStatus } from './gameUi';
+import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, objectStatus, plotStatus } from './gameUi';
 import { map3dPanel, sync3d } from './map3dUi';
 import { afterTilePaint, draw3dOverlay, is3dMode, modeOptions3d, paint3dAt, paint3dOptions, roomButton, status3d } from './build3dUi';
 import { is3d } from '../core/scene3d/options';
@@ -1816,8 +1816,8 @@ export class App {
     // A new lever place is wired to the nearest gate; a new ferry lands beside the nearest other boat.
     const props = game ? newPlaceProps(map, type, { x: g.col(cell), y: g.row(cell) }) : uk?.props;
     if (props) f.props = props;
-    // A new landmark (or fort) is labelled with its name, a ferry with where it goes.
-    const label = game ? namedLabel(type, props?.name) : null;
+    // A new landmark (or fort) is labelled with its name, a ferry with where it goes, a plot with its id.
+    const label = game ? placeLabel(type, props) : null;
     if (label) f.name = label;
     map.features.push(f);
     this.selectedFeature = f.id;
@@ -1905,6 +1905,8 @@ export class App {
       parts.push(z ? `${z.name} zone` : 'no zone', isWalkableAt(map, g.col(cell), g.row(cell)) ? 'walkable' : 'blocked');
       const about = objectStatus(map, g.col(cell), g.row(cell));
       if (about) parts.push(about);
+      const land = plotStatus(map, g.col(cell), g.row(cell));
+      if (land) parts.push(land);
     } else if (L.zone[cell]) {
       parts.push(`zone ${L.zone[cell]}`);
     }

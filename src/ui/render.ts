@@ -8,7 +8,7 @@ import { TILESET_COLUMNS, tilePixels } from '../core/export/formats';
 import { cellMetrics, drawObject, drawPattern, paintOrder } from './drawObjects';
 import { drawGameArt, gameArtColours, gameArtReady, townGuards } from './gameArt';
 import { O } from '../core/objects';
-import { ferries, gameKind, isRpgdc, isWalkableAt, leverWires, placeProps } from '../core/rpgdc/game';
+import { ferries, gameKind, isRpgdc, isWalkableAt, leverWires, placeProps, plotAt, plotSizeOk, plots } from '../core/rpgdc/game';
 import { OVERVIEW_MIN_CELLS, cellsAbout, drawOverview, overviewWanted } from './overview';
 
 export interface ViewOptions {
@@ -463,6 +463,7 @@ export function drawFeatures(
   const sorted = [...map.features].sort((a, b) => rankOf(a.type) - rankOf(b.type));
   const labelMinRank = cellPx > 22 ? 0 : cellPx > 12 ? 3 : 5;
   if (game) {
+    drawPlotAreas(ctx, map, g, s, ox, oy, selectedId, focus);
     drawLandmarkAreas(ctx, map, g, s, ox, oy, selectedId);
     drawLeverWires(ctx, map, g, s, ox, oy, selectedId, focus);
     drawFerryRoutes(ctx, map, g, s, ox, oy, selectedId, focus);
@@ -571,6 +572,59 @@ function drawLandmarkAreas(ctx: CanvasRenderingContext2D, map: WorldMap, g: Grid
     ctx.stroke();
     ctx.setLineDash([]);
   }
+}
+
+/**
+ * The plots of land on a game map, each with whether it's picked out: the selected plot place, or
+ * the plot a tapped cell is on. Plots of a size the game doesn't take are left out. Pure, for the tests.
+ */
+export function plotAreas(map: WorldMap, selectedId: string | null, focus?: number): { plot: ReturnType<typeof plots>[number]; strong: boolean }[] {
+  const list = plots(map).filter((p) => plotSizeOk(p.size));
+  const tapped = focus === undefined ? null : plotAt(list, focus % map.width, Math.floor(focus / map.width));
+  return list.map((p) => ({ plot: p, strong: p.feature.id === selectedId || p === tapped }));
+}
+
+/**
+ * Each plot of land on a game map, the square of its tiles: a faint gold line (the game draws one,
+ * gold while it's for sale), and the selected one (or the one tapped) stronger and lightly filled.
+ */
+function drawPlotAreas(ctx: CanvasRenderingContext2D, map: WorldMap, g: Grid, s: number, ox: number, oy: number, selectedId: string | null, focus?: number): void {
+  const areas = plotAreas(map, selectedId, focus);
+  if (!areas.length) return;
+  ctx.save();
+  for (const { plot: p, strong } of areas) {
+    // The tiles' outer edge, half a tile out from the first and last tiles' middles (as the game draws it).
+    const x0 = p.x - 0.5;
+    const y0 = p.y - 0.5;
+    const x1 = x0 + p.size;
+    const y1 = y0 + p.size;
+    ctx.beginPath();
+    [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].forEach(([c, r], k) => {
+      const [x, y] = g.centerCR(c, r);
+      if (k) ctx.lineTo(ox + x * s, oy + y * s);
+      else ctx.moveTo(ox + x * s, oy + y * s);
+    });
+    ctx.closePath();
+    if (strong) {
+      ctx.fillStyle = 'rgba(255,211,77,0.14)';
+      ctx.fill();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,211,77,0.95)';
+      ctx.lineWidth = 2;
+    } else {
+      // A light line with a dark edge, so it shows on snow and sand as well as grass.
+      ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+      ctx.lineWidth = 2.75;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,211,77,0.6)';
+      ctx.lineWidth = 1.25;
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /**

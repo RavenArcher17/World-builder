@@ -31,7 +31,11 @@ import {
   NPC_ROLES,
   OBJECT_LEGEND,
   passableTiles,
+  placeLabel,
   placeProps,
+  plotAt,
+  plots,
+  plotSign,
   reachable,
   walkableTiles,
   withProp,
@@ -40,8 +44,9 @@ import {
 import { isWater, T } from '../src/core/tiles';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import { emptyLayers, type Feature, type Project, type WorldMap } from '../src/core/types';
-import { cacheFit, cacheRegion, ferriesShown, MAX_CACHE_PIXELS, wiresShown } from '../src/ui/render';
-import { caveGround, caveTheme, farmFrame, icePatch, isWindmill, puzzleFrame, ruinPieces, seaFrame, thicketLooksLike } from '../src/ui/gameArt';
+import { cacheFit, cacheRegion, ferriesShown, MAX_CACHE_PIXELS, plotAreas, wiresShown } from '../src/ui/render';
+import { caveGround, caveTheme, constructionFrame, farmFrame, icePatch, isWindmill, puzzleFrame, ruinPieces, seaFrame, thicketLooksLike } from '../src/ui/gameArt';
+import { plotStatus } from '../src/ui/gameUi';
 
 /** The game's own map file (shared/maps/rpg-dc.maps.json in RPG-DC), with the town, its insides and the sewers. */
 const FILE = readFileSync(new URL('./fixtures/rpg-dc.maps.json', import.meta.url), 'utf8');
@@ -112,6 +117,7 @@ describe('opening the game’s map file', () => {
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door',
       'boat', 'palm', 'wreck', 'fishing_swordfish',
       'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones',
+      'sawbench', 'limestone_rock',
     ]);
   });
 
@@ -445,7 +451,8 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
 
   it('opens the new lands’ objects the game placed: yews, cacti, dead trees, eels and lobsters', () => {
     const world = byGameId(project(), 'overworld');
-    expect([O.CACTUS, O.DEAD_TREE, O.YEW, O.FISHING_EEL, O.FISHING_LOBSTER].map((o) => count(world, o))).toEqual([881, 1777, 70, 30, 41]);
+    // (A few cacti and dead trees fewer since the game's tool cleared its plots of land.)
+    expect([O.CACTUS, O.DEAD_TREE, O.YEW, O.FISHING_EEL, O.FISHING_LOBSTER].map((o) => count(world, o))).toEqual([877, 1774, 70, 30, 41]);
     // They stand in the way, like everything else.
     const yew = world.layers.object.indexOf(O.YEW);
     expect(isWalkableAt(world, yew % world.width, Math.floor(yew / world.width))).toBe(false);
@@ -453,7 +460,7 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
     expect(out.objectLegend.slice(56)).toEqual([
       'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish',
-      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones',
+      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones', 'sawbench', 'limestone_rock',
     ]);
   });
 
@@ -748,7 +755,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
     }
     expect(out.maps[0].objectLegend.slice(64)).toEqual([
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish',
-      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones',
+      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones', 'sawbench', 'limestone_rock',
     ]);
   });
 
@@ -778,7 +785,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
     expect(out.maps.find((m) => m.id === 'windmill')!.places).toContainEqual({ type: 'npc', x: 3, y: 3, role: 'miller' });
     expect(out.maps.find((m) => m.id === 'overworld')!.places).toContainEqual({ type: 'building', x: 341, y: 396, w: 3, h: 3, style: 'tower', sign: 'Mill', roof: 'brown', walls: 'cream' });
     expect(out.maps.find((m) => m.id === 'smugglers_cove')!.theme).toBe('cave');
-    expect(NPC_ROLES.map((r) => r.value).slice(-9, -3)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
+    expect(NPC_ROLES.map((r) => r.value).slice(-10, -4)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
   });
 
   it('knows a windmill: a tower whose sign says mill', () => {
@@ -1229,7 +1236,7 @@ describe('the sea: Gullhaven, Wrecker’s Isle and the ferry between them', () =
     ]);
     // The harbourmaster by the jetty, and the castaway in her hut.
     const npc = (m: WorldMap) => m.features.filter((f) => f.type === 'npc').map((f) => [f.c, f.r, f.props?.role, f.name]);
-    expect(npc(world).filter(([, , role]) => role !== 'seeds')).toEqual([[40, 357, 'harbourmaster', 'Harbourmaster (Bligh, by the ferry)']]);
+    expect(npc(world).filter(([, , role]) => role !== 'seeds' && role !== 'land_agent')).toEqual([[40, 357, 'harbourmaster', 'Harbourmaster (Bligh, by the ferry)']]);
     expect(npc(byGameId(p, 'isle_hut'))).toEqual([[3, 2, 'castaway', 'Castaway (Marooned Meg)']]);
     // Crabs, pirates and their captain, each roaming its normal range (the file gives them no radius).
     const spawns = world.features.filter((f) => f.type === 'monster_spawn' && ['giant_crab', 'pirate', 'pirate_captain'].includes(String(f.props?.kind)));
@@ -1441,7 +1448,7 @@ describe('Farming: the patches at Giles’s Farm, Martha, the spinning wheels an
   it('opens the farm’s patches, Martha, the spinning wheels and the millstones, and exports them as they were', () => {
     const p = project();
     const world = byGameId(p, 'overworld');
-    expect(OBJECT_LEGEND.slice(75)).toEqual(FARM);
+    expect(OBJECT_LEGEND.slice(75, 80)).toEqual(FARM);
     expect([O.PATCH_ALLOTMENT, O.PATCH_HERB, O.PATCH_TREE, O.SPINNING_WHEEL, O.MILLSTONES]).toEqual([75, 76, 77, 78, 79]);
     const at = (m: WorldMap, x: number, y: number) => m.layers.object[y * m.width + x];
     expect(ALLOTMENTS.map(([x, y]) => at(world, x, y))).toEqual(ALLOTMENTS.map(() => O.PATCH_ALLOTMENT));
@@ -1462,7 +1469,7 @@ describe('Farming: the patches at Giles’s Farm, Martha, the spinning wheels an
     // Martha, who sells seeds, just outside the field's gate.
     const martha = world.features.find((f) => f.type === 'npc' && f.props?.role === 'seeds')!;
     expect([martha.c, martha.r, martha.name]).toEqual([349, 404, "Seed seller (Martha, at Giles's Farm)"]);
-    expect(NPC_ROLES.at(-1)).toEqual({ value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" });
+    expect(NPC_ROLES.at(-2)).toEqual({ value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" });
     // Exported, and opened from that export, the same again.
     const out = toRpgdcMaps(p);
     const again = toRpgdcMaps(fromRpgdcMaps(out));
@@ -1547,6 +1554,210 @@ describe('Farming: the patches at Giles’s Farm, Martha, the spinning wheels an
   function bareWorld() {
     const w = 128;
     const p = createProject('farm');
+    const L = emptyLayers(w * w);
+    L.terrain.fill(T.GRASS);
+    for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) L.zone[y * w + x] = x < 8 && y < 8 ? 1 : 2;
+    const map: WorldMap = {
+      id: 'ow', name: 'World', kind: 'overland', scaleId: 'local', grid: 'iso', width: w, height: w, seed: 1,
+      settings: { rpgdcMapId: 'overworld' }, layers: L, children: [],
+      features: [{ id: 's', type: 'spawn_point', c: 3, r: 3, name: 'start' }],
+    };
+    p.maps[map.id] = map;
+    return { p, map };
+  }
+  function errs(p: Project) {
+    return errors(p).map((i) => i.message);
+  }
+});
+
+describe('Land and houses: plots of land, the land agents, the sawbench and limestone', () => {
+  const gameMap = (id: string) => file().maps.find((m) => m.id === id)!;
+  /** Where a map in the file has an object, [x, y] in row order (none if its legend hasn't it). */
+  const cellsOf = (m: RpgdcMapsFile['maps'][number], key: string) => {
+    const k = m.objectLegend.indexOf(key);
+    return k < 0 ? [] : m.objects.flatMap((v, i) => (v === k ? [[i % m.width, Math.floor(i / m.width)]] : []));
+  };
+  const LIMESTONE = [[323, 366], [327, 366], [331, 366], [325, 367], [321, 368], [333, 368], [324, 369], [335, 369]];
+  const LARGE = ['plot3', 'plot5', 'plot13', 'plot17', 'plot25', 'plot29', 'plot30', 'plot31'];
+
+  it('opens the plots, the land agents, the sawbench and the limestone, and exports them as they were', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    expect(OBJECT_LEGEND.slice(80)).toEqual(['sawbench', 'limestone_rock']);
+    expect([O.SAWBENCH, O.LIMESTONE_ROCK]).toEqual([80, 81]);
+    const at = (x: number, y: number) => world.layers.object[y * world.width + x];
+    // The sawbench in the carpenter's yard, the limestone in the Old Quarry: both in the way.
+    expect(at(397, 396)).toBe(O.SAWBENCH);
+    expect(isWalkableAt(world, 397, 396)).toBe(false);
+    expect(cellsOf(gameMap('overworld'), 'limestone_rock')).toEqual(LIMESTONE);
+    for (const [x, y] of LIMESTONE) {
+      expect(at(x, y), `${x}, ${y}`).toBe(O.LIMESTONE_ROCK);
+      expect(isWalkableAt(world, x, y), `${x}, ${y}`).toBe(false);
+    }
+    expect(landmarkAt(landmarks(world), 323, 366)?.name).toBe('the Old Quarry');
+    // 36 plots, eight of them large, each labelled with its id.
+    const land = plots(world);
+    expect(land).toHaveLength(36);
+    expect(land.map((q) => q.id)).toEqual(Array.from({ length: 36 }, (_, k) => `plot${k + 1}`));
+    expect(land.filter((q) => q.size === 20).map((q) => q.id)).toEqual(LARGE);
+    expect(land.every((q) => q.size === 12 || q.size === 20)).toBe(true);
+    expect(land.every((q) => q.feature.name === q.id)).toBe(true);
+    const p11 = land.find((q) => q.id === 'plot11')!;
+    expect([p11.x, p11.y, p11.size]).toEqual([370, 344, 12]);
+    // The land agents, in town by the bank and in Gullhaven.
+    const agents = world.features.filter((f) => f.type === 'npc' && f.props?.role === 'land_agent').map((f) => [f.c, f.r, f.name]);
+    expect(agents).toEqual([
+      [380, 381, 'Land agent (Pemberton, sells plots of land)'],
+      [58, 357, 'Land agent (Pemberton, sells plots of land)'],
+    ]);
+    expect(NPC_ROLES.at(-1)).toEqual({ value: 'land_agent', label: 'Land agent (Pemberton, sells plots of land)' });
+    // Exported, and opened from that export, the same again.
+    const out = toRpgdcMaps(p);
+    const again = toRpgdcMaps(fromRpgdcMaps(out));
+    const ours = (places: RpgdcMapsFile['maps'][number]['places']) => places.filter((pl) => pl.type === 'plot' || (pl.type === 'npc' && pl.role === 'land_agent')).map(placeKey).sort();
+    for (const f of [out, again]) {
+      const ow = f.maps.find((m) => m.id === 'overworld')!;
+      for (const key of ['sawbench', 'limestone_rock']) expect(cellsOf(ow, key), key).toEqual(cellsOf(gameMap('overworld'), key));
+      expect(ours(ow.places)).toEqual(ours(gameMap('overworld').places));
+      expect(ow.places.filter((pl) => pl.type === 'plot')).toHaveLength(36);
+    }
+    expect(out.maps[0].places).toContainEqual({ type: 'plot', x: 370, y: 344, id: 'plot11', size: 12 });
+    // Plots are written last, after the ferries.
+    expect(out.maps[0].places.at(-1)).toEqual({ type: 'plot', x: land[35].x, y: land[35].y, id: 'plot36', size: land[35].size });
+  });
+
+  it('knows where a plot is, where its sign stands, and what the status bar says about it', () => {
+    const world = byGameId(project(), 'overworld');
+    expect(plotSign({ x: 370, y: 344, size: 12 })).toEqual({ x: 376, y: 355 });
+    expect(plotSign({ x: 362, y: 158, size: 20 })).toEqual({ x: 372, y: 177 });
+    const land = plots(world);
+    expect(plotAt(land, 370, 344)?.id).toBe('plot11');
+    expect(plotAt(land, 381, 355)?.id).toBe('plot11');
+    expect(plotAt(land, 382, 355)).toBeNull();
+    expect(plotAt(land, 384, 384)).toBeNull();
+    expect(plotStatus(world, 376, 355)).toBe('plot plot11 (12×12), its sign');
+    expect(plotStatus(world, 371, 345)).toBe('plot plot11 (12×12)');
+    expect(plotStatus(world, 372, 177)).toBe('plot plot3 (20×20), its sign');
+    expect(plotStatus(world, 384, 384)).toBeNull();
+  });
+
+  it('outlines every plot, the selected one or the one tapped stronger', () => {
+    const world = byGameId(project(), 'overworld');
+    const strong = (sel: string | null, focus?: number) => plotAreas(world, sel, focus).filter((a) => a.strong).map((a) => a.plot.id);
+    expect(plotAreas(world, null)).toHaveLength(36);
+    expect(strong(null)).toEqual([]);
+    const p11 = plots(world).find((q) => q.id === 'plot11')!;
+    expect(strong(p11.feature.id)).toEqual(['plot11']);
+    expect(strong(null, 350 * world.width + 375)).toEqual(['plot11']);
+    expect(strong(null, 200 * world.width + 200)).toEqual([]);
+  });
+
+  it('gives a new plot an id not used yet, and labels it with its id', () => {
+    const world = byGameId(project(), 'overworld');
+    expect(newPlaceProps(world, 'plot', { x: 100, y: 100 })).toEqual({ id: 'plot37', size: 12 });
+    const { map } = bareWorld();
+    expect(newPlaceProps(map, 'plot', { x: 40, y: 40 })).toEqual({ id: 'plot1', size: 12 });
+    map.features.push(plot(70, 70, 'plot2'));
+    expect(newPlaceProps(map, 'plot', { x: 40, y: 40 })).toEqual({ id: 'plot3', size: 12 });
+    expect([placeLabel('plot', { id: ' plot9 ' }), placeLabel('plot', { id: '' }), placeLabel('fort', { name: 'the Deep Keep' }), placeLabel('ferry', { name: 'Gullhaven' }), placeLabel('npc', { role: 'banker' })]).toEqual([
+      'plot9', null, 'the Deep Keep', 'Ferry → Gullhaven', null,
+    ]);
+  });
+
+  it('exports a plot and opens it again', () => {
+    const { p, map } = bareWorld();
+    map.features.push(plot(40, 40, 'plot_mere', 20));
+    expect(errs(p)).toEqual([]);
+    const out = toRpgdcMaps(p).maps[0];
+    expect(out.places).toContainEqual({ type: 'plot', x: 40, y: 40, id: 'plot_mere', size: 20 });
+    const back = Object.values(fromRpgdcMaps(toRpgdcMaps(p)).maps)[0];
+    expect(plots(back).map((q) => [q.x, q.y, q.id, q.size, q.feature.name])).toEqual([[40, 40, 'plot_mere', 20, 'plot_mere']]);
+  });
+
+  it('catches every broken plot, as the game does', () => {
+    const plotErrs = (fn: (map: WorldMap, p: Project) => void) => {
+      const { p, map } = bareWorld();
+      map.features.push(plot(40, 40, 'plot_a'));
+      fn(map, p);
+      return errs(p).filter((m) => /plot/.test(m));
+    };
+    const w = 128;
+    expect(plotErrs(() => {})).toEqual([]);
+    // What the game won't load: an id, a size, the map's edge.
+    expect(plotErrs((m) => { m.features[1].props!.id = ''; })).toEqual(['The plot (40, 40) needs an id of lower-case letters, digits and _ (like plot_mere).']);
+    expect(plotErrs((m) => { m.features[1].props!.id = 'Plot A'; })).toEqual(['The plot Plot A needs an id of lower-case letters, digits and _ (like plot_mere).']);
+    expect(plotErrs((m) => { m.features.push(plot(70, 40, 'plot_a')); })).toEqual(["The plot plot_a (70, 40): there's already a plot called plot_a, at (40, 40)."]);
+    expect(plotErrs((m) => { m.features[1].props!.size = 16; })).toEqual(["The plot plot_a's size must be 12 or 20 (tiles a side)."]);
+    expect(plotErrs((m) => { m.features[1].c = 120; })).toEqual(['The plot plot_a runs off the map.']);
+    expect(plotErrs((m) => { m.features[1].props!.size = 20; m.features[1].r = 110; })).toEqual(['The plot plot_a runs off the map.']);
+    // The game's checkMaps: the first thing wrong, scanning its tiles from the north-west.
+    expect(plotErrs((m) => { m.features[1].c = 2; m.features[1].r = 2; })).toEqual(['The plot plot_a reaches into the Safe zone at (2, 2): plots are out in the wilds.']);
+    expect(plotErrs((m) => { m.layers.object[45 * w + 46] = O.BOULDER; })).toEqual(['The plot plot_a has a boulder on it at (46, 45): a plot must be open ground.']);
+    expect(plotErrs((m) => { m.layers.object[45 * w + 46] = O.PATCH_ALLOTMENT; })).toEqual(['The plot plot_a has an allotment on it at (46, 45): a plot must be open ground.']);
+    expect(plotErrs((m) => { m.layers.terrain[44 * w + 41] = T.WATER; m.layers.object[45 * w + 46] = O.BOULDER; })).toEqual(["The plot plot_a has ground you can't walk on at (41, 44)."]);
+    expect(plotErrs((m) => {
+      m.features.push({ id: 'b', type: 'building', c: 48, r: 48, name: 'Shed', props: { w: 3, h: 3, style: 'timber', sign: 'Shed', roof: '', walls: '' } });
+    }).at(-1)).toBe("The plot plot_a has ground you can't walk on at (48, 48).");
+    // Walled off by a moat all round it: walkable, but out of reach.
+    expect(plotErrs((m) => {
+      for (let k = 39; k <= 52; k++) for (const [x, y] of [[k, 39], [k, 52], [39, k], [52, k]]) m.layers.terrain[y * w + x] = T.WATER;
+    })).toEqual(["The plot plot_a can't be reached from the spawn point at (40, 40)."]);
+    // Places standing on it.
+    const on = (f: Feature) => plotErrs((m) => { m.features.push(f); });
+    expect(on({ id: 'n', type: 'npc', c: 45, r: 45, name: 'x', props: { role: 'land_agent' } })).toEqual(['The plot plot_a has the land agent on it at (45, 45).']);
+    expect(on({ id: 'm', type: 'monster_spawn', c: 45, r: 46, name: 'x', props: { kind: 'giant_crab', count: 2, radius: 3 } })).toEqual(['The plot plot_a has a giant crab spawn on it at (45, 46).']);
+    expect(on({ id: 'f', type: 'fort', c: 45, r: 45, name: 'x', props: { id: 'deep_keep', name: 'the Deep Keep' } })).toContain('The plot plot_a has the fort deep_keep on it at (45, 45).');
+    expect(on({ id: 't', type: 'merchant', c: 51, r: 51, name: 'x' })).toContain('The plot plot_a has the travelling merchant on it at (51, 51).');
+    expect(on({ id: 'l', type: 'link', c: 40, r: 51, name: 'x', props: { toMap: 'overworld', toX: 3, toY: 3 } })).toContain('The plot plot_a has a door or stairs on it at (40, 51).');
+    // Just outside it is fine.
+    expect(on({ id: 'n', type: 'npc', c: 52, r: 45, name: 'x', props: { role: 'villager' } })).toEqual([]);
+    // Overlapping another plot: both are wrong. Side by side is fine.
+    expect(plotErrs((m) => { m.features.push(plot(51, 51, 'plot_b')); })).toEqual(['The plot plot_a overlaps the plot plot_b.', 'The plot plot_b overlaps the plot plot_a.']);
+    expect(plotErrs((m) => { m.features.push(plot(52, 40, 'plot_b', 20)); })).toEqual([]);
+    // Only on the overworld.
+    expect(plotErrs((_, p) => {
+      const L = emptyLayers(64);
+      L.terrain.fill(T.PLANKS);
+      p.maps.shed = {
+        id: 'shed', name: 'Shed', kind: 'dungeon', scaleId: 'dungeon', grid: 'iso', width: 8, height: 8, seed: 1, layers: L, children: [],
+        settings: { rpgdcMapId: 'shed', rpgdcKind: 'interior', rpgdcZone: 'safe' }, features: [plot(0, 0, 'plot_c')],
+      };
+    })).toEqual(["The plot plot_c isn't on the overworld: plots go on the overworld."]);
+  });
+
+  it('needs the sawbench usable from a tile players can reach, like every workbench', () => {
+    const { p, map } = bareWorld();
+    map.layers.object[50 * map.width + 50] = O.SAWBENCH;
+    map.layers.object[60 * map.width + 60] = O.LIMESTONE_ROCK;
+    expect(errs(p)).toEqual([]);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) map.layers.object[(50 + dy) * map.width + 50 + dx] = O.BOULDER;
+    expect(errs(p)).toEqual(['Sawbench (50, 50) has no walkable neighbour that can be reached from the spawn point.']);
+  });
+
+  it('lists the sawbench with the workbenches and limestone with the ore', () => {
+    expect([O.SAWBENCH, O.LIMESTONE_ROCK].map((o) => [OBJECTS[o].key, OBJECTS[o].name, OBJECTS[o].group, OBJECTS[o].blocks, OBJECTS[o].useFromNeighbour])).toEqual([
+      ['sawbench', 'Sawbench', 'station', true, true],
+      ['limestone_rock', 'Limestone rock', 'ore', true, false],
+    ]);
+    expect(GAME_OBJECTS.at(-1)?.key).toBe('limestone_rock');
+  });
+
+  it('draws them with the game’s frames: the sawbench from the indoor sheet, limestone from the world sheet', () => {
+    expect([O.SAWBENCH, O.LIMESTONE_ROCK].map(constructionFrame)).toEqual([
+      { sheet: 'indoor', frame: 'sawbench' },
+      { sheet: 'world', frame: 'ore-limestone' },
+    ]);
+    expect([O.SPINNING_WHEEL, O.COPPER_ROCK, 0].map(constructionFrame)).toEqual([null, null, null]);
+  });
+
+  /** A plot place: its north-west corner, id and size. */
+  function plot(x: number, y: number, id: string, size = 12): Feature {
+    return { id: `plot-${id}-${x}-${y}`, type: 'plot', c: x, r: y, name: id, props: { id, size } };
+  }
+  /** A bare 128×128 overworld of grass: Safe round the spawn point (3, 3), Frontier beyond. */
+  function bareWorld() {
+    const w = 128;
+    const p = createProject('land');
     const L = emptyLayers(w * w);
     L.terrain.fill(T.GRASS);
     for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) L.zone[y * w + x] = x < 8 && y < 8 ? 1 : 2;

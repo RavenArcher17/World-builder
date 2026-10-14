@@ -79,7 +79,7 @@ Under it, one mesh node per part. Parts with nothing in them are left out.
 | `Structures-col` | Walls, solid rock, buildings with roofs, the keep, gate and door lintels, bridge and dock decks, stairs, the floors and walls of other storeys | yes |
 | `Roofs-col` | Ceilings over covered cells with nothing built above them | yes |
 | `Objects-col` | Trees, rocks, ore, fences, stations, furniture, street things, and 3D props | yes |
-| `Places-col` | Small models of places on overland maps: houses, castles, towers, cave mouths, ruins, temples | yes |
+| `Places-col` | Small models of places on overland maps: houses, castles, towers, cave mouths, ruins, temples; for an RPG-DC plot of land (an area, not a thing), just its signpost, in the middle of its south edge as the game draws it | yes |
 | `Roads` | Roads lying just above the ground | no (the ground under them has it) |
 | `Water` | Sea, lakes, rivers and pools, see-through | no |
 
@@ -93,9 +93,12 @@ Under it, one mesh node per part. Parts with nothing in them are left out.
 
 Empty nodes under `Markers` mark:
 
-- every place on the map;
-- every object a game interacts with: stations, fishing spots, stairs and entrances, doors, herbs,
-  altars, waystones, boats, caches, gates, levers, locked doors and Farming's patches;
+- every place on the map (an RPG-DC plot of land's marker sits on its north-west corner, and its
+  `props` give its `id` and `size`: its tiles are columns `col` to `col + size - 1` and rows `row`
+  to `row + size - 1`);
+- every object a game interacts with: stations and workbenches (the sawbench too), fishing spots,
+  stairs and entrances, doors, herbs, altars, waystones, boats, caches, gates, levers, locked doors
+  and Farming's patches;
 - every light, loot and danger prop;
 - every named room (at its middle).
 

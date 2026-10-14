@@ -8,7 +8,7 @@ import { objectByKey } from '../objects';
 import { PLACES_VERSION } from './migrate';
 import { createProject } from '../project';
 import { emptyLayers, newId, type Feature, type Project, type WorldMap } from '../types';
-import { GROUND_LEGEND, GROUND_TILES, NPC_ROLES, ZONE_LEGEND, namedLabel, type GameKind } from './game';
+import { GROUND_LEGEND, GROUND_TILES, NPC_ROLES, ZONE_LEGEND, placeLabel, type GameKind } from './game';
 import type { RpgdcMap, RpgdcMapsFile } from './export';
 
 /** The project id imported maps get, so saving to the cloud replaces the RPG-DC project there. */
@@ -93,12 +93,12 @@ function importPlace(p: RpgdcMap['places'][number]): Feature {
   const props: Record<string, string | number> = {};
   for (const [k, v] of Object.entries(rest)) if (typeof v === 'string' || typeof v === 'number') props[k] = v;
   if (type === 'building') for (const k of ['sign', 'roof', 'walls']) props[k] ??= '';
-  // Buildings go by their sign, townspeople by their trade, forts and landmarks by their name, and
-  // ferries by where they go, so the map reads like the game.
+  // Buildings go by their sign, townspeople by their trade, forts and landmarks by their name,
+  // ferries by where they go and plots by their id, so the map reads like the game.
   const name =
     (type === 'building' && String(props.sign)) ||
     (type === 'npc' && NPC_ROLES.find((r) => r.value === props.role)?.label) ||
-    namedLabel(type, props.name) ||
+    placeLabel(type, props) ||
     featureDef(type).label;
   const f: Feature = { id: newId('f'), type, c: x, r: y, name };
   if (Object.keys(props).length) f.props = props;

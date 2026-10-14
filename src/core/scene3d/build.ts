@@ -597,7 +597,20 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
     const [cx, cz] = centres[i];
     const y = floorAt(z, i) ?? (z === 0 ? centreY(i) : levelBase(z));
     const def = featureDef(f.type);
-    if (overland && z === 0) placeModel(placeMesh, f.type, cx * S, y, cz * S, S, hashString(f.id));
+    if (overland && z === 0) {
+      // An RPG-DC plot of land is an area, not a thing: just its signpost, in the middle of its
+      // south edge as the game draws it (its marker, on its north-west corner, carries its id and size).
+      if (f.type === 'plot') {
+        const size = Math.round(Number(f.props?.size));
+        const [sx, sy] = [f.c + Math.floor(size / 2), f.r + size - 1];
+        if (size > 0 && g.inBounds(sx, sy)) {
+          const j = g.idx(sx, sy);
+          plotSignModel(placeMesh, centres[j][0] * S, floorAt(0, j) ?? centreY(j), centres[j][1] * S);
+        }
+      } else {
+        placeModel(placeMesh, f.type, cx * S, y, cz * S, S, hashString(f.id));
+      }
+    }
     markers.push({
       name: uniqueName(f.name ? `${def.label}: ${f.name}` : def.label),
       position: [cx * S, y, cz * S],
@@ -1086,6 +1099,11 @@ function objectModel(
       out.blob(x, y + 0.35 * k, z, 0.75 * k, 0.55 * k, 0.65 * k, c, seed);
       return;
     case 'ore':
+      if (def.key === 'limestone_rock') {
+        // Pale limestone in its beds: three slabs, each a little smaller and turned on the one below.
+        for (let n = 0; n < 3; n++) out.box(x, y + n * 0.28 * k, z, (1.2 - n * 0.28) * k, 0.28 * k, (0.95 - n * 0.2) * k, shade(c, 1 - n * 0.07), r * 6 + n * 0.45);
+        return;
+      }
       out.blob(x, y + 0.35 * k, z, 0.7 * k, 0.55 * k, 0.65 * k, rgba('#7d7770'), seed);
       for (let n = 0; n < 3; n++) {
         const a = (n / 3) * Math.PI * 2 + r * 6;
@@ -1283,6 +1301,20 @@ function objectModel(
       out.blob(dx, y + 0.95, dz, 0.09, 0.14, 0.09, rgba('#e8dcb0'), seed + 1);
       return;
     }
+    case 'sawbench': {
+      // A sawhorse: a beam on two pairs of legs (along `facing`), a log lying along it, and the saw
+      // standing in its cut across the log.
+      const [ca, sa] = [Math.cos(facing), Math.sin(facing)];
+      for (const end of [-1, 1]) {
+        for (const side of [-1, 1]) out.box(x + ca * 0.5 * end - sa * 0.17 * side, y, z + sa * 0.5 * end + ca * 0.17 * side, 0.09, 0.68, 0.09, shade(c, 0.85), facing);
+      }
+      out.box(x, y + 0.68, z, 1.3, 0.12, 0.42, c, facing);
+      out.box(x, y + 0.8, z, 1.1, 0.26, 0.26, rgba('#7a5a38'), facing, rgba('#d8b880'));
+      const [bx, bz] = [x + ca * 0.18, z + sa * 0.18];
+      out.box(bx, y + 0.86, bz, 0.55, 0.3, 0.03, rgba('#b8bcc2'), facing + Math.PI / 2);
+      out.box(bx - sa * 0.3, y + 1.04, bz + ca * 0.3, 0.12, 0.14, 0.05, shade(wood, 0.7), facing + Math.PI / 2);
+      return;
+    }
     case 'millstones':
       // Two round stones, one on the other, on a wooden spindle, with a hopper for the grain over them.
       out.cylinder(x, y, z, 0.7, 0.7, 0.32, 12, shade(c, 0.9));
@@ -1422,6 +1454,12 @@ function objectModel(
       return;
   }
   out.box(x, y, z, 0.7, 0.9, 0.7, c, facing);
+}
+
+/** A plot of land's signpost (RPG-DC): a post with a board facing south, the plot's front. */
+function plotSignModel(out: MeshBuilder, x: number, y: number, z: number): void {
+  out.box(x, y, z, 0.12, 1.6, 0.12, rgba('#6a4a2e'));
+  out.box(x, y + 1.05, z + 0.08, 0.8, 0.45, 0.06, rgba('#c8a868'));
 }
 
 /** A small model of a place on an overland map: houses for settlements, a keep for a castle, … */
