@@ -94,8 +94,12 @@ const HERBS: Record<number, { name: string; ground: number; zones: string[] }> =
 };
 /** What the game draws as a tree (a thicket looks like the trees round it, and palms are see-through like trees), which can hide what's near it. */
 const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW, O.YEW, O.THICKET, O.PALM]);
-/** Objects used from a tile beside them, which must be one players can walk to (and caches and levers, below). */
-const USED_FROM_BESIDE = new Set(['station', 'fishing', 'altar', 'travel']);
+/**
+ * Objects used from a tile beside them, which must be one players can walk to (and caches and
+ * levers, below): stations and workbenches, fishing spots, altars, waystones and boats, and
+ * Farming's patches (the game's STATIONS and FISHING).
+ */
+const USED_FROM_BESIDE = new Set(['station', 'fishing', 'altar', 'travel', 'farm']);
 const groundName = (t: number) => tile(t).name.toLowerCase();
 
 export function checkGameMaps(project: Project): GameIssue[] {
@@ -202,10 +206,10 @@ export function checkGameMaps(project: Project): GameIssue[] {
       }
     }
 
-    // Stations, altars, waystones, boats, caches, levers and fishing spots must be usable from a
-    // tile you can walk to (thickets are walked through, so a glade behind one is reachable; players
-    // open gates and locked doors, so they count as open too, as in the game's checks; and from
-    // beside a boat they can sail where its ferry lands).
+    // Stations, altars, waystones, boats, caches, levers, fishing spots and Farming's patches must
+    // be usable from a tile you can walk to (thickets are walked through, so a glade behind one is
+    // reachable, and patches walked over; players open gates and locked doors, so they count as
+    // open too, as in the game's checks; and from beside a boat they can sail where its ferry lands).
     const starts = m === overworld ? owSpawns.map((s) => ({ x: s.f.c, y: s.f.r })) : arrivals.get(m) ?? [];
     const walk = walkableTiles(m);
     const walkAt = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < m.height && walk[y * w + x] === 1;
@@ -419,14 +423,15 @@ export function checkGameMaps(project: Project): GameIssue[] {
       if (!doors) add('error', m, b.x, b.y, `${name} has no door: put a Door object in its south or east wall.`);
     }
 
-    // Herbs (warnings): in their zones, reachable, not blocking a path, not hidden by trees.
+    // Wild herbs (warnings): in their zones, reachable, not blocking a path, not hidden by trees.
+    // (Farming's herb patches aren't wild herbs: the game counts only its eight herb_ objects.)
     if (m === overworld) {
       const herbs: number[] = [];
       for (const i of things) if (HERBS[L.object[i]]) herbs.push(i);
       if (herbs.length) {
         const x0 = herbs[0] % w;
         const y0 = Math.floor(herbs[0] / w);
-        add('warning', m, x0, y0, `This overworld has ${herbs.length} herb patch(es): the game uses just these and stops scattering its own.`);
+        add('warning', m, x0, y0, `This overworld has ${herbs.length} wild herb(s): the game uses just these and stops scattering its own.`);
       }
       for (const i of herbs) {
         const x = i % w;

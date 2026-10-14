@@ -281,6 +281,43 @@ describe('3D scene', () => {
     expect(extent(build(O.PALM, [])).y).toBeGreaterThan(2.5);
     expect(extent(build(O.WRECK, [])).y).toBeLessThan(1.5);
   });
+
+  it('models Farming: patches lying flat on the ground, the spinning wheel and the millstones, and marks them all', () => {
+    /** Grass, with one object at (5, 5). */
+    const build = (o: number) => {
+      const m = with3d(make('town', 'square', 2, [12, 12]));
+      m.layers.terrain.fill(T.GRASS);
+      m.layers.building.fill(0);
+      m.layers.object.fill(0);
+      m.features = [];
+      m.layers.object[5 * 12 + 5] = o;
+      return buildScene(m);
+    };
+    const height = (s: Scene3D) => {
+      const p = s.parts.find((q) => q.kind === 'objects')!.mesh.positions;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 1; i < p.length; i += 3) {
+        lo = Math.min(lo, p[i]);
+        hi = Math.max(hi, p[i]);
+      }
+      return hi - lo;
+    };
+    const FARM = [O.PATCH_ALLOTMENT, O.PATCH_HERB, O.PATCH_TREE, O.SPINNING_WHEEL, O.MILLSTONES];
+    for (const o of FARM) {
+      const s = build(o);
+      expect(meshProblems(s), OBJECTS[o].key).toEqual([]);
+      expect(windingProblems(s), OBJECTS[o].key).toBe(0);
+      expect(s.markers.filter((k) => k.data.kind === 'object').map((k) => k.data.key)).toEqual([OBJECTS[o].key]);
+    }
+    // An allotment and a herb patch are low beds; a tree patch's sapling stands a little taller; the workbenches are waist-high and more.
+    expect(height(build(O.PATCH_ALLOTMENT))).toBeLessThan(0.5);
+    expect(height(build(O.PATCH_HERB))).toBeLessThan(0.7);
+    expect(height(build(O.PATCH_TREE))).toBeGreaterThan(1);
+    expect(height(build(O.PATCH_TREE))).toBeLessThan(1.5);
+    expect(height(build(O.SPINNING_WHEEL))).toBeGreaterThan(0.9);
+    expect(height(build(O.MILLSTONES))).toBeGreaterThan(0.9);
+  });
 });
 
 describe('.glb export', () => {

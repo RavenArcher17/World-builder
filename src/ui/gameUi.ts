@@ -49,6 +49,7 @@ const GROUND_GROUPS: [string, number[]][] = [
 /** The object palette's headings and the groups under each, in the order they're listed. */
 const OBJECT_GROUPS: [string, string[]][] = [
   ['Nature', ['tree', 'rock', 'ore', 'fishing', 'herb']],
+  ['Farming', ['farm']],
   ['Runecrafting altars', ['altar']],
   ['Travel', ['travel']],
   ['Secrets', ['secret']],

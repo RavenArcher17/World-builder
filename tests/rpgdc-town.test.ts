@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { O } from '../src/core/objects';
+import { O, OBJECTS } from '../src/core/objects';
 import { checkGameMaps } from '../src/core/rpgdc/checks';
 import { toRpgdcMaps, type RpgdcMapsFile } from '../src/core/rpgdc/export';
 import { createProject } from '../src/core/project';
@@ -12,6 +12,7 @@ import {
   doorLocks,
   dungeonTheme,
   ferries,
+  GAME_OBJECTS,
   gameKind,
   GROUND_LEGEND,
   GROUND_TILES,
@@ -40,7 +41,7 @@ import { isWater, T } from '../src/core/tiles';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import { emptyLayers, type Feature, type Project, type WorldMap } from '../src/core/types';
 import { cacheFit, cacheRegion, ferriesShown, MAX_CACHE_PIXELS, wiresShown } from '../src/ui/render';
-import { caveGround, caveTheme, icePatch, isWindmill, puzzleFrame, ruinPieces, seaFrame, thicketLooksLike } from '../src/ui/gameArt';
+import { caveGround, caveTheme, farmFrame, icePatch, isWindmill, puzzleFrame, ruinPieces, seaFrame, thicketLooksLike } from '../src/ui/gameArt';
 
 /** The game's own map file (shared/maps/rpg-dc.maps.json in RPG-DC), with the town, its insides and the sewers. */
 const FILE = readFileSync(new URL('./fixtures/rpg-dc.maps.json', import.meta.url), 'utf8');
@@ -110,6 +111,7 @@ describe('opening the game’s map file', () => {
       'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door',
       'boat', 'palm', 'wreck', 'fishing_swordfish',
+      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones',
     ]);
   });
 
@@ -451,6 +453,7 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
     expect(out.objectLegend.slice(56)).toEqual([
       'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish',
+      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones',
     ]);
   });
 
@@ -483,7 +486,7 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
     expect(warnings.some((m) => /Duneflower .* is on town cobbles; it grows on sand\./.test(m))).toBe(true);
     expect(warnings.some((m) => /Frostcap .* is in the/.test(m) || /Frostcap .* is on/.test(m))).toBe(false);
     expect(warnings.some((m) => /Frostcap .* is within 2 tiles of a tree/.test(m))).toBe(true);
-    expect(warnings.some((m) => /herb patch\(es\): the game uses just these/.test(m))).toBe(true);
+    expect(warnings.some((m) => /wild herb\(s\): the game uses just these/.test(m))).toBe(true);
   });
 
   it('knows the new lands’ monsters, each with its normal range', () => {
@@ -743,7 +746,10 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
         expect(cellsOf(again.maps.find((m) => m.id === id)!, key)).toEqual(before);
       }
     }
-    expect(out.maps[0].objectLegend.slice(64)).toEqual(['waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish']);
+    expect(out.maps[0].objectLegend.slice(64)).toEqual([
+      'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish',
+      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones',
+    ]);
   });
 
   it('opens the places outside town: the windmill and its miller, the chapel’s cellar, the smugglers’ cove', () => {
@@ -772,7 +778,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
     expect(out.maps.find((m) => m.id === 'windmill')!.places).toContainEqual({ type: 'npc', x: 3, y: 3, role: 'miller' });
     expect(out.maps.find((m) => m.id === 'overworld')!.places).toContainEqual({ type: 'building', x: 341, y: 396, w: 3, h: 3, style: 'tower', sign: 'Mill', roof: 'brown', walls: 'cream' });
     expect(out.maps.find((m) => m.id === 'smugglers_cove')!.theme).toBe('cave');
-    expect(NPC_ROLES.map((r) => r.value).slice(-8, -2)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
+    expect(NPC_ROLES.map((r) => r.value).slice(-9, -3)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
   });
 
   it('knows a windmill: a tower whose sign says mill', () => {
@@ -1207,7 +1213,7 @@ describe('the sea: Gullhaven, Wrecker’s Isle and the ferry between them', () =
   it('opens the port, the island and their insides, their boats, palms, wrecks, swordfish, people and monsters, and exports them as they were', () => {
     const p = project();
     const world = byGameId(p, 'overworld');
-    expect(OBJECT_LEGEND.slice(71)).toEqual(SEA);
+    expect(OBJECT_LEGEND.slice(71, 75)).toEqual(SEA);
     expect([O.BOAT, O.PALM, O.WRECK, O.FISHING_SWORDFISH]).toEqual([71, 72, 73, 74]);
     expect([O.BOAT, O.PALM, O.WRECK, O.FISHING_SWORDFISH].map((o) => count(world, o))).toEqual([2, 176, 3, 10]);
     // All four stand in the way, like any object but the thicket.
@@ -1223,7 +1229,7 @@ describe('the sea: Gullhaven, Wrecker’s Isle and the ferry between them', () =
     ]);
     // The harbourmaster by the jetty, and the castaway in her hut.
     const npc = (m: WorldMap) => m.features.filter((f) => f.type === 'npc').map((f) => [f.c, f.r, f.props?.role, f.name]);
-    expect(npc(world)).toEqual([[40, 357, 'harbourmaster', 'Harbourmaster (Bligh, by the ferry)']]);
+    expect(npc(world).filter(([, , role]) => role !== 'seeds')).toEqual([[40, 357, 'harbourmaster', 'Harbourmaster (Bligh, by the ferry)']]);
     expect(npc(byGameId(p, 'isle_hut'))).toEqual([[3, 2, 'castaway', 'Castaway (Marooned Meg)']]);
     // Crabs, pirates and their captain, each roaming its normal range (the file gives them no radius).
     const spawns = world.features.filter((f) => f.type === 'monster_spawn' && ['giant_crab', 'pirate', 'pirate_captain'].includes(String(f.props?.kind)));
@@ -1418,4 +1424,141 @@ describe('the sea: Gullhaven, Wrecker’s Isle and the ferry between them', () =
     map.layers.object[31 * 128 + 31] = O.PALM;
     expect(checkGameMaps(p).some((i) => /Altar: air \(30, 30\) is within 2 tiles of a tree/.test(i.message))).toBe(true);
   });
+});
+
+describe('Farming: the patches at Giles’s Farm, Martha, the spinning wheels and the millstones', () => {
+  const gameMap = (id: string) => file().maps.find((m) => m.id === id)!;
+  /** Where a map in the file has an object, [x, y] in row order (none if its legend hasn't it). */
+  const cellsOf = (m: RpgdcMapsFile['maps'][number], key: string) => {
+    const k = m.objectLegend.indexOf(key);
+    return k < 0 ? [] : m.objects.flatMap((v, i) => (v === k ? [[i % m.width, Math.floor(i / m.width)]] : []));
+  };
+  const FARM = ['patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones'];
+  const ALLOTMENTS = [340, 341, 342, 344, 345, 346].map((x) => [x, 404]);
+  const HERB_PATCHES = [340, 341, 345, 346].map((x) => [x, 408]);
+  const TREE_PATCHES = [[341, 410], [345, 410]];
+
+  it('opens the farm’s patches, Martha, the spinning wheels and the millstones, and exports them as they were', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    expect(OBJECT_LEGEND.slice(75)).toEqual(FARM);
+    expect([O.PATCH_ALLOTMENT, O.PATCH_HERB, O.PATCH_TREE, O.SPINNING_WHEEL, O.MILLSTONES]).toEqual([75, 76, 77, 78, 79]);
+    const at = (m: WorldMap, x: number, y: number) => m.layers.object[y * m.width + x];
+    expect(ALLOTMENTS.map(([x, y]) => at(world, x, y))).toEqual(ALLOTMENTS.map(() => O.PATCH_ALLOTMENT));
+    expect(HERB_PATCHES.map(([x, y]) => at(world, x, y))).toEqual(HERB_PATCHES.map(() => O.PATCH_HERB));
+    expect(TREE_PATCHES.map(([x, y]) => at(world, x, y))).toEqual(TREE_PATCHES.map(() => O.PATCH_TREE));
+    // The patches lie on the field's mud, and players walk over them; the workbenches are in the way.
+    for (const [x, y] of [...ALLOTMENTS, ...HERB_PATCHES, ...TREE_PATCHES]) {
+      expect(world.layers.terrain[y * world.width + x], `${x}, ${y}`).toBe(T.MUD);
+      expect(isWalkableAt(world, x, y), `${x}, ${y}`).toBe(true);
+    }
+    const mill = byGameId(p, 'windmill');
+    expect(at(mill, 2, 2)).toBe(O.MILLSTONES);
+    expect(isWalkableAt(mill, 2, 2)).toBe(false);
+    for (const [id, x, y] of [['farmhouse', 6, 4], ['tailor', 7, 3]] as const) {
+      expect(at(byGameId(p, id), x, y), id).toBe(O.SPINNING_WHEEL);
+      expect(isWalkableAt(byGameId(p, id), x, y), id).toBe(false);
+    }
+    // Martha, who sells seeds, just outside the field's gate.
+    const martha = world.features.find((f) => f.type === 'npc' && f.props?.role === 'seeds')!;
+    expect([martha.c, martha.r, martha.name]).toEqual([349, 404, "Seed seller (Martha, at Giles's Farm)"]);
+    expect(NPC_ROLES.at(-1)).toEqual({ value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" });
+    // Exported, and opened from that export, the same again.
+    const out = toRpgdcMaps(p);
+    const again = toRpgdcMaps(fromRpgdcMaps(out));
+    for (const f of [out, again]) {
+      for (const id of ['overworld', 'windmill', 'farmhouse', 'tailor']) {
+        for (const key of FARM) expect(cellsOf(f.maps.find((m) => m.id === id)!, key), `${id} ${key}`).toEqual(cellsOf(gameMap(id), key));
+      }
+      expect(f.maps[0].places).toContainEqual({ type: 'npc', x: 349, y: 404, role: 'seeds' });
+    }
+  });
+
+  it('walks over a patch as over the ground under it, as the game does: a patch never changes the way', () => {
+    const { p, map } = bareWorld();
+    const w = map.width;
+    // A row of patches across the whole map: the far side is still reached, and no error.
+    for (let x = 0; x < w; x++) map.layers.object[40 * w + x] = [O.PATCH_ALLOTMENT, O.PATCH_HERB, O.PATCH_TREE][x % 3];
+    map.layers.object[60 * w + 60] = O.CACHE;
+    expect(reachable(map, [{ x: 3, y: 3 }])[60 * w + 59]).toBe(1);
+    expect(errs(p)).toEqual([]);
+    // On water a patch is water (it has no tile of its own), unlike a thicket, which is walkable anywhere.
+    map.layers.terrain[20 * w + 20] = T.WATER;
+    map.layers.object[20 * w + 20] = O.PATCH_HERB;
+    map.layers.terrain[20 * w + 22] = T.WATER;
+    map.layers.object[20 * w + 22] = O.THICKET;
+    expect([isWalkableAt(map, 20, 20), isWalkableAt(map, 22, 20)]).toEqual([false, true]);
+    expect([walkableTiles(map)[20 * w + 20], walkableTiles(map)[20 * w + 22]]).toEqual([0, 1]);
+    // Inside a building's walls, an object's cell isn't wall: a patch there is the ground's, as in the game.
+    map.features.push({ id: 'b', type: 'building', c: 30, r: 30, name: 'Shed', props: { w: 3, h: 3, style: 'timber', sign: 'Shed', roof: '', walls: '' } });
+    map.layers.object[31 * w + 31] = O.PATCH_ALLOTMENT;
+    expect([isWalkableAt(map, 31, 31), isWalkableAt(map, 30, 31)]).toEqual([true, false]);
+    expect([walkableTiles(map)[31 * w + 31], walkableTiles(map)[31 * w + 30]]).toEqual([1, 0]);
+  });
+
+  it('needs every patch and workbench usable from a tile players can reach, as the game does', () => {
+    for (const o of [O.PATCH_ALLOTMENT, O.PATCH_HERB, O.PATCH_TREE, O.SPINNING_WHEEL, O.MILLSTONES]) {
+      const { p, map } = bareWorld();
+      map.layers.object[50 * map.width + 50] = o;
+      expect(errs(p), OBJECTS[o].key).toEqual([]);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) map.layers.object[(50 + dy) * map.width + 50 + dx] = O.BOULDER;
+      expect(errs(p), OBJECTS[o].key).toEqual([`${OBJECTS[o].name} (50, 50) has no walkable neighbour that can be reached from the spawn point.`]);
+    }
+  });
+
+  it('doesn’t count a herb patch as a wild herb: the game counts only its eight herb_ objects', () => {
+    const { p, map } = bareWorld();
+    // In town, on cobbles, beside a tree: all fine for a herb patch.
+    map.layers.terrain[4 * map.width + 4] = T.TOWN_FLOOR;
+    map.layers.object[4 * map.width + 4] = O.PATCH_HERB;
+    map.layers.object[5 * map.width + 5] = O.OAK;
+    expect(checkGameMaps(p)).toEqual([]);
+    // A wild herb there is warned about.
+    map.layers.object[4 * map.width + 4] = O.HERB_SUNLEAF;
+    const warnings = checkGameMaps(p).map((i) => i.message);
+    expect(warnings.some((m) => /wild herb\(s\): the game uses just these/.test(m))).toBe(true);
+    expect(warnings.some((m) => /Sunleaf \(4, 4\) is in the safe zone/.test(m))).toBe(true);
+  });
+
+  it('lists the patches under Farming and the workbenches with the others', () => {
+    expect(GAME_OBJECTS.filter((d) => d.group === 'farm').map((d) => [d.key, d.name, d.useFromNeighbour, d.blocks])).toEqual([
+      ['patch_allotment', 'Allotment', true, false],
+      ['patch_herb', 'Herb patch', true, false],
+      ['patch_tree', 'Tree patch', true, false],
+    ]);
+    expect([O.SPINNING_WHEEL, O.MILLSTONES].map((o) => [OBJECTS[o].name, OBJECTS[o].group, OBJECTS[o].blocks])).toEqual([
+      ['Spinning wheel', 'station', true],
+      ['Millstones', 'station', true],
+    ]);
+  });
+
+  it('draws them with the game’s frames: the patches flat from the world sheet, the workbenches from the indoor sheet', () => {
+    expect([O.PATCH_ALLOTMENT, O.PATCH_HERB, O.PATCH_TREE, O.SPINNING_WHEEL, O.MILLSTONES].map(farmFrame)).toEqual([
+      { sheet: 'world', frame: 'patch-allotment', flat: true },
+      { sheet: 'world', frame: 'patch-herb', flat: true },
+      { sheet: 'world', frame: 'patch-tree', flat: true },
+      { sheet: 'indoor', frame: 'spinning_wheel', flat: false },
+      { sheet: 'indoor', frame: 'millstones', flat: false },
+    ]);
+    expect([O.HERB_SUNLEAF, O.SEWING_TABLE, 0].map(farmFrame)).toEqual([null, null, null]);
+  });
+
+  /** A bare 128×128 overworld of grass: Safe round the spawn point (3, 3), Frontier beyond. */
+  function bareWorld() {
+    const w = 128;
+    const p = createProject('farm');
+    const L = emptyLayers(w * w);
+    L.terrain.fill(T.GRASS);
+    for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) L.zone[y * w + x] = x < 8 && y < 8 ? 1 : 2;
+    const map: WorldMap = {
+      id: 'ow', name: 'World', kind: 'overland', scaleId: 'local', grid: 'iso', width: w, height: w, seed: 1,
+      settings: { rpgdcMapId: 'overworld' }, layers: L, children: [],
+      features: [{ id: 's', type: 'spawn_point', c: 3, r: 3, name: 'start' }],
+    };
+    p.maps[map.id] = map;
+    return { p, map };
+  }
+  function errs(p: Project) {
+    return errors(p).map((i) => i.message);
+  }
 });

@@ -5,7 +5,7 @@
  */
 
 /** How an object is drawn on the map. Small vector shapes stay crisp and fast for thousands of cells. */
-export type ObjectShape = 'pine' | 'round' | 'willow' | 'boulder' | 'fence' | 'ore' | 'icon' | 'cairn' | 'thicket' | 'ruin' | 'gate' | 'lever' | 'lockdoor';
+export type ObjectShape = 'pine' | 'round' | 'willow' | 'boulder' | 'fence' | 'ore' | 'icon' | 'cairn' | 'thicket' | 'ruin' | 'gate' | 'lever' | 'lockdoor' | 'patch';
 
 export interface ObjectDef {
   id: number;
@@ -20,7 +20,7 @@ export interface ObjectDef {
   blocks: boolean;
   /** Used by standing next to it (a station, fishing spot or staircase) rather than on it. */
   useFromNeighbour: boolean;
-  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar' | 'travel' | 'secret' | 'ruin' | 'puzzle';
+  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar' | 'travel' | 'secret' | 'ruin' | 'puzzle' | 'farm';
 }
 
 const o = (
@@ -55,7 +55,7 @@ export const OBJECTS: ObjectDef[] = [
   o(17, 'crypt_entrance', 'Crypt entrance', '#2a2230', '🕳️', 'icon', 'stairs', true),
   o(18, 'stairs_down', 'Stairs down', '#7a5c96', '⬇️', 'icon', 'stairs', true),
   o(19, 'stairs_up', 'Stairs up', '#4f7fae', '⬆️', 'icon', 'stairs', true),
-  // Herb patches, picked by hand from beside them.
+  // Wild herbs, picked by hand from beside them.
   o(20, 'herb_sunleaf', 'Herb: sunleaf', '#c8e86a', '🌿', 'icon', 'herb', true),
   o(21, 'herb_silverweed', 'Herb: silverweed', '#c8d8e8', '🌾', 'icon', 'herb', true),
   o(22, 'herb_thornberry', 'Herb: thornberry', '#d86a5a', '🍓', 'icon', 'herb', true),
@@ -129,6 +129,14 @@ export const OBJECTS: ObjectDef[] = [
   o(72, 'palm', 'Palm', '#4f9a3f', '🌴', 'icon', 'rock'),
   o(73, 'wreck', 'Wreck', '#7a5a3a', '🛶', 'icon', 'rock'),
   o(74, 'fishing_swordfish', 'Fishing spot: swordfish', '#6a7aa8', '🦈', 'icon', 'fishing', true),
+  // RPG-DC's Farming: beds of tilled soil that players grow crops in, tended from beside them, and
+  // which anyone can walk over (they lie flat on the ground); and two workbenches, a spinning wheel
+  // (flax into cloth) and the windmill's millstones (wheat into flour), used from beside them.
+  { ...o(75, 'patch_allotment', 'Allotment', '#8c5c34', '🥕', 'patch', 'farm', true), blocks: false },
+  { ...o(76, 'patch_herb', 'Herb patch', '#84583a', '🪴', 'patch', 'farm', true), blocks: false },
+  { ...o(77, 'patch_tree', 'Tree patch', '#7c5438', '🌰', 'patch', 'farm', true), blocks: false },
+  o(78, 'spinning_wheel', 'Spinning wheel', '#a87a4a', '🧶', 'icon', 'station', true),
+  o(79, 'millstones', 'Millstones', '#9a948a', '⚙️', 'icon', 'station', true),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -205,7 +213,12 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'BOAT'
   | 'PALM'
   | 'WRECK'
-  | 'FISHING_SWORDFISH',
+  | 'FISHING_SWORDFISH'
+  | 'PATCH_ALLOTMENT'
+  | 'PATCH_HERB'
+  | 'PATCH_TREE'
+  | 'SPINNING_WHEEL'
+  | 'MILLSTONES',
   number
 >;
 

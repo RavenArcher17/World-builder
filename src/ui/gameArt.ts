@@ -192,7 +192,7 @@ const EDGE_ART: Partial<Record<Ground, string>> = { snow: 'snow-edge', grass: 'e
 const wet = (g: Ground) => g === 'water' || g === 'bog';
 /**
  * Scenery scattered over open ground for looks (the game's SCENERY): which art, on what share of
- * tiles. Lily pads float. On grass only the first six plants: the others are herb patches.
+ * tiles. Lily pads float. On grass only the first six plants: the others are wild herbs.
  */
 const SCENERY: Partial<Record<Ground, { frame: string; share: number; flat?: boolean; only?: number }>> = {
   grass: { frame: 'plant', share: 0.06, only: 6 },
@@ -239,7 +239,27 @@ const INDOOR_ART: Partial<Record<number, string>> = {
   [O.CRATE]: 'crate',
   [O.LECTERN]: 'lectern',
   [O.BOOKSHELF]: 'crate',
+  // Farming's workbenches: the spinning wheel (in the farmhouse and the Tailor's) and the windmill's millstones.
+  [O.SPINNING_WHEEL]: 'spinning_wheel',
+  [O.MILLSTONES]: 'millstones',
 };
+/** Farming's patches, from the world sheet: bare tilled beds, drawn flat on the ground (players walk over them). */
+const PATCH_ART: Partial<Record<number, string>> = {
+  [O.PATCH_ALLOTMENT]: 'patch-allotment',
+  [O.PATCH_HERB]: 'patch-herb',
+  [O.PATCH_TREE]: 'patch-tree',
+};
+
+/**
+ * The sheet and frame the game draws a Farming object with, or null for anything else: a patch
+ * flat on the ground from the world sheet (`patch-allotment`, `patch-herb`, `patch-tree`), the
+ * spinning wheel and the millstones from the indoor sheet like the other workbenches.
+ */
+export function farmFrame(o: number): { sheet: 'world' | 'indoor'; frame: string; flat: boolean } | null {
+  if (PATCH_ART[o]) return { sheet: 'world', frame: PATCH_ART[o]!, flat: true };
+  if (o === O.SPINNING_WHEEL || o === O.MILLSTONES) return { sheet: 'indoor', frame: INDOOR_ART[o]!, flat: false };
+  return null;
+}
 /** Things in the streets, from the world sheet wherever they stand (indoors too). */
 const DECOR_ART: Partial<Record<number, string>> = {
   [O.WELL]: 'well',
@@ -408,6 +428,8 @@ const NPC_OUTFITS: Record<string, Record<string, [string, string?]>> = {
   miner: { head: ['head_bald'], chest: ['leather_chest', '#707070'], hands: ['leather_gloves', '#5a5a5a'], legs: ['cloth_pants', '#5a5040'], feet: ['leather_boots', '#5a5a5a'], main: ['war_hammer'] },
   // Hob the miller, in the windmill, white with flour.
   miller: { head: ['leather_hood', '#f4f0e4'], chest: ['cloth_shirt', '#f4f0e4'], hands: ['default_hands'], legs: ['cloth_pants', '#d8d0bc'], feet: ['leather_boots', '#b8a888'] },
+  // Martha, who sells seeds at Giles's Farm, in a green smock and a straw-coloured headscarf.
+  seeds: { head: ['leather_hood', '#f0d890'], chest: ['cloth_shirt', '#9ac070'], hands: ['default_hands'], legs: ['cloth_pants', '#7a6a48'], feet: ['leather_boots', '#6a5038'] },
   // Gullhaven's harbourmaster in a navy coat and cap; the castaway on Wrecker's Isle in sun-faded rags.
   harbourmaster: { head: ['leather_hood', '#34466a'], chest: ['leather_chest', '#3a5480'], hands: ['default_hands'], legs: ['cloth_pants', '#e0d8c4'], feet: ['leather_boots', '#3a3430'] },
   castaway: { head: ['head_short'], chest: ['cloth_shirt', '#e0d0a8'], hands: ['default_hands'], legs: ['cloth_pants', '#9a8a68'], feet: ['cloth_sandals'] },
@@ -509,6 +531,17 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
   };
   /** A thing from the streets (or an altar, or a waystone), from the world sheet. */
   const putDecor = (o: number, i: number) => putOr('world', DECOR_ART[o]!, o, i);
+  /**
+   * A station, workbench or piece of furniture from the indoor sheet; its plain symbol when the
+   * game server's indoor sheet hasn't that frame yet (Farming's spinning wheel and millstones),
+   * and nothing on an older server with no indoor sheet at all.
+   */
+  const putIndoor = (o: number, i: number) => {
+    if (art.images.indoor && !art.sheets.indoor?.frames[INDOOR_ART[o]!]) symbol(o, i);
+    else putFrom('indoor', INDOOR_ART[o]!, i);
+  };
+  /** A Farming patch, flat on the ground, from the world sheet; its plain symbol (a tilled bed) until the game server has the art. */
+  const putPatch = (i: number) => putOr('world', PATCH_ART[L.object[i]]!, L.object[i], i);
   /** A gate, lever or locked door, from the dungeon sheet (in dungeons of any look, and insides). */
   const putPuzzle = (i: number) => putOr('dungeon', puzzleFrame(map, i % w, Math.floor(i / w))!, L.object[i], i);
   /**
@@ -604,6 +637,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       floor(i, x, y);
       if (L.object[i] === O.STAIRS_DOWN) put('stairs-down', i);
       else if (L.object[i] === O.DOOR) putFrom('indoor', 'doormat', i);
+      else if (PATCH_ART[L.object[i]]) putPatch(i);
       else if (!inside && !pieces.has(i) && !L.object[i] && !lights.has(i) && tileHash(x, y, 6) < 0.035) put(variant('bones', x, y, 7), i);
     }
     for (const i of order) {
@@ -635,7 +669,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       } else if (ORE_ART[L.object[i]]) {
         putFrom('world', ORE_ART[L.object[i]]!, i);
       } else if (L.object[i] !== O.DOOR && INDOOR_ART[L.object[i]]) {
-        putFrom('indoor', INDOOR_ART[L.object[i]]!, i);
+        putIndoor(L.object[i], i);
       }
       if (L.object[i] === O.STAIRS_UP) put('stairs-up', i);
       if (lights.has(i)) put('brazier', i);
@@ -687,6 +721,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     if (L.object[i] === O.CRYPT_ENTRANCE) put('entrance', i);
     if (L.object[i] === O.SEWER_GRATE) put('sewer-grate', i);
     if (FISHING.has(L.object[i])) fishRing(ctx, g, i, s);
+    // Farming's patches lie flat on the ground, like the entrance and the grate.
+    if (PATCH_ART[L.object[i]]) putPatch(i);
     const plant = scenery(i, x, y, ground);
     if (plant?.flat) put(plant.frame, i);
   }
@@ -722,7 +758,7 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     else if (o === O.DOOR) {
       if (!inHouse(x, y)) put('door-timber-s', i);
     } else if (o !== O.SEWER_GRATE && ART_FOR[o]) put(ART_FOR[o]!, i);
-    else if (INDOOR_ART[o]) putFrom('indoor', INDOOR_ART[o]!, i);
+    else if (INDOOR_ART[o]) putIndoor(o, i);
     else if (o === O.FENCE) {
       if (fence(x, y - 1)) put('fence-n', i);
       if (fence(x - 1, y)) put('fence-w', i);
@@ -1062,6 +1098,8 @@ export function gameArtColours(map: WorldMap): OverviewColours | null {
     if (o === O.CACTUS) return frameColour(home, 'cactus/0');
     if (o === O.PALM || o === O.WRECK) return frameColour(home, `${SEA_ART[o]}/0`);
     if (o === O.BOAT) return frameColour(home, 'boat-x');
+    // Farming's patches: their tilled soil (their plain colour until the game server has the art).
+    if (PATCH_ART[o]) return frameColour(home, PATCH_ART[o]!);
     if (o === O.BOULDER) return frameColour(home, `${snow ? 'snowrock' : 'rock'}/0`);
     return null;
   };

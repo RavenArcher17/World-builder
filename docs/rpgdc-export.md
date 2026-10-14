@@ -40,7 +40,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zone": null,
   "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks", "sand", "mud", "bog", "snow", "stone", "ice"],
   "ground": [0, 0, 1, ...],
-  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin", "gate", "lever", "locked_door", "boat", "palm", "wreck", "fishing_swordfish"],
+  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin", "gate", "lever", "locked_door", "boat", "palm", "wreck", "fishing_swordfish", "patch_allotment", "patch_herb", "patch_tree", "spinning_wheel", "millstones"],
   "objects": [0, 4, 0, ...],
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
@@ -50,7 +50,8 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
     { "type": "link", "x": 284, "y": 284, "toMap": "crypt1", "toX": 19, "toY": 7 },
     { "type": "building", "x": 375, "y": 376, "w": 6, "h": 5, "style": "stone", "sign": "Bank", "roof": "slate", "walls": "grey" },
     { "type": "landmark", "x": 386, "y": 456, "id": "fisher_lake", "name": "Moira's Lake", "radius": 16 },
-    { "type": "ferry", "x": 36, "y": 360, "toX": 116, "toY": 624, "fare": 100, "name": "Wrecker's Isle" }
+    { "type": "ferry", "x": 36, "y": 360, "toX": 116, "toY": 624, "fare": 100, "name": "Wrecker's Isle" },
+    { "type": "npc", "x": 349, "y": 404, "role": "seeds" }
   ]
 }
 ```
@@ -65,7 +66,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
 | `theme` | string, optional | Dungeon floors only: how the floor looks in the game. `crypt` (dressed stone), `sewer` (damp stone; water is sewer water), `cave` (rough rock; water is lava) or `frost` (the Frozen Peaks: ice walls over snow and ice; water is thin ice). Without it, a floor with water looks like the sewers, otherwise the crypt. In World Builder: `settings.rpgdcTheme`, set with **Looks like** in the Map panel; written only when chosen. |
 | `groundLegend` | string[] | Ground kinds; `ground` values index into it. Always all thirteen, even if unused. (The game's own file lists just the ones each map uses, in any order; both read the same.) |
 | `ground` | integer[] (`width*height`) | Ground per tile. |
-| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `fishing_swordfish` (75 entries). |
+| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `millstones` (80 entries). |
 | `objects` | integer[] (`width*height`) | What stands on each tile. |
 | `zoneLegend` | string[] | Zone keys; `zones` values index into it. Always all four. |
 | `zones` | integer[] (`width*height`) \| `null` | Overworld: zone per tile. Dungeons: `null` (use `zone`). |
@@ -104,10 +105,12 @@ warns when a map has any.
 
 ### Objects
 
-Any object blocks walking, except the `thicket`, which players push through; a `gate` or
-`locked_door` opens only for the players who open it (monsters never pass one). Stations, fishing
-spots, herbs, altars, waystones, boats, caches, levers, doors, stairs, the grate and the crypt
-entrance are used from a neighbouring tile (any of the 8 around it).
+Any object blocks walking, except the `thicket`, which players push through, and Farming's
+patches (`patch_allotment`, `patch_herb`, `patch_tree`), which lie flat on the ground: a patch's
+tile walks like the ground under it. A `gate` or `locked_door` opens only for the players who open
+it (monsters never pass one). Stations, workbenches, fishing spots, herbs, altars, waystones,
+boats, caches, levers, Farming's patches, doors, stairs, the grate and the crypt entrance are used
+from a neighbouring tile (any of the 8 around it).
 
 | Index | Key | Notes |
 |---|---|---|
@@ -120,7 +123,7 @@ entrance are used from a neighbouring tile (any of the 8 around it).
 | 14–16 | `fishing_shrimp`, `fishing_trout`, `fishing_salmon` | Fishing spots (on water). |
 | 17 | `crypt_entrance` | Overworld way down into the crypt. Needs a `link`. |
 | 18, 19 | `stairs_down`, `stairs_up` | Need a `link`. |
-| 20–24 | `herb_sunleaf`, `herb_silverweed`, `herb_thornberry`, `herb_nightshade`, `herb_emberbloom` | Herb patches. Once an overworld has any, the game uses just these and stops scattering its own. They grow on grass, in the Frontier (sunleaf, silverweed), the Wilderness (thornberry, nightshade) and the Deep (emberbloom). |
+| 20–24 | `herb_sunleaf`, `herb_silverweed`, `herb_thornberry`, `herb_nightshade`, `herb_emberbloom` | Wild herbs. Once an overworld has any, the game uses just these and stops scattering its own. They grow on grass, in the Frontier (sunleaf, silverweed), the Wilderness (thornberry, nightshade) and the Deep (emberbloom). |
 | 25 | `door` | A building's door (in its south or east wall), or the way out of an inside. Needs a `link`. |
 | 26 | `sewer_grate` | A way down, like stairs: needs a `link` to a map with stairs up leading back. |
 | 27–29 | `alchemy_table`, `sewing_table`, `fletching_bench` | Workshop stations. |
@@ -132,7 +135,7 @@ entrance are used from a neighbouring tile (any of the 8 around it).
 | 56, 57 | `cactus`, `dead_tree` | The new lands' scenery: the desert's cacti and the swamp's dead trees. In the way like boulders. |
 | 58 | `yew` | A tree you can chop (Woodcutting 45), in the mountains. |
 | 59, 60 | `fishing_eel`, `fishing_lobster` | Fishing spots: eels in the swamp, lobsters off the coast. |
-| 61–63 | `herb_duneflower`, `herb_bogmyrtle`, `herb_frostcap` | The new lands' herb patches, each on its own land's ground anywhere out of town: duneflower on sand, bog myrtle in the mud, frostcap on snow. |
+| 61–63 | `herb_duneflower`, `herb_bogmyrtle`, `herb_frostcap` | The new lands' wild herbs, each on its own land's ground anywhere out of town: duneflower on sand, bog myrtle in the mud, frostcap on snow. |
 | 64 | `waystone` | Fast travel: a standing stone with glowing runes, used from any of the 8 tiles around it to travel to the waystone of any landmark the player has found. On the overworld only, inside a `landmark` place (below), one to a landmark, and not in the Deep. Free in town and the Frontier; travelling to one in the Wilderness costs coins. |
 | 65 | `cache` | A secret: a hidden cache under a cairn of stones, used from any of the 8 tiles around it like a station. Each player can search each cache once, for coins and something useful, more the further out it is (by its zone). On any map: the overworld (off the paths, in hidden glades), dungeon floors and insides. The game draws it as a cairn (the `cairn` frame of the world, dungeon, cave or frost sheet), and its minimap as the ground under it. |
 | 66 | `thicket` | A secret: a thicket that looks like the trees round it (the game draws it as the first tree west, north, east or south of it, a shade darker), but which players walk through: the way into a hidden glade. The one object that doesn't block walking: its cell is walkable whatever the ground under it. |
@@ -143,6 +146,8 @@ entrance are used from a neighbouring tile (any of the 8 around it).
 | 71 | `boat` | A boat moored by a jetty, on the water: tapped from any of the 8 tiles around it, like a station, to sail where its `ferry` place (below) says, for its fare. Not walkable. Every boat needs a ferry. The game draws it lying along its jetty: `boat-y` (along y) when the tile west or east of it can be walked on, else `boat-x`. |
 | 72, 73 | `palm`, `wreck` | Wrecker's Isle's scenery: palms, and wrecked hulls on its beaches. In the way like boulders. The game draws one of three palms (`palm/0` to `palm/2`) and two wrecks, picked by the tile. |
 | 74 | `fishing_swordfish` | A fishing spot (on water): swordfish (Fishing 50), in the deep water off Wrecker's Isle. |
+| 75–77 | `patch_allotment`, `patch_herb`, `patch_tree` | Farming's patches: beds of tilled soil each player grows their own crops in (vegetables, wheat and flax in an allotment, herbs in a herb patch, trees in a tree patch), tended from any of the 8 tiles around them. They have no tile of their own: players walk over them as over the ground under them (the game's are on the mud of the fenced field at Giles's Farm), so placing one never changes the way anywhere, and a building's walls don't cover one. A `patch_herb` isn't a wild herb: it doesn't count as one of the herbs that stop the game scattering its own. The game draws them flat on the ground, from the world sheet's `patch-allotment`, `patch-herb` and `patch-tree` frames. |
+| 78, 79 | `spinning_wheel`, `millstones` | Farming's workbenches, used from any of the 8 tiles around them like the other workbenches: the spinning wheel spins flax into cloth (the game has one in the farmhouse and one at the Tailor's), the millstones grind wheat into flour (in the windmill). Not walkable. Drawn from the indoor sheet's `spinning_wheel` and `millstones` frames. |
 
 ### Zones
 
@@ -171,7 +176,7 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `lever` | `x`, `y`, `toX`, `toY` | On a `lever` object: wires it to the `gate` at (`toX`, `toY`) on the same map. A gate opens (for whoever pulled them, and their party on that floor) once every lever wired to it is pulled. One place per lever and gate: a lever wired to two gates has two places, and a gate with two levers needs both pulled. |
 | `lock` | `x`, `y`, `key` | On a `locked_door` object: `key` is the item that unlocks it, by the game's item id (`frost_key`). The key is used up and the door stays unlocked for that player. One lock to a door; the game refuses a key that isn't one of its items. |
 | `ferry` | `x`, `y`, `toX`, `toY`, `fare`, `name` | On a `boat` object: players beside the boat sail to tile (`toX`, `toY`) on the same map, which is walkable, for `fare` coins (a whole number from 0 to 10000; 0 is free). `name` is where it goes, 1 to 40 letters ("Wrecker's Isle"), shown to players ("the ferry to Wrecker's Isle"). One ferry to a boat: the way back is another boat by the landing, with a ferry of its own (the game's two: Gullhaven to Wrecker's Isle for 100 coins, and back for nothing). The game won't load a ferry whose landing is off the map, whose fare or name isn't one of those, or a second ferry from one boat. |
-| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip), and outside town `hermit` (Old Ansel), `fisher` (Fisher Moira), `farmer` (Farmer Giles), `trapper` (Rook the trapper), `miner` (Dobbs, in the caverns) and `miller` (Hob the miller, in the windmill), and by the sea `harbourmaster` (Harbourmaster Bligh, in Gullhaven by the ferry) and `castaway` (Marooned Meg, on Wrecker's Isle); or `slayer`, the Slayer master, who gives Slayer tasks. The talkers give quests: villagers by the map they're in (`home1` to `home4`, so keep those map ids), the rest by their role (so keep one of each); the harbourmaster and the castaway just talk, and villagers in Gullhaven's cottages (maps whose id starts `port_`) talk about the sea. A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
+| `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`, and `seeds`: Martha, who sells seeds and compost by the field at Giles's Farm), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip), and outside town `hermit` (Old Ansel), `fisher` (Fisher Moira), `farmer` (Farmer Giles), `trapper` (Rook the trapper), `miner` (Dobbs, in the caverns) and `miller` (Hob the miller, in the windmill), and by the sea `harbourmaster` (Harbourmaster Bligh, in Gullhaven by the ferry) and `castaway` (Marooned Meg, on Wrecker's Isle); or `slayer`, the Slayer master, who gives Slayer tasks. The talkers give quests: villagers by the map they're in (`home1` to `home4`, so keep those map ids), the rest by their role (so keep one of each); the harbourmaster and the castaway just talk, and villagers in Gullhaven's cottages (maps whose id starts `port_`) talk about the sea. A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
 
 Building colours. The game draws the roof, and the walls (the plaster of a timber house, the stone of
 a stone house or tower), again over the house, multiplied by the colour:
@@ -252,6 +257,19 @@ sheet's `palm/*` and `wreck/*` frames (picked by tile, like cacti) and a boat as
 `boat-y`, as the game lays it; as their plain symbols on a game server without that art. In 3D:
 a leaning palm, a broken hull, and a sailing boat lying along its jetty.
 
+Farming. Giles's Farm has a fenced field (around (338, 402) to (348, 412) on the overworld) with six
+allotments, four herb patches and two tree patches (`patch_allotment`, `patch_herb`, `patch_tree`)
+on its mud, and Martha (`npc` role `seeds`), who sells seeds and compost, just outside its gate.
+Each player has their own crops in every patch, so nobody fights over space. The windmill's inside
+has the `millstones`, and the farmhouse and the Tailor's each a `spinning_wheel`. In World Builder
+the patches are under **Farming** in the object palette (**Allotment**, **Herb patch**, **Tree
+patch**), drawn as beds of tilled soil (with seedlings, a herb or a sapling to tell them apart), and
+the spinning wheel and the millstones are with the workbenches under **Town**. With the game's art,
+the patches are drawn flat on the ground from the world sheet's `patch-allotment`, `patch-herb` and
+`patch-tree` frames, and the workbenches from the indoor sheet's `spinning_wheel` and `millstones`;
+each as its plain symbol on a game server without that art. In 3D: a low bed with ridges and what
+grows in it, a spinning wheel on its bench, and two millstones under a hopper.
+
 Links come in pairs: going down from map A to B (a link on A's entrance, stairs down or grate) is
 matched by a link on one of B's stairs up back to A, and a door into B by a door on B back to A. Going down, the arrival tile is normally
 just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs down.
@@ -261,9 +279,11 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 **Check for game** reports each problem with its map and tile (tap one to jump there):
 
 - exactly one spawn point, on the overworld, on walkable ground in the Safe zone;
-- every station, altar, waystone, boat, cache, lever and fishing spot has a walkable neighbour reachable on foot from the spawn point
+- every station and workbench (the spinning wheel and the millstones too), altar, waystone, boat,
+  cache, lever, fishing spot and Farming patch has a walkable neighbour reachable on foot from the spawn point
   (on dungeon floors: from where links arrive), moving in 8 directions without cutting corners
-  past blocked tiles (thickets are walked through, so a glade behind one counts, and gates and
+  past blocked tiles (thickets are walked through, so a glade behind one counts, as are patches on
+  walkable ground, and gates and
   locked doors count as open, since players open them); from a tile beside a boat, players sail
   to its ferry's landing, so an island counts as reached;
 - every entrance, staircase, door and grate has a link to an existing map and a walkable target
@@ -276,7 +296,7 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 - every overworld tile has a zone, and every dungeon floor and inside has its zone;
 - there's one overworld, square and 128 to 1024 tiles a side; dungeon floors are 16 to 64 tiles a
   side, insides 4 to 32;
-- herb patches (warnings): out of their zones or off their ground, unreachable, next to a blocked
+- wild herbs (warnings; not Farming's herb patches): out of their zones or off their ground, unreachable, next to a blocked
   tile, or within 2 tiles of a tree or a palm (which hides them in the game); and a reminder that the game
   then stops scattering its own;
 - tiles using ground or objects the game doesn't have (a warning);

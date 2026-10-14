@@ -198,7 +198,7 @@ describe('RPG-DC export', () => {
       expect(Object.keys(m)).toEqual(['id', 'name', 'kind', 'width', 'height', 'zone', 'groundLegend', 'ground', 'objectLegend', 'objects', 'zoneLegend', 'zones', 'places']);
       expect(m.groundLegend).toEqual(['grass', 'path', 'water', 'town_floor', 'crypt_floor', 'crypt_wall', 'planks', 'sand', 'mud', 'bog', 'snow', 'stone', 'ice']);
       expect(m.objectLegend.slice(0, 20)).toEqual(['', 'tree', 'oak', 'willow', 'boulder', 'fence', 'copper_rock', 'tin_rock', 'iron_rock', 'bank', 'shop', 'furnace', 'anvil', 'cooking_fire', 'fishing_shrimp', 'fishing_trout', 'fishing_salmon', 'crypt_entrance', 'stairs_down', 'stairs_up']);
-      expect(m.objectLegend).toHaveLength(75);
+      expect(m.objectLegend).toHaveLength(80);
       expect(m.zoneLegend).toEqual(['safe', 'frontier', 'wilderness', 'deep']);
       expect(m.ground).toHaveLength(m.width * m.height);
       expect(m.objects).toHaveLength(m.width * m.height);

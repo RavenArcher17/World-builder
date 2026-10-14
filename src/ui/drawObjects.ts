@@ -336,6 +336,70 @@ export function drawObject(ctx: CanvasRenderingContext2D, id: number, x: number,
       ctx.strokeRect(x - u * 0.45, y - u * 0.2, u * 0.9, u * 0.42);
       break;
     }
+    case 'patch': {
+      // A bed of tilled soil lying flat on the ground (it can be walked over), its furrows raked
+      // across it, with what grows in it: rows of sprouts in an allotment, a leafy herb in a herb
+      // patch, a sapling in a tree patch.
+      const rx = u * 1.2;
+      const ry = u * 0.62;
+      ctx.fillStyle = d.color;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.clip();
+      ctx.strokeStyle = shade(d.color, 0.65);
+      ctx.lineWidth = Math.max(1, u * 0.09);
+      ctx.beginPath();
+      for (const k of [-0.6, -0.2, 0.2, 0.6]) {
+        ctx.moveTo(x - rx + k * rx, y + ry);
+        ctx.lineTo(x + k * rx + rx * 0.4, y - ry);
+      }
+      ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = shade(d.color, 0.5);
+      ctx.lineWidth = Math.max(1, u * 0.08);
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = Math.max(1, u * 0.1);
+      if (d.key === 'patch_tree') {
+        ctx.strokeStyle = '#5a3c22';
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y - u * 0.7);
+        ctx.stroke();
+        ctx.fillStyle = '#5f9a3a';
+        ctx.beginPath();
+        ctx.arc(x, y - u * 0.85, u * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#3c6a26';
+        ctx.stroke();
+      } else if (d.key === 'patch_herb') {
+        ctx.fillStyle = '#6fae48';
+        for (const [dx, a] of [[-0.18, -0.5], [0.18, 0.5], [0, 0]]) {
+          ctx.beginPath();
+          ctx.ellipse(x + dx * u, y - u * 0.25, u * 0.12, u * 0.28, a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#b07ad8';
+        ctx.beginPath();
+        ctx.arc(x, y - u * 0.5, u * 0.09, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = '#7ec04e';
+        ctx.beginPath();
+        for (const [dx, dy] of [[-0.5, 0.05], [0, -0.1], [0.5, 0.05], [-0.25, 0.3], [0.25, 0.3]]) {
+          const sx = x + dx * u;
+          const sy = y + dy * u;
+          ctx.moveTo(sx - u * 0.1, sy - u * 0.18);
+          ctx.lineTo(sx, sy);
+          ctx.lineTo(sx + u * 0.1, sy - u * 0.18);
+        }
+        ctx.stroke();
+      }
+      break;
+    }
     default: {
       ctx.fillStyle = d.color;
       ctx.globalAlpha = 0.85;

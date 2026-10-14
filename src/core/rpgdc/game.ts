@@ -48,16 +48,25 @@ const GROUND_WALKABLE = [true, true, false, true, true, false, true, true, true,
 export const OPEN_GROUND = new Set<number>([T.GRASS, T.SAND, T.MUD, T.SNOW, T.STONE, T.ICE]);
 
 /** How many objects the game knows: World Builder's first ones, in the same order. */
-const GAME_OBJECT_COUNT = 75;
+const GAME_OBJECT_COUNT = 80;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
 export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
 export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
 /**
- * 1 for the game's objects you can walk through (the thicket), by object index. In the game a
- * cell with an object takes the object's tile, whatever the ground under it, and the thicket's
- * tile is walkable; every other object's blocks.
+ * Farming's patches: the game gives them no tile of their own (its OBJECT_TILE null), so a patch's
+ * cell is the ground's, walkable where the ground is, and a building's walls don't cover it.
  */
-const OPEN_OBJECT = Uint8Array.from(OBJECT_LEGEND, (_, k) => (k > 0 && !OBJECTS[k].blocks ? 1 : 0));
+export const FARM_PATCHES = new Set<number>([O.PATCH_ALLOTMENT, O.PATCH_HERB, O.PATCH_TREE]);
+/**
+ * How each of the game's objects walks, by object index: BLOCKS (most), OPEN (the thicket, whose
+ * tile is walkable wherever it stands) or GROUND (Farming's patches, walkable where the ground
+ * under them is). In the game a cell with an object takes the object's tile, if it has one,
+ * whatever the ground under it.
+ */
+const BLOCKS = 0;
+const OPEN = 1;
+const GROUND = 2;
+const OBJECT_WALK = Uint8Array.from(OBJECT_LEGEND, (_, k) => (k === 0 || OBJECTS[k].blocks ? BLOCKS : FARM_PATCHES.has(k) ? GROUND : OPEN));
 
 /**
  * The game ground index for any World Builder tile. The game's own grounds map to themselves;
@@ -84,12 +93,13 @@ export function gameObject(objectId: number): number {
 
 /**
  * Walkable in the game: walkable ground with nothing standing on it, and not inside a building's
- * walls; or a thicket, which you push through (wherever it stands, as in the game).
+ * walls; or a thicket, which you push through (wherever it stands, as in the game); or a Farming
+ * patch on walkable ground (it lies flat on it).
  */
 export function isWalkable(map: WorldMap, i: number, mask: Uint8Array = buildingMask(map)): boolean {
   const o = gameObject(map.layers.object[i]);
-  if (o) return OPEN_OBJECT[o] === 1;
-  return GROUND_WALKABLE[gameGround(map.layers.terrain[i])] && !mask[i];
+  if (o && OBJECT_WALK[o] !== GROUND) return OBJECT_WALK[o] === OPEN;
+  return GROUND_WALKABLE[gameGround(map.layers.terrain[i])] && (o !== 0 || !mask[i]);
 }
 
 /** Whether each World Builder tile is ground the game walks on (by tile id), worked out once. */
@@ -113,12 +123,13 @@ export function walkableTiles(map: WorldMap, mask: Uint8Array = buildingMask(map
   for (let i = 0; i < n; i++) {
     const t = terrain[i];
     const o = object[i];
-    if (o > 0 && o < objects) {
-      out[i] = OPEN_OBJECT[o];
+    const walk = o > 0 && o < objects ? OBJECT_WALK[o] : -1;
+    if (walk === BLOCKS || walk === OPEN) {
+      out[i] = walk;
       continue;
     }
     const ground = WALKABLE_TILE[t] ?? GROUND_WALKABLE[gameGround(t)];
-    if (ground && !mask[i]) out[i] = 1;
+    if (ground && (walk === GROUND || !mask[i])) out[i] = 1;
   }
   return out;
 }
@@ -247,6 +258,8 @@ export const NPC_ROLES = [
   // Gullhaven's harbourmaster, by the ferry, and the castaway out on Wrecker's Isle (they just talk).
   { value: 'harbourmaster', label: 'Harbourmaster (Bligh, by the ferry)' },
   { value: 'castaway', label: 'Castaway (Marooned Meg)' },
+  // Farming: Martha sells seeds and compost at Giles's Farm (a shop, like the General Store).
+  { value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" },
 ];
 /** Townspeople worth robbing, who keep a guard indoors with them (the game's `guarded` in thieving.ts). */
 export const GUARDED_ROLES = new Set(['mayor']);
@@ -862,7 +875,7 @@ export const PLACE_HELP: Record<string, string> = {
   lever: 'On a Lever object: wires it to a Gate on this map (tap 🎯 Pick the gate, then the gate). A gate opens, for whoever pulled them and their party on that floor, once every lever wired to it is pulled; one place per lever and gate, so a lever can open several gates and a gate can need several levers. Monsters never pass a gate.',
   lock: "On a Locked door object: the item that unlocks it (the game's item id, like frost_key). A player who brings the key uses it up, and the door stays unlocked for them for good.",
   ferry: `On a Ferry boat object, moored by a jetty: players beside the boat tap it to sail to the landing tile on this map (tap 🎯 Pick the landing, then the tile) for its fare, ${FERRY_FARE.min} to ${FERRY_FARE.max} coins (0 is free). Its name is where it goes, shown to players ("the ferry to Wrecker's Isle"). One ferry per boat: for the way back, moor a boat by the landing with a ferry of its own. What players can reach from the landing counts as reached from beside the boat.`,
-  npc: "A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller), Gullhaven's harbourmaster and the castaway on Wrecker's Isle; the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
+  npc: "A townsperson who stands here all day: tap them in the game to bank or trade (Martha, the seed seller, sells seeds and compost by the farm's field). The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller), Gullhaven's harbourmaster and the castaway on Wrecker's Isle; the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
 };
 
 /**

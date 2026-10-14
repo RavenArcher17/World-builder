@@ -555,7 +555,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
           }
           return out;
         });
-        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar', 'travel', 'puzzle'].includes(def.group) || def.key === 'cache') {
+        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar', 'travel', 'puzzle', 'farm'].includes(def.group) || def.key === 'cache') {
           markers.push({
             name: uniqueName(`${def.key} ${g.col(i)},${g.row(i)}`),
             position: [cx * S, y, cz * S],
@@ -1155,6 +1155,30 @@ function objectModel(
       out.blob(hx, y + 1.35, hz, 0.13, 0.13, 0.13, c, seed);
       return;
     }
+    case 'patch': {
+      // A Farming patch: a low bed of tilled soil with three ridges raked along it, flat enough to
+      // walk over, and what grows in it: rows of seedlings (an allotment), a leafy herb with a
+      // flower (a herb patch) or a sapling (a tree patch).
+      const b = Math.min(1.6, S * 0.9);
+      out.box(x, y, z, b, 0.1, b, c);
+      for (const dz of [-b / 3, 0, b / 3]) out.box(x, y + 0.1, z + dz, b * 0.92, 0.08, b * 0.16, shade(c, 1.18));
+      const green = rgba('#5f9a3a');
+      if (def.key === 'patch_tree') {
+        out.cylinder(x, y + 0.18, z, 0.05, 0.035, 0.75, 5, trunk);
+        out.blob(x, y + 1.0, z, 0.3, 0.28, 0.3, green, seed);
+      } else if (def.key === 'patch_herb') {
+        for (let n = 0; n < 3; n++) {
+          const a = (n / 3) * Math.PI * 2 + r * 6;
+          out.blob(x + Math.cos(a) * 0.14, y + 0.3, z + Math.sin(a) * 0.14, 0.16, 0.14, 0.16, shade(green, 1.1), seed + n);
+        }
+        out.blob(x, y + 0.48, z, 0.08, 0.08, 0.08, rgba('#b07ad8'), seed + 3);
+      } else {
+        for (const dz of [-b / 3, 0, b / 3]) {
+          for (const dx of [-b / 4, b / 4]) out.blob(x + dx, y + 0.26, z + dz, 0.11, 0.1, 0.11, shade(green, 1.15), seed + Math.round(dx * 11 + dz * 7));
+        }
+      }
+      return;
+    }
     case 'ruin': {
       // A low, broken stone wall: a stub of a pillar, and a course of stone towards each
       // neighbouring ruin, its top ragged.
@@ -1237,6 +1261,34 @@ function objectModel(
       return;
     case 'lectern':
       out.box(x, y, z, 0.5, 1.1, 0.4, c, facing);
+      return;
+    case 'spinning_wheel': {
+      // A low bench with the wheel standing up at one end (in line with the bench, along
+      // `facing`), its hub, and the distaff of flax at the other end.
+      const [ca, sa] = [Math.cos(facing), Math.sin(facing)];
+      out.box(x, y, z, 1.0, 0.45, 0.35, wood, facing);
+      const R = 0.42;
+      const [wx, wz] = [x + ca * 0.18, z + sa * 0.18];
+      const wy = y + 0.45 + R + 0.05;
+      const rim: V3[] = [];
+      for (let n = 0; n < 10; n++) {
+        const t = (n / 10) * Math.PI * 2;
+        rim.push([wx + Math.cos(t) * R * ca, wy + Math.sin(t) * R, wz + Math.cos(t) * R * sa]);
+      }
+      for (const side of [1, -1]) out.face(rim, c, [-sa * side, 0, ca * side]);
+      out.blob(wx, wy, wz, 0.07, 0.07, 0.07, shade(wood, 0.7), seed);
+      for (const side of [1, -1]) out.box(wx - sa * side * 0.1, y + 0.45, wz + ca * side * 0.1, 0.06, R + 0.05, 0.06, shade(wood, 0.85), facing);
+      const [dx, dz] = [x - ca * 0.38, z - sa * 0.38];
+      out.cylinder(dx, y + 0.45, dz, 0.035, 0.03, 0.55, 5, shade(wood, 0.8));
+      out.blob(dx, y + 0.95, dz, 0.09, 0.14, 0.09, rgba('#e8dcb0'), seed + 1);
+      return;
+    }
+    case 'millstones':
+      // Two round stones, one on the other, on a wooden spindle, with a hopper for the grain over them.
+      out.cylinder(x, y, z, 0.7, 0.7, 0.32, 12, shade(c, 0.9));
+      out.cylinder(x, y + 0.32, z, 0.64, 0.64, 0.28, 12, c);
+      out.cylinder(x, y + 0.6, z, 0.07, 0.07, 0.5, 6, wood);
+      out.box(x, y + 1.0, z, 0.45, 0.35, 0.45, wood, facing);
       return;
     case 'well':
       out.cylinder(x, y, z, 0.7, 0.7, 0.8, 10, STONE);
