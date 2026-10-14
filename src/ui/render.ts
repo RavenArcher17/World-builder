@@ -7,7 +7,8 @@ import { SEA_LEVEL, WorldMap } from '../core/types';
 import { TILESET_COLUMNS, tilePixels } from '../core/export/formats';
 import { cellMetrics, drawObject, drawPattern, paintOrder } from './drawObjects';
 import { drawGameArt, gameArtColours, gameArtReady, townGuards } from './gameArt';
-import { gameKind, isRpgdc, placeProps } from '../core/rpgdc/game';
+import { O } from '../core/objects';
+import { gameKind, isRpgdc, leverWires, placeProps } from '../core/rpgdc/game';
 import { OVERVIEW_MIN_CELLS, cellsAbout, drawOverview, overviewWanted } from './overview';
 
 export interface ViewOptions {
@@ -435,7 +436,8 @@ export function safeScale(map: WorldMap, wanted: number, maxDim = 8000): number 
 
 /**
  * Draw feature icons and labels. `s` is screen pixels per render unit, (ox, oy) the screen
- * position of render origin.
+ * position of render origin. `focus` is a cell tapped or jumped to (on a game map, a gate there
+ * shows the wires from its levers).
  */
 export function drawFeatures(
   ctx: CanvasRenderingContext2D,
@@ -446,6 +448,7 @@ export function drawFeatures(
   view: ViewOptions,
   selectedId: string | null,
   stamp?: number,
+  focus?: number,
 ): void {
   if (!view.features) return;
   const g = new Grid(map.grid, map.width, map.height);
@@ -459,7 +462,10 @@ export function drawFeatures(
   const rankOf = (type: string) => (game && type === 'landmark' ? 7 : featureDef(type).rank);
   const sorted = [...map.features].sort((a, b) => rankOf(a.type) - rankOf(b.type));
   const labelMinRank = cellPx > 22 ? 0 : cellPx > 12 ? 3 : 5;
-  if (game) drawLandmarkAreas(ctx, map, g, s, ox, oy, selectedId);
+  if (game) {
+    drawLandmarkAreas(ctx, map, g, s, ox, oy, selectedId);
+    drawLeverWires(ctx, map, g, s, ox, oy, selectedId, focus);
+  }
   // Labels are placed most-important first and skipped when they would overlap.
   const labels: { x: number; y: number; text: string; size: number; bold: boolean; selected?: boolean }[] = [];
   // The game's own town guards and where criminals come back, so moving a gate shows its guard;
@@ -564,6 +570,66 @@ function drawLandmarkAreas(ctx: CanvasRenderingContext2D, map: WorldMap, g: Grid
     ctx.stroke();
     ctx.setLineDash([]);
   }
+}
+
+/**
+ * Which lever places' wires to show, given the selected place and a tapped cell: every wire into
+ * the gate of a selected lever place, or into a gate or out of a lever at the tapped cell (so you
+ * see all the levers a gate needs). Pure, for the tests.
+ */
+export function wiresShown(map: WorldMap, selectedId: string | null, focus?: number): ReturnType<typeof leverWires> {
+  const wires = leverWires(map);
+  const fx = focus === undefined ? -1 : focus % map.width;
+  const fy = focus === undefined ? -1 : Math.floor(focus / map.width);
+  const gates = new Set<string>();
+  for (const l of wires) {
+    if (l.feature.id === selectedId || (l.x === fx && l.y === fy) || (l.toX === fx && l.toY === fy)) gates.add(`${l.toX},${l.toY}`);
+  }
+  return wires.filter((l) => gates.has(`${l.toX},${l.toY}`));
+}
+
+/**
+ * Lever places' wires on a game map, when a lever place is selected or a gate or lever tapped: a
+ * line from each lever to the gate it opens, which is outlined; the selected lever's line solid,
+ * the others dashed. A line to a tile that isn't a gate is red.
+ */
+function drawLeverWires(ctx: CanvasRenderingContext2D, map: WorldMap, g: Grid, s: number, ox: number, oy: number, selectedId: string | null, focus?: number): void {
+  const shown = wiresShown(map, selectedId, focus);
+  if (!shown.length) return;
+  const screen = (c: number, r: number): [number, number] => {
+    const [x, y] = g.centerCR(c, r);
+    return [ox + x * s, oy + y * s];
+  };
+  const isGate = (x: number, y: number) => x >= 0 && y >= 0 && x < map.width && y < map.height && map.layers.object[y * map.width + x] === O.GATE;
+  ctx.save();
+  ctx.lineCap = 'round';
+  const outlined = new Set<string>();
+  for (const l of shown) {
+    const colour = isGate(l.toX, l.toY) ? 'rgba(255,204,51,0.95)' : 'rgba(255,80,80,0.95)';
+    const [ax, ay] = screen(l.x, l.y);
+    const [bx, by] = screen(l.toX, l.toY);
+    ctx.setLineDash(l.feature.id === selectedId ? [] : [6, 4]);
+    for (const [style, width] of [['rgba(0,0,0,0.45)', 4.5], [colour, 2]] as const) {
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+    // The gate's tile.
+    const key = `${l.toX},${l.toY}`;
+    if (outlined.has(key)) continue;
+    outlined.add(key);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    g.cornersCR(l.toX, l.toY).forEach(([x, y], k) => (k ? ctx.lineTo(ox + x * s, oy + y * s) : ctx.moveTo(ox + x * s, oy + y * s)));
+    ctx.closePath();
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** A tileset image matching tilePixels(grid): one coloured tile shape per registry entry. */

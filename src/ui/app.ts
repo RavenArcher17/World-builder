@@ -24,7 +24,7 @@ import { openCloudDialog, openSignInDialog } from './cloudDialog';
 import { openComposeDialog, openExportDialog, openHelpDialog, openZoomDialog } from './dialogs';
 import { byId, downloadText, h, settingsForm, slug, toast } from './dom';
 import { artBase, gameArtReady, keepGuards, loadGameArt, onGameArtChange, townGuards } from './gameArt';
-import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions } from './gameUi';
+import { gameFeatureFields, gameMapPanel, gamePaintOptions, gamePlaceOptions, puzzleStatus } from './gameUi';
 import { map3dPanel, sync3d } from './map3dUi';
 import { afterTilePaint, draw3dOverlay, is3dMode, modeOptions3d, paint3dAt, paint3dOptions, roomButton, status3d } from './build3dUi';
 import { is3d } from '../core/scene3d/options';
@@ -87,8 +87,13 @@ export class App {
   paintZone = 1;
   /** Storey of a 3D map being edited (0 = the ground storey). */
   storey = 0;
-  /** Choosing the arrival tile of a stairs link: the link lives on `sourceId`, the tile on `targetId`. */
-  private pick: { sourceId: string; featureId: string; targetId: string } | null = null;
+  /**
+   * Picking a tile on a map for a place: a link's arrival tile (the link lives on `sourceId`, the
+   * tile on `targetId`), or the gate a lever opens (both on the lever's map).
+   */
+  private pick: { sourceId: string; featureId: string; targetId: string; what: 'arrival' | 'gate' } | null = null;
+  /** A tile tapped with Select where no place stands (a gate shows its levers' wires). */
+  private tapped: { mapId: string; cell: number } | null = null;
   /** A tile to highlight after jumping to a problem from the checks. */
   private flash: { mapId: string; cell: number } | null = null;
   private pointers = new Map<number, { x: number; y: number }>();
@@ -458,6 +463,7 @@ export class App {
     this.currentId = id;
     this.selection = null;
     this.selectedFeature = null;
+    this.tapped = null;
     this.cache = null;
     if (this.flash && this.flash.mapId !== id) this.flash = null;
     this.loadSpecIntoPanel(this.map);
@@ -483,6 +489,7 @@ export class App {
     this.ox = this.canvas.width / 2 - x * this.scale;
     this.oy = this.canvas.height / 2 - y * this.scale;
     this.flash = { mapId, cell };
+    this.tapped = null;
     const f = featureAt(map, g, cell);
     this.selectedFeature = f?.id ?? null;
     this.cache = null;
@@ -495,7 +502,7 @@ export class App {
 
   /** Open the target map so the arrival tile of a stairs link can be tapped. */
   startPick(source: WorldMap, f: Feature, target: WorldMap): void {
-    this.pick = { sourceId: source.id, featureId: f.id, targetId: target.id };
+    this.pick = { sourceId: source.id, featureId: f.id, targetId: target.id, what: 'arrival' };
     this.openMap(target.id);
     const props = f.props ?? {};
     if (props.toMap === gameMapId(target)) {
@@ -507,6 +514,13 @@ export class App {
     this.showPickBanner();
   }
 
+  /** Pick the gate a lever place opens: tap it on the lever's own map. */
+  startGatePick(map: WorldMap, f: Feature): void {
+    this.pick = { sourceId: map.id, featureId: f.id, targetId: map.id, what: 'gate' };
+    this.showPickBanner();
+    this.draw();
+  }
+
   private showPickBanner(): void {
     const banner = byId('pick-banner');
     const target = this.pick ? this.project.maps[this.pick.targetId] : null;
@@ -516,7 +530,7 @@ export class App {
     }
     banner.hidden = false;
     banner.replaceChildren(
-      h('span', {}, `🎯 Tap the tile players arrive on in ${target.name}. Drag or pinch to move around.`),
+      h('span', {}, this.pick.what === 'gate' ? '🎯 Tap the gate this lever opens. Drag or pinch to move around.' : `🎯 Tap the tile players arrive on in ${target.name}. Drag or pinch to move around.`),
       h('button', { onclick: () => this.cancelPick(true) }, 'Cancel'),
     );
   }
@@ -526,7 +540,7 @@ export class App {
     this.pick = null;
     this.showPickBanner();
     if (goBack && pick) {
-      this.openMap(pick.sourceId);
+      if (pick.sourceId !== this.currentId) this.openMap(pick.sourceId);
       this.selectFeature(pick.featureId);
     }
   }
@@ -540,6 +554,16 @@ export class App {
     const x = cell % target.width;
     const y = Math.floor(cell / target.width);
     this.pushUndo();
+    if (pick.what === 'gate') {
+      f.props = { ...(f.props ?? {}), toX: x, toY: y };
+      this.pick = null;
+      this.showPickBanner();
+      this.selectedFeature = f.id;
+      this.tapped = null;
+      this.changed();
+      toast(target.layers.object[cell] === O.GATE ? `The lever now opens the gate at (${x}, ${y})` : `⚠ (${x}, ${y}) isn't a gate — pick the gate the lever opens`);
+      return;
+    }
     f.props = { ...(f.props ?? {}), toMap: gameMapId(target), toX: x, toY: y };
     this.pick = null;
     this.showPickBanner();
@@ -1070,6 +1094,7 @@ export class App {
 
   selectFeature(id: string | null): void {
     this.selectedFeature = id;
+    this.tapped = null;
     this.refreshPanels();
     this.draw();
   }
@@ -1088,7 +1113,7 @@ export class App {
     typeSel.onchange = () => {
       this.pushUndo();
       f.type = typeSel.value;
-      if (game) f.props = { ...(newPlaceProps(map, f.type) ?? {}), ...(f.props ?? {}) };
+      if (game) f.props = { ...(newPlaceProps(map, f.type, { x: f.c, y: f.r }) ?? {}), ...(f.props ?? {}) };
       this.changed();
     };
     const name = h('input', { value: f.name });
@@ -1453,7 +1478,9 @@ export class App {
       ctx.stroke();
     }
     if (is3d(map)) draw3dOverlay(ctx, this, map, this.storey);
-    drawFeatures(ctx, storeyView(map, this.storey), this.scale, this.ox, this.oy, this.view, this.selectedFeature, this.version);
+    // The tile tapped (or jumped to from Check for game), whose levers' wires show if it's a gate.
+    const focus = [this.tapped, this.flash].find((t) => t && t.mapId === map.id)?.cell;
+    drawFeatures(ctx, storeyView(map, this.storey), this.scale, this.ox, this.oy, this.view, this.selectedFeature, this.version, focus);
   }
 
   private pathScreen(pts: [number, number][]): void {
@@ -1641,6 +1668,8 @@ export class App {
           const f = featureAt(storeyView(map, this.storey), g, cell);
           this.selection = null;
           this.selectedFeature = f?.id ?? null;
+          // A gate with no place on it shows the wires from its levers.
+          this.tapped = f ? null : { mapId: map.id, cell };
           this.flash = null;
           const now = performance.now();
           if (e.pointerType !== 'mouse' && this.lastTap && this.lastTap.cell === cell && now - this.lastTap.t < 400) {
@@ -1755,7 +1784,8 @@ export class App {
       r: g.row(cell),
       ...(this.storey && { z: this.storey }),
     };
-    const props = game ? newPlaceProps(map, type) : uk?.props;
+    // A new lever place is wired to the nearest gate.
+    const props = game ? newPlaceProps(map, type, { x: g.col(cell), y: g.row(cell) }) : uk?.props;
     if (props) f.props = props;
     // A new landmark (or fort) is labelled with its name.
     if (game && NAMED_PLACES.has(type) && props?.name) f.name = String(props.name);
@@ -1843,6 +1873,8 @@ export class App {
     if (isRpgdc(map)) {
       const z = zoneAt(map, cell);
       parts.push(z ? `${z.name} zone` : 'no zone', isWalkableAt(map, g.col(cell), g.row(cell)) ? 'walkable' : 'blocked');
+      const puzzle = puzzleStatus(map, g.col(cell), g.row(cell));
+      if (puzzle) parts.push(puzzle);
     } else if (L.zone[cell]) {
       parts.push(`zone ${L.zone[cell]}`);
     }

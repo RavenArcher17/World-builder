@@ -5,7 +5,7 @@
  */
 
 /** How an object is drawn on the map. Small vector shapes stay crisp and fast for thousands of cells. */
-export type ObjectShape = 'pine' | 'round' | 'willow' | 'boulder' | 'fence' | 'ore' | 'icon' | 'cairn' | 'thicket' | 'ruin';
+export type ObjectShape = 'pine' | 'round' | 'willow' | 'boulder' | 'fence' | 'ore' | 'icon' | 'cairn' | 'thicket' | 'ruin' | 'gate' | 'lever' | 'lockdoor';
 
 export interface ObjectDef {
   id: number;
@@ -20,7 +20,7 @@ export interface ObjectDef {
   blocks: boolean;
   /** Used by standing next to it (a station, fishing spot or staircase) rather than on it. */
   useFromNeighbour: boolean;
-  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar' | 'travel' | 'secret' | 'ruin';
+  group: 'tree' | 'rock' | 'ore' | 'wall' | 'station' | 'fishing' | 'stairs' | 'herb' | 'door' | 'furniture' | 'street' | 'altar' | 'travel' | 'secret' | 'ruin' | 'puzzle';
 }
 
 const o = (
@@ -115,6 +115,13 @@ export const OBJECTS: ObjectDef[] = [
   { ...o(66, 'thicket', 'Thicket (walk-through)', '#2d5527', '🌱', 'thicket', 'secret'), blocks: false },
   // Old stonework, in the way like a boulder and joined up like a fence: a ruined chapel's walls.
   o(67, 'ruin', 'Ruined wall', '#8f8a80', '🏚️', 'ruin', 'ruin'),
+  // RPG-DC's dungeon puzzles: an iron gate (a portcullis) that opens once every lever wired to it
+  // is pulled (lever places), a lever pulled from beside it, and a door locked until a player
+  // brings its key (a lock place). All three are in the way: each player opens gates and doors
+  // for themselves, and monsters never pass them.
+  o(68, 'gate', 'Gate (opened by levers)', '#5a5e66', '🚧', 'gate', 'puzzle'),
+  o(69, 'lever', 'Lever', '#d8a84a', '🕹️', 'lever', 'puzzle', true),
+  o(70, 'locked_door', 'Locked door (needs a key)', '#7a4a22', '🔒', 'lockdoor', 'puzzle'),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -184,7 +191,10 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'WAYSTONE'
   | 'CACHE'
   | 'THICKET'
-  | 'RUIN',
+  | 'RUIN'
+  | 'GATE'
+  | 'LEVER'
+  | 'LOCKED_DOOR',
   number
 >;
 

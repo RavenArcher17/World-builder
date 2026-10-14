@@ -12,6 +12,7 @@ import {
   buildingMask,
   buildings,
   doorFace,
+  doorFacing,
   dungeonTheme,
   fortChest,
   gameKind,
@@ -306,6 +307,60 @@ export function ruinPieces(map: WorldMap, x: number, y: number): ('ruin-n' | 'ru
   return out.length ? out : ['ruin-post'];
 }
 
+// ---- dungeon looks and puzzles (WorldScene's drawCave and drawPuzzle) ---------------------------
+
+/**
+ * The sheet a dungeon floor is drawn from like a cavern (the game's drawCave): `cave` for the
+ * caverns' rock, `frost` for the Frozen Peaks' ice; null for the crypt, the sewers and the rest.
+ */
+export function caveTheme(map: WorldMap): 'cave' | 'frost' | null {
+  if (gameKind(map) !== 'dungeon') return null;
+  const theme = dungeonTheme(map);
+  return theme === 'cave' || theme === 'frost' ? theme : null;
+}
+
+/** Smooth patches, 0 to 1 over a few tiles: where the Frozen Peaks' floor is glassy ice (the game's icePatch). */
+export function icePatch(x: number, y: number): number {
+  const fx = x / 4;
+  const fy = y / 4;
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  const a = tileHash(x0, y0, 21);
+  const b = tileHash(x0 + 1, y0, 21);
+  const c = tileHash(x0, y0 + 1, 21);
+  const d = tileHash(x0 + 1, y0 + 1, 21);
+  const sx = tx * tx * (3 - 2 * tx);
+  const sy = ty * ty * (3 - 2 * ty);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+
+/**
+ * The ground a cavern's open tile is drawn with, as the game picks it: the frames' name in the
+ * theme's sheet and the salt that picks a variant. The caverns: lava for the map's water, dirt
+ * with rubble here and there. The Frozen Peaks: thin ice for water, snow with patches of glassy ice.
+ */
+export function caveGround(theme: 'cave' | 'frost', water: boolean, x: number, y: number): { what: string; salt: number } {
+  if (water) return { what: theme === 'frost' ? 'ice' : 'lava', salt: 0 };
+  if (theme === 'frost') return icePatch(x, y) > 0.7 ? { what: 'ice', salt: 4 } : { what: 'floor', salt: 2 };
+  return tileHash(x, y, 2) < 0.15 ? { what: 'rubble', salt: 3 } : { what: 'floor', salt: 2 };
+}
+
+/**
+ * The dungeon sheet's frame for a gate, lever or locked door at (x, y), as the game draws it before
+ * anyone opens it: a shut gate or door across its passage (`gate-x`, `lockdoor-y`, …, by
+ * doorFacing) and a lever not yet pulled. Null for anything else.
+ */
+export function puzzleFrame(map: WorldMap, x: number, y: number): string | null {
+  const o = map.layers.object[y * map.width + x];
+  if (o === O.LEVER) return 'lever';
+  if (o === O.GATE) return `gate-${doorFacing(map, x, y)}`;
+  if (o === O.LOCKED_DOOR) return `lockdoor-${doorFacing(map, x, y)}`;
+  return null;
+}
+const PUZZLES = new Set<number>([O.GATE, O.LEVER, O.LOCKED_DOOR]);
+
 // ---- characters (client/src/actors.ts) -------------------------------------------------------
 
 /** One sheet of a character, tinted (heroes are several: body parts and gear). */
@@ -313,7 +368,7 @@ type Layer = { sheet: string; tint?: string };
 /** Monsters drawn with another's art: [sheet, tint] (the game's MONSTER_ART). */
 const MONSTER_ART: Partial<Record<string, [string, string]>> = { sewer_rat: ['mon/rat', '#9a958a'] };
 /** Monsters drawn see-through. */
-const GHOSTLY = new Set(['ghost', 'banshee']);
+const GHOSTLY = new Set(['ghost', 'banshee', 'frost_wraith']);
 /** What each townsperson wears: a sheet per body part, and its tint (the game's NPC_OUTFITS). */
 const NPC_OUTFITS: Record<string, Record<string, [string, string?]>> = {
   banker: { head: ['head_bald'], chest: ['cloth_shirt', '#ffe8a0'], hands: ['default_hands'], legs: ['cloth_pants', '#9a8ab8'], feet: ['leather_boots'] },
@@ -436,6 +491,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
   };
   /** A thing from the streets (or an altar, or a waystone), from the world sheet. */
   const putDecor = (o: number, i: number) => putOr('world', DECOR_ART[o]!, o, i);
+  /** A gate, lever or locked door, from the dungeon sheet (in dungeons of any look, and insides). */
+  const putPuzzle = (i: number) => putOr('dungeon', puzzleFrame(map, i % w, Math.floor(i / w))!, L.object[i], i);
   const count = (sheetName: string, what: string) => art.sheets[sheetName]?.counts?.[what] ?? 1;
   const variant = (what: string, x: number, y: number, salt = 0, sheetName = home) => `${what}/${Math.floor(tileHash(x, y, salt) * count(sheetName, what))}`;
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < map.height ? y * w + x : -1);
@@ -462,9 +519,11 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     ctx.restore();
   };
 
-  // The caverns: rock walls, lava, embers and mine clutter (client/src/scenes/WorldScene.ts drawCave).
-  if (kind === 'dungeon' && dungeonTheme(map) === 'cave' && haveSheet('cave')) {
-    drawCave();
+  // The caverns: rock walls, lava, embers and mine clutter; the Frozen Peaks: the same in ice
+  // (client/src/scenes/WorldScene.ts drawCave). Until its sheet is in, a floor looks like the crypt.
+  const cave = caveTheme(map);
+  if (cave && haveSheet(cave)) {
+    drawCave(cave);
     return true;
   }
 
@@ -541,6 +600,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
       } else if (L.object[i] === O.CACHE) {
         // A cache's cairn of stones, from the dungeon sheet (insides too).
         putOr(home, 'cairn', O.CACHE, i);
+      } else if (PUZZLES.has(L.object[i])) {
+        putPuzzle(i);
       } else if (DECOR_ART[L.object[i]]) {
         putDecor(L.object[i], i);
       } else if (ORE_ART[L.object[i]]) {
@@ -624,6 +685,8 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     else if (o === O.THICKET) drawThicket(i, x, y, snow);
     else if (o === O.CACHE) putOr('world', 'cairn', o, i);
     else if (o === O.RUIN) drawRuin(i, x, y);
+    // The game draws no gates, levers or locked doors on the overworld: their plain symbol shows they're there.
+    else if (PUZZLES.has(o)) symbol(o, i);
     else if (HERB_ART[o]) putFrom('world', HERB_ART[o]!.frame, i, { tint: HERB_ART[o]!.tint, scale: 1.3 });
     else if (DECOR_ART[o]) putDecor(o, i);
     else if (o === O.DOOR) {
@@ -695,9 +758,12 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
   /**
    * A cave floor: Flare's rock walls (low ledges where a wall has floor north or west of it too,
    * nothing on a chamber's near side), dirt floors with rubble, bones and glowing cracks, mine
-   * clutter along the walls, and lava (the map's water) with a crust along its edges.
+   * clutter along the walls, and lava (the map's water) with a crust along its edges. The Frozen
+   * Peaks (`frost`) are drawn the same way from their own sheet: ice walls, snow with patches of
+   * glassy ice, frozen clutter along the walls and thin ice for water, with no cracks or bones.
    */
-  function drawCave() {
+  function drawCave(theme: 'cave' | 'frost') {
+    const frost = theme === 'frost';
     const isWall = (x: number, y: number) => {
       const i = at(x, y);
       return i < 0 || L.terrain[i] === T.CRYPT_WALL;
@@ -705,10 +771,14 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
     const open = (x: number, y: number) => at(x, y) >= 0 && !isWall(x, y);
     const isLava = (x: number, y: number) => at(x, y) >= 0 && L.terrain[at(x, y)] === T.WATER;
     const lights = new Set(map.features.filter((f) => f.type === 'brazier').map((f) => f.r * w + f.c));
-    const caveFrames = art!.sheets.cave.frames;
-    const pick = (what: string, x: number, y: number, salt: number) => variant(what, x, y, salt, 'cave');
+    const caveFrames = art!.sheets[theme].frames;
+    const pick = (what: string, x: number, y: number, salt: number) => variant(what, x, y, salt, theme);
+    const ground = (i: number, x: number, y: number, water: boolean) => {
+      const { what, salt } = caveGround(theme, water, x, y);
+      putFrom(theme, pick(what, x, y, salt), i);
+    };
     const pieces = new Map<number, string>();
-    // Ground: floors (under walls that are drawn too), lava, cracks and bones.
+    // Ground: floors (under walls that are drawn too), lava or thin ice, cracks and bones.
     for (const i of order) {
       const x = i % w;
       const y = Math.floor(i / w);
@@ -716,41 +786,44 @@ export function drawGameArt(ctx: CanvasRenderingContext2D, map: WorldMap, s: num
         const piece = wallPiece((dx, dy) => open(x + dx, y + dy));
         if (!piece || !caveFrames[`wall-${piece}/0`]) continue;
         pieces.set(i, piece);
-        putFrom('cave', pick('floor', x, y, 2), i);
+        putFrom(theme, pick('floor', x, y, 2), i);
         continue;
       }
       if (isLava(x, y)) {
-        putFrom('cave', pick('lava', x, y, 0), i);
-        EDGE_NEIGHBOURS.forEach(([dx, dy], e) => {
-          const n = at(x + dx, y + dy);
-          if (n >= 0 && L.terrain[n] !== T.WATER && L.terrain[n] !== T.CRYPT_WALL) putFrom('cave', `lava-edge/${e}`, i);
-        });
+        ground(i, x, y, true);
+        if (!frost) {
+          EDGE_NEIGHBOURS.forEach(([dx, dy], e) => {
+            const n = at(x + dx, y + dy);
+            if (n >= 0 && L.terrain[n] !== T.WATER && L.terrain[n] !== T.CRYPT_WALL) putFrom('cave', `lava-edge/${e}`, i);
+          });
+        }
         continue;
       }
-      putFrom('cave', tileHash(x, y, 2) < 0.15 ? pick('rubble', x, y, 3) : pick('floor', x, y, 2), i);
+      ground(i, x, y, false);
       if (L.object[i] === O.STAIRS_DOWN) put('stairs-down', i);
-      else if (!L.object[i] && L.terrain[i] === T.CRYPT_FLOOR && !lights.has(i)) {
+      else if (!frost && !L.object[i] && L.terrain[i] === T.CRYPT_FLOOR && !lights.has(i)) {
         if (tileHash(x, y, 11) < 0.1) putFrom('cave', pick('embers', x, y, 12), i);
         if (tileHash(x, y, 6) > 0.97) putFrom('cave', pick('bones', x, y, 8), i);
       }
     }
-    // Standing things, back to front: walls, clutter, stairs up and braziers.
+    // Standing things, back to front: walls, clutter, stairs up, gates, levers, doors and braziers.
     for (const i of order) {
       const x = i % w;
       const y = Math.floor(i / w);
       const piece = pieces.get(i);
       if (piece) {
         const kind = open(x, y - 1) || open(x - 1, y) ? 'ledge' : 'wall';
-        putFrom('cave', pick(`${kind}-${piece}`, x, y, 5), i);
+        putFrom(theme, pick(`${kind}-${piece}`, x, y, 5), i);
         continue;
       }
       if (!L.object[i] && L.terrain[i] === T.CRYPT_FLOOR && !lights.has(i)) {
         const byWall = EDGE_NEIGHBOURS.some(([dx, dy]) => isWall(x + dx, y + dy));
-        if (byWall && tileHash(x, y, 6) < 0.22) putFrom('cave', pick('prop', x, y, 7), i);
+        if (byWall && tileHash(x, y, 6) < 0.22) putFrom(theme, pick('prop', x, y, 7), i);
       }
       if (L.object[i] === O.STAIRS_UP) put('stairs-up', i);
-      // A cache's cairn of stones, from the cave sheet.
-      if (L.object[i] === O.CACHE) putOr('cave', 'cairn', O.CACHE, i);
+      if (PUZZLES.has(L.object[i])) putPuzzle(i);
+      // A cache's cairn of stones, from the theme's sheet.
+      if (L.object[i] === O.CACHE) putOr(theme, 'cairn', O.CACHE, i);
       if (lights.has(i)) put('brazier', i);
       drawCharacter(i);
     }

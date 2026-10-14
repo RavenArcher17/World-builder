@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toGameJson } from '../src/core/export/formats';
-import { O } from '../src/core/objects';
+import { O, OBJECTS } from '../src/core/objects';
 import { buildScene, type Scene3D } from '../src/core/scene3d/build';
 import { sceneToGlb } from '../src/core/scene3d/glb';
 import { MAP3D_KEYS, defaultOptions3d, is3d, options3d, set3d } from '../src/core/scene3d/options';
@@ -196,6 +196,47 @@ describe('3D scene', () => {
     expect(meshProblems(secrets)).toEqual([]);
     expect(windingProblems(secrets)).toBe(0);
     expect(secrets.markers.filter((k) => k.data.kind === 'object').map((k) => k.data.key)).toEqual(['cache']);
+  });
+
+  it('models a gate, a lever and a locked door, marks them, and turns a gate across its passage', () => {
+    /** A floor with walls at `walls` and one object at (5, 5). */
+    const build = (o: number, walls: [number, number][]) => {
+      const m = with3d(make('town', 'square', 2, [12, 12]));
+      m.layers.terrain.fill(T.CRYPT_FLOOR);
+      m.layers.building.fill(0);
+      m.layers.object.fill(0);
+      m.features = [];
+      for (const [c, r] of walls) m.layers.terrain[r * 12 + c] = T.CRYPT_WALL;
+      m.layers.object[5 * 12 + 5] = o;
+      return buildScene(m);
+    };
+    /** How far the object's mesh reaches along x and along z. */
+    const extent = (s: Scene3D) => {
+      const p = s.parts.find((q) => q.kind === 'objects')!.mesh.positions;
+      const span = (k: number) => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let i = k; i < p.length; i += 3) {
+          lo = Math.min(lo, p[i]);
+          hi = Math.max(hi, p[i]);
+        }
+        return hi - lo;
+      };
+      return { x: span(0), z: span(2) };
+    };
+    for (const o of [O.GATE, O.LEVER, O.LOCKED_DOOR]) {
+      const s = build(o, [[4, 5], [6, 5]]);
+      expect(meshProblems(s)).toEqual([]);
+      expect(windingProblems(s)).toBe(0);
+      expect(s.markers.filter((k) => k.data.kind === 'object').map((k) => k.data.key)).toEqual([OBJECTS[o].key]);
+    }
+    // Between walls west and east, a gate runs along x (east–west); between walls north and south, along z.
+    for (const o of [O.GATE, O.LOCKED_DOOR]) {
+      const across = extent(build(o, [[4, 5], [6, 5]]));
+      expect(across.x).toBeGreaterThan(across.z * 2);
+      const along = extent(build(o, [[5, 4], [5, 6]]));
+      expect(along.z).toBeGreaterThan(along.x * 2);
+    }
   });
 });
 

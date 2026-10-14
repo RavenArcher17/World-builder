@@ -28,7 +28,9 @@ export type RpgdcPlace =
   | { type: 'npc'; x: number; y: number; role: string }
   | { type: 'fort'; x: number; y: number; id: string; name: string }
   | { type: 'merchant'; x: number; y: number }
-  | { type: 'landmark'; x: number; y: number; id: string; name: string; radius: number };
+  | { type: 'landmark'; x: number; y: number; id: string; name: string; radius: number }
+  | { type: 'lever'; x: number; y: number; toX: number; toY: number }
+  | { type: 'lock'; x: number; y: number; key: string };
 
 export interface RpgdcMap {
   id: string;
@@ -37,7 +39,7 @@ export interface RpgdcMap {
   width: number;
   height: number;
   zone: string | null;
-  /** Dungeon floors only: how it looks (crypt, sewer or cave). */
+  /** Dungeon floors only: how it looks (crypt, sewer, cave or frost). */
   theme?: string;
   groundLegend: string[];
   ground: number[];
@@ -87,7 +89,7 @@ function exportMap(map: WorldMap): RpgdcMap {
 
 function exportPlaces(map: WorldMap): RpgdcPlace[] {
   const out: RpgdcPlace[] = [];
-  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc', 'fort', 'merchant', 'landmark'];
+  const order = ['spawn_point', 'link', 'boss', 'monster_spawn', 'brazier', 'building', 'npc', 'fort', 'merchant', 'landmark', 'lever', 'lock'];
   const features = map.features.filter((f) => order.includes(f.type)).sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
   for (const f of features) {
     const p = placeProps(f);
@@ -137,6 +139,12 @@ function exportPlaces(map: WorldMap): RpgdcPlace[] {
         break;
       case 'landmark':
         out.push({ type: 'landmark', x, y, id: String(p.id).trim(), name: String(p.name).trim(), radius: Number(p.radius) });
+        break;
+      case 'lever':
+        out.push({ type: 'lever', x, y, toX: Math.round(Number(p.toX) || 0), toY: Math.round(Number(p.toY) || 0) });
+        break;
+      case 'lock':
+        out.push({ type: 'lock', x, y, key: String(p.key ?? '').trim() });
         break;
     }
   }

@@ -533,7 +533,10 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
       const y = floorAt(z, i) ?? (z === 0 ? centreY(i) : levelBase(z));
       const [cx, cz] = centres[i];
       const set = Ez && Ez.facing[i] >= 0 ? Ez.facing[i] : -1;
-      const facing = set >= 0 ? angleOfFacing(set) : facingAngle(i, centres, across, sol);
+      // A gate or door spans the passage it stands in: east–west between walls to its west or
+      // east, else north–south (the way RPG-DC's doorFacing turns its art).
+      const spans = def?.shape === 'gate' || def?.shape === 'lockdoor';
+      const facing = set >= 0 ? angleOfFacing(set) : spans ? spanAngle(i, centres, across, sol) : facingAngle(i, centres, across, sol);
       if (def) {
         objectModel(objMesh, def, cx * S, y, cz * S, S, i, facing, (dir) => {
           // Fence rails run to neighbouring fences (and ruined walls to neighbouring ruins).
@@ -544,7 +547,7 @@ export function buildScene(map: WorldMap, opts: Map3dOptions = options3d(map)): 
           }
           return out;
         });
-        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar', 'travel'].includes(def.group) || def.key === 'cache') {
+        if (['station', 'fishing', 'stairs', 'door', 'herb', 'altar', 'travel', 'puzzle'].includes(def.group) || def.key === 'cache') {
           markers.push({
             name: uniqueName(`${def.key} ${g.col(i)},${g.row(i)}`),
             position: [cx * S, y, cz * S],
@@ -1005,6 +1008,15 @@ function facingAngle(i: number, centres: [number, number][], across: number[][],
   return x === 0 && z === 0 ? 0 : Math.atan2(z, x);
 }
 
+/**
+ * The way a gate or door at cell i runs (radians, 0 = along x): east–west when a solid neighbour
+ * lies to its west or east (on its row), else north–south.
+ */
+function spanAngle(i: number, centres: [number, number][], across: number[][], solidH: Float64Array): number {
+  const wallBeside = across[i].some((n) => n >= 0 && !Number.isNaN(solidH[n]) && Math.abs(centres[n][1] - centres[i][1]) < 0.25);
+  return wallBeside ? 0 : Math.PI / 2;
+}
+
 function stairs(out: MeshBuilder, centre: [number, number], ang: number, S: number, y: number, dir: 1 | -1): void {
   const steps = 5;
   const run = S * 0.8;
@@ -1091,6 +1103,41 @@ function objectModel(
       out.blob(x, y + 1.1 * k, z, 1.15 * k, 0.95 * k, 1.15 * k, c, seed);
       out.blob(x + 0.35 * k, y + 1.7 * k, z - 0.2 * k, 0.75 * k, 0.6 * k, 0.75 * k, shade(c, 1.15), seed + 1);
       return;
+    case 'gate':
+    case 'lockdoor': {
+      // A stone doorway across the passage (`facing` runs along it): two posts and a lintel, with
+      // an iron portcullis in it, or an iron-bound wooden door with a brass lock.
+      const ca = Math.cos(facing);
+      const sa = Math.sin(facing);
+      const along = (d: number): [number, number] => [x + ca * d, z + sa * d];
+      for (const side of [-1, 1]) {
+        const [px, pz] = along(side * 0.62);
+        out.box(px, y, pz, 0.3, 2.5, 0.5, STONE, facing);
+      }
+      out.box(x, y + 2.5, z, 1.55, 0.35, 0.5, STONE, facing);
+      if (def.shape === 'gate') {
+        for (let n = 0; n < 5; n++) {
+          const [bx, bz] = along(-0.4 + n * 0.2);
+          out.box(bx, y, bz, 0.06, 2.5, 0.06, c, facing);
+        }
+        for (const h of [0.6, 1.4, 2.1]) out.box(x, y + h, z, 0.95, 0.07, 0.07, c, facing);
+      } else {
+        out.box(x, y, z, 0.94, 2.4, 0.16, c, facing);
+        for (const h of [0.5, 1.8]) out.box(x, y + h, z, 0.96, 0.12, 0.2, rgba('#3a3634'), facing);
+        const [lx, lz] = along(0.28);
+        out.box(lx, y + 1.1, lz, 0.14, 0.2, 0.24, rgba('#d8a84a'), facing);
+      }
+      return;
+    }
+    case 'lever': {
+      // A lever on a stone block: a stout iron handle set to one side of its slot, with a brass knob.
+      out.box(x, y, z, 0.7, 0.55, 0.7, STONE, facing);
+      out.box(x, y + 0.55, z, 0.42, 0.05, 0.14, rgba('#2a2628'), facing);
+      const [hx, hz] = [x + Math.cos(facing) * 0.12, z + Math.sin(facing) * 0.12];
+      out.box(hx, y + 0.55, hz, 0.09, 0.75, 0.09, rgba('#3a3634'), facing);
+      out.blob(hx, y + 1.35, hz, 0.13, 0.13, 0.13, c, seed);
+      return;
+    }
     case 'ruin': {
       // A low, broken stone wall: a stub of a pillar, and a course of stone towards each
       // neighbouring ruin, its top ragged.

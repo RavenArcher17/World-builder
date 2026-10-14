@@ -74,6 +74,8 @@ export const FEATURE_DEFS: FeatureDef[] = [
   f('npc', 'Townsperson', '🧑', 'game', 5),
   f('fort', 'Guild fort', '⚑', 'game', 6),
   f('merchant', 'Travelling merchant', '🧳', 'game', 4),
+  f('lever', 'Lever → gate', '🕹️', 'game', 3),
+  f('lock', "Lock (a door's key)", '🔑', 'game', 3),
   // Underkeep maps (settings.underkeep; see underkeep/)
   f('uk_stair', 'Great Stair (entry and exit)', '🪜', 'game', 8),
   f('uk_exit', 'Way out', '🚪', 'game', 6),

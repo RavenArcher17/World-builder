@@ -262,6 +262,80 @@ export function drawObject(ctx: CanvasRenderingContext2D, id: number, x: number,
       ctx.stroke();
       break;
     }
+    case 'gate':
+    case 'lockdoor': {
+      // A stone doorway: a portcullis of iron bars in it, or an iron-bound wooden door with a lock.
+      const stone = '#8f8a80';
+      if (d.shape === 'gate') {
+        ctx.strokeStyle = d.color;
+        ctx.lineWidth = Math.max(1, u * 0.11);
+        ctx.beginPath();
+        for (const dx of [-0.32, -0.1, 0.12, 0.34]) {
+          ctx.moveTo(x + dx * u, y - u * 0.8);
+          ctx.lineTo(x + dx * u, y + u * 0.18);
+        }
+        for (const dy of [-0.55, -0.2]) {
+          ctx.moveTo(x - u * 0.45, y + dy * u);
+          ctx.lineTo(x + u * 0.45, y + dy * u);
+        }
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        ctx.moveTo(x - u * 0.45, y + u * 0.2);
+        ctx.lineTo(x - u * 0.45, y - u * 0.6);
+        ctx.quadraticCurveTo(x, y - u * 0.95, x + u * 0.45, y - u * 0.6);
+        ctx.lineTo(x + u * 0.45, y + u * 0.2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#2e2a28';
+        ctx.lineWidth = Math.max(1, u * 0.09);
+        ctx.beginPath();
+        for (const dy of [-0.45, -0.05]) {
+          ctx.moveTo(x - u * 0.45, y + dy * u);
+          ctx.lineTo(x + u * 0.45, y + dy * u);
+        }
+        ctx.stroke();
+        // The lock: a brass plate with a keyhole.
+        ctx.fillStyle = '#d8a84a';
+        ctx.beginPath();
+        ctx.arc(x + u * 0.22, y - u * 0.25, u * 0.13, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#2e2a28';
+        ctx.fillRect(x + u * 0.2, y - u * 0.28, u * 0.05, u * 0.12);
+      }
+      // The frame: two posts and a lintel.
+      ctx.fillStyle = stone;
+      ctx.strokeStyle = shade(stone, 0.55);
+      ctx.lineWidth = Math.max(1, u * 0.07);
+      for (const [rx, ry, rw, rh] of [[-0.68, -1.02, 0.23, 1.22], [0.45, -1.02, 0.23, 1.22], [-0.68, -1.02, 1.36, 0.24]]) {
+        ctx.fillRect(x + rx * u, y + ry * u, rw * u, rh * u);
+        ctx.strokeRect(x + rx * u, y + ry * u, rw * u, rh * u);
+      }
+      break;
+    }
+    case 'lever': {
+      // A lever on a stone block: the handle leaning over, with a brass knob.
+      const stone = '#7d7770';
+      ctx.strokeStyle = '#3a3634';
+      ctx.lineWidth = Math.max(1, u * 0.13);
+      ctx.beginPath();
+      ctx.moveTo(x, y - u * 0.15);
+      ctx.lineTo(x + u * 0.38, y - u * 0.9);
+      ctx.stroke();
+      ctx.fillStyle = d.color;
+      ctx.beginPath();
+      ctx.arc(x + u * 0.4, y - u * 0.94, u * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = Math.max(1, u * 0.07);
+      ctx.strokeStyle = shade(d.color, 0.55);
+      ctx.stroke();
+      ctx.fillStyle = stone;
+      ctx.strokeStyle = shade(stone, 0.55);
+      ctx.fillRect(x - u * 0.45, y - u * 0.2, u * 0.9, u * 0.42);
+      ctx.strokeRect(x - u * 0.45, y - u * 0.2, u * 0.9, u * 0.42);
+      break;
+    }
     default: {
       ctx.fillStyle = d.color;
       ctx.globalAlpha = 0.85;

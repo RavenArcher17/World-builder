@@ -68,9 +68,9 @@ game mode; every other map behaves as above.
 - **Opening the game's maps:** **Open…** takes the game's `rpg-dc.maps.json` as well as project
   files, and **⟳ Get the game's maps** (Map panel) loads what the live game is playing: the
   overworld (any square from 128 to 1024 tiles a side; the game's is 768, a continent in the
-  ocean), the crypt, the sewers, the caverns and the inside of every building. A big map is drawn
-  just around what's on screen, as the game draws it, and zoomed out as an overview (a pixel a
-  tile); painting redraws just around the brush. The 768 world is quick on a computer; it works on
+  ocean), the crypt, the sewers, the caverns, the Frozen Peaks and the inside of every building.
+  A big map is drawn just around what's on screen, as the game draws it, and zoomed out as an
+  overview (a pixel a tile); painting redraws just around the brush. The 768 world is quick on a computer; it works on
   a phone, but is best edited on a computer (the Map panel says so there).
 - **Ground and objects:** paint the game's thirteen grounds (grass, path, water, town cobbles, crypt
   floor and wall, wooden floors, and the new lands' sand, mud, bog water, snow, bare rock / gravel
@@ -79,7 +79,8 @@ game mode; every other map behaves as above.
   and lobsters, herbs from sunleaf to frostcap), Runecrafting altars
   (air, mind, water, earth, fire, chaos, law), Fast travel (the waystone), Secrets (the hidden cache under its cairn,
   and the thicket you can walk through into a hidden glade, marked so it can be told from the trees),
-  Ruins (the ruined chapel's walls), Town (fences, stations, workbenches, doors, stairs, the
+  Ruins (the ruined chapel's walls), Dungeon puzzles (gates opened by levers, levers, and doors
+  locked until a player brings their key), Town (fences, stations, workbenches, doors, stairs, the
   sewer grate), Streets (well, lamp posts, market stalls, flower beds, benches, signposts, the notice
   board) and Indoors (counters, bookshelves, tables, beds, barrels, crates, lecterns). Grove
   and Ore brushes scatter one species (or cacti, or dead trees) or ore at a time.
@@ -88,12 +89,15 @@ game mode; every other map behaves as above.
   it on the target map), buildings (style, size, name, roof and wall colours) and townspeople
   (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk,
   and the hermit, fisher, farmer, trapper, miner and miller out of town), guild forts (id and name), the
-  travelling merchant's spot, and landmarks (id, name and radius): named places whose name shows as
+  travelling merchant's spot, landmarks (id, name and radius): named places whose name shows as
   players arrive, drawn with their name and a faint circle for their radius; a waystone in one
-  (one at most) is a stop for fast travel. Monster spawns offer every monster, the new lands' scarabs,
-  mummies, bog goblins, yetis and wyverns too. The overworld shows where the game will post its
-  town guards (💂, one at each gate) and where criminals come back (⛓️), and the Town Hall the
-  guard who stands with the mayor.
+  (one at most) is a stop for fast travel; levers (on a lever, wired to the gate it opens: a new
+  one to the nearest gate, or tap 🎯 Pick the gate and then the gate; a line joins them while
+  it's selected, and tapping a gate shows the levers it needs) and locks (on a locked door, naming
+  its key). Monster spawns offer every monster, the new lands' scarabs, mummies, bog goblins, yetis
+  and wyverns too, and the Frozen Peaks' ice wardens, frost wraiths and Frost Giant. The overworld
+  shows where the game will post its town guards (💂, one at each gate) and where criminals come
+  back (⛓️), and the Town Hall the guard who stands with the mayor.
 - **Zones:** paint Safe / Frontier / Wilderness / Deep on the overworld (legend shows each zone's
   rules); dungeon floors and buildings' insides pick one zone for the whole map.
 - **Check for game:** lists every problem with its tile; tap one to jump there.
@@ -103,13 +107,14 @@ game mode; every other map behaves as above.
 - **Game art preview:** "Draw with the game's art" in the Map panel draws the map with the game's
   own sprites (Flare, CC BY-SA 3.0), loaded from `https://rpg-dc.onrender.com/art/` (the game
   serves them cross-origin): houses in their colours (and a windmill's sails), doors, herbs, street
-  decorations, waystones, caches' cairns, thickets, ruined walls, insides
-  with their furniture, the Duel Arena's fenced pits, a fort's banner and chest, the sewers' damp
-  stone, moss, drains and water, and the caverns' rock walls, lava, glowing cracks and mine
-  clutter; the new lands' snow, sand, mud, gravel, ice and bogs with their edges and shores,
-  snowy pines and rocks, yews, cacti, dead trees, reeds and lily pads; and the monsters,
-  townspeople (in their work clothes) and guards where they stand. **Looks like** (Map panel)
-  sets a dungeon floor's look: crypt, sewers or caverns.
+  decorations, waystones, caches' cairns, thickets, ruined walls, gates, levers and locked doors,
+  insides with their furniture, the Duel Arena's fenced pits, a fort's banner and chest, the
+  sewers' damp stone, moss, drains and water, the caverns' rock walls, lava, glowing cracks and
+  mine clutter, and the Frozen Peaks' ice walls, snow, glassy ice and thin ice; the new lands'
+  snow, sand, mud, gravel, ice and bogs with their edges and shores, snowy pines and rocks, yews,
+  cacti, dead trees, reeds and lily pads; and the monsters, townspeople (in their work clothes)
+  and guards where they stand. **Looks like** (Map panel) sets a dungeon floor's look: crypt,
+  sewers, caverns or the Frozen Peaks.
 
 Projects from the game's exporter are converted to this form when opened. Everything works by
 touch on a phone: one finger paints or places, two fingers pinch and pan.

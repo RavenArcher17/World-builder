@@ -48,7 +48,7 @@ const GROUND_WALKABLE = [true, true, false, true, true, false, true, true, true,
 export const OPEN_GROUND = new Set<number>([T.GRASS, T.SAND, T.MUD, T.SNOW, T.STONE, T.ICE]);
 
 /** How many objects the game knows: World Builder's first ones, in the same order. */
-const GAME_OBJECT_COUNT = 68;
+const GAME_OBJECT_COUNT = 71;
 /** Export order of objects; index = value in the exported `objects` layer (0 = nothing). */
 export const OBJECT_LEGEND = OBJECTS.slice(0, GAME_OBJECT_COUNT).map((d) => d.key);
 export const GAME_OBJECTS = OBJECTS.slice(1, GAME_OBJECT_COUNT);
@@ -284,10 +284,23 @@ export function besideTile(map: WorldMap, x: number, y: number): { x: number; y:
 }
 
 /**
- * Tiles reachable on foot from `starts`: 8 directions, and no cutting a corner past a blocked
- * tile (the game's pathfinding rule).
+ * The tiles players can get through (`walk` as walkableTiles), with gates and locked doors open:
+ * each player opens them for themselves, with their levers and keys, so the game's checks count
+ * them as open (its reachableFrom). Monsters never pass them: for monsters, use `walk`.
  */
-export function reachable(map: WorldMap, starts: { x: number; y: number }[], walk: Uint8Array = walkableTiles(map)): Uint8Array {
+export function passableTiles(map: WorldMap, walk: Uint8Array = walkableTiles(map)): Uint8Array {
+  const out = Uint8Array.from(walk);
+  const object = map.layers.object;
+  for (let i = 0; i < out.length; i++) if (object[i] === O.GATE || object[i] === O.LOCKED_DOOR) out[i] = 1;
+  return out;
+}
+
+/**
+ * Tiles reachable on foot from `starts`: 8 directions, and no cutting a corner past a blocked
+ * tile (the game's pathfinding rule). Gates and locked doors count as open, as in the game's
+ * checks, unless `walk` says otherwise.
+ */
+export function reachable(map: WorldMap, starts: { x: number; y: number }[], walk: Uint8Array = passableTiles(map)): Uint8Array {
   const w = map.width;
   const h = map.height;
   const seen = new Uint8Array(w * h);
@@ -422,6 +435,7 @@ export const DUNGEON_THEMES = [
   { value: 'crypt', label: 'Crypt (dressed stone)' },
   { value: 'sewer', label: 'Sewers (damp stone; water is sewer water)' },
   { value: 'cave', label: 'Caverns (rough rock; water is lava)' },
+  { value: 'frost', label: 'Frozen Peaks (ice walls over snow; water is thin ice)' },
 ];
 
 /** A dungeon floor's chosen theme, if it has one. */
@@ -486,6 +500,11 @@ export const MONSTER_KINDS: { key: string; name: string; range: number }[] = [
   { key: 'antlion', name: 'Antlion (desert)', range: 6 },
   { key: 'swamp_wyvern', name: 'Swamp wyvern', range: 8 },
   { key: 'ice_wyvern', name: 'Ice wyvern', range: 8 },
+  // The Frozen Peaks (a dungeon of the frost theme): the Ice Warden carries the key to its locked
+  // door, frost wraiths haunt it, and the Frost Giant is its boss.
+  { key: 'ice_warden', name: 'Ice warden (Frozen Peaks)', range: 6 },
+  { key: 'frost_wraith', name: 'Frost wraith (Frozen Peaks)', range: 8 },
+  { key: 'frost_giant', name: 'Frost Giant (boss)', range: 7 },
   // Only players with the Slayer level can hurt these.
   { key: 'cave_crawler', name: 'Cave crawler (Slayer 10)', range: 6 },
   { key: 'banshee', name: 'Banshee (Slayer 25)', range: 7 },
@@ -516,7 +535,7 @@ const kindField = (def: string): PlaceField => ({
   default: def,
 });
 
-export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant', 'landmark'] as const;
+export const PLACE_TYPES = ['spawn_point', 'monster_spawn', 'boss', 'brazier', 'link', 'building', 'npc', 'fort', 'merchant', 'landmark', 'lever', 'lock'] as const;
 
 /** A guild fort's yard: this far round its banner (the game's FORT_RADIUS); its palisade is one further out. */
 export const FORT_RADIUS = 4;
@@ -573,11 +592,91 @@ export function landmarkAt(list: readonly GameLandmark[], x: number, y: number):
   return best;
 }
 
+// ---- dungeon puzzles: gates, levers and locked doors (the game's gates.ts) ----------------
+
 /**
- * Fields for a new place on `map`: the defaults, and for a landmark an id and a name not used on
- * the map yet (landmark_2, "Landmark 2"), to change in its fields.
+ * Keys the game has (items that open a `lock`), as far as World Builder knows. The game takes any
+ * of its items as a key; it refuses a lock whose key isn't one.
  */
-export function newPlaceProps(map: WorldMap, type: string): Record<string, string | number> | undefined {
+export const KEY_ITEMS = [{ value: 'frost_key', label: 'Frost key (the Ice Warden drops it)' }];
+/** An item id as the game writes them: lower-case letters, digits and _. */
+export const ITEM_ID = /^[a-z][a-z0-9_]*$/;
+
+/** A lever place as the game reads it: the lever at (x, y) is wired to the gate at (toX, toY), on the same map. */
+export interface GameLever {
+  x: number;
+  y: number;
+  toX: number;
+  toY: number;
+  feature: Feature;
+}
+
+/** The lever places on a map, in the order the game reads them. */
+export function leverWires(map: WorldMap): GameLever[] {
+  return map.features
+    .filter((f) => f.type === 'lever')
+    .map((f) => {
+      const p = placeProps(f);
+      return { x: f.c, y: f.r, toX: Number(p.toX), toY: Number(p.toY), feature: f };
+    });
+}
+
+/** A lock place: the locked door at (x, y), and the item that unlocks it (trimmed). */
+export interface GameLock {
+  x: number;
+  y: number;
+  key: string;
+  feature: Feature;
+}
+
+/** The lock places on a map, in the order the game reads them. */
+export function doorLocks(map: WorldMap): GameLock[] {
+  return map.features
+    .filter((f) => f.type === 'lock')
+    .map((f) => ({ x: f.c, y: f.r, key: String(placeProps(f).key ?? '').trim(), feature: f }));
+}
+
+/** The crypt wall's index among the game's grounds. */
+const CRYPT_WALL = GROUND_LEGEND.indexOf('crypt_wall');
+
+/**
+ * Which way a gate or locked door at (x, y) runs, as the game's doorFacing picks its art: "x"
+ * (across a passage running north–south) when the tile to its west or east is a wall, else "y".
+ * A wall is crypt wall with nothing standing on it, as the game sees it.
+ */
+export function doorFacing(map: WorldMap, x: number, y: number): 'x' | 'y' {
+  const wall = (wx: number) => {
+    if (wx < 0 || wx >= map.width || y < 0 || y >= map.height) return false;
+    const i = y * map.width + wx;
+    return gameObject(map.layers.object[i]) === 0 && gameGround(map.layers.terrain[i]) === CRYPT_WALL;
+  };
+  return wall(x - 1) || wall(x + 1) ? 'x' : 'y';
+}
+
+/** The gate nearest (x, y) on a map (a straight line; the first of those as near, scanning rows), or null with none. */
+export function nearestGate(map: WorldMap, x: number, y: number): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null;
+  let bestD = Infinity;
+  const object = map.layers.object;
+  for (let i = 0; i < object.length; i++) {
+    if (object[i] !== O.GATE) continue;
+    const gx = i % map.width;
+    const gy = Math.floor(i / map.width);
+    const d = Math.hypot(gx - x, gy - y);
+    if (d < bestD) {
+      best = { x: gx, y: gy };
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Fields for a new place on `map` (at `at`, when it's known): the defaults; for a landmark an id
+ * and a name not used on the map yet (landmark_2, "Landmark 2"), to change in its fields; for a
+ * lever, wired to the nearest gate.
+ */
+export function newPlaceProps(map: WorldMap, type: string, at?: { x: number; y: number }): Record<string, string | number> | undefined {
   const props = defaultProps(type);
   if (type === 'landmark' && props) {
     const taken = new Set(landmarks(map).map((l) => l.id));
@@ -585,6 +684,13 @@ export function newPlaceProps(map: WorldMap, type: string): Record<string, strin
     while (taken.has(`landmark_${n}`)) n++;
     props.id = `landmark_${n}`;
     props.name = `Landmark ${n}`;
+  }
+  if (type === 'lever' && props && at) {
+    const gate = nearestGate(map, at.x, at.y);
+    if (gate) {
+      props.toX = gate.x;
+      props.toY = gate.y;
+    }
   }
   return props;
 }
@@ -625,6 +731,11 @@ export const PLACE_FIELDS: Record<string, PlaceField[]> = {
     { key: 'name', label: "Name (shown as players arrive, like Moira's Lake)", type: 'text', default: '' },
     { key: 'radius', label: 'Radius (tiles from here)', type: 'number', min: LANDMARK_RADIUS.min, max: LANDMARK_RADIUS.max, default: LANDMARK_RADIUS.default },
   ],
+  lever: [
+    { key: 'toX', label: 'Opens the gate at x (column)', type: 'number', min: 0, max: 1023, default: 0 },
+    { key: 'toY', label: 'Opens the gate at y (row)', type: 'number', min: 0, max: 1023, default: 0 },
+  ],
+  lock: [{ key: 'key', label: 'Key (the item that unlocks it)', type: 'text', options: KEY_ITEMS, default: KEY_ITEMS[0].value }],
 };
 
 export const PLACE_HELP: Record<string, string> = {
@@ -639,6 +750,8 @@ export const PLACE_HELP: Record<string, string> = {
   fort: `A guild fort, on its banner's tile: guilds take it by standing in its yard (${FORT_RADIUS} tiles round the banner) and its chest (just east of the banner) gives the holders a reward each day. Put it in the Deep, with a palisade of fences round the yard and a gate in each side.`,
   merchant: 'Where the travelling merchant stands when she visits (one, on the overworld, in the Safe zone, where players can walk up to her).',
   landmark: `A named place on the overworld (the town, a lake, a keep), on its middle: walking within its radius (${LANDMARK_RADIUS.min} to ${LANDMARK_RADIUS.max} tiles, a circle) shows its name, and the first time counts as finding it. Put one Waystone object inside it (not in the Deep) for fast travel between the landmarks players have found.`,
+  lever: 'On a Lever object: wires it to a Gate on this map (tap 🎯 Pick the gate, then the gate). A gate opens, for whoever pulled them and their party on that floor, once every lever wired to it is pulled; one place per lever and gate, so a lever can open several gates and a gate can need several levers. Monsters never pass a gate.',
+  lock: "On a Locked door object: the item that unlocks it (the game's item id, like frost_key). A player who brings the key uses it up, and the door stays unlocked for them for good.",
   npc: "A townsperson who stands here all day: tap them in the game to bank or trade. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller); the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
 };
 

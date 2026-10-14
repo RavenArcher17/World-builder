@@ -16,11 +16,13 @@ import {
   PLACE_HELP,
   PLACE_TYPES,
   ZONES,
+  doorLocks,
   findGameMap,
   gameKind,
   gameMapId,
   gameMaps,
   isWalkableAt,
+  leverWires,
   mapTheme,
   mapZone,
   placeProps,
@@ -48,6 +50,7 @@ const OBJECT_GROUPS: [string, string[]][] = [
   ['Fast travel', ['travel']],
   ['Secrets', ['secret']],
   ['Ruins', ['ruin']],
+  ['Dungeon puzzles', ['puzzle']],
   ['Town', ['wall', 'station', 'door', 'stairs']],
   ['Streets', ['street']],
   ['Indoors', ['furniture']],
@@ -147,9 +150,18 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
       sel.onchange = () => set(field.key, sel.value);
       box.append(h('label', {}, field.label, sel));
     } else if (field.type === 'text') {
-      const input = h('input', { type: 'text', value: String(props[field.key] ?? field.default), maxlength: 40 });
+      // Ids and item ids are lower-case: no capitals or corrections from a phone's keyboard.
+      const plain = field.key === 'id' || field.key === 'key';
+      const input = h('input', { type: 'text', value: String(props[field.key] ?? field.default), maxlength: 40, ...(plain && { autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' }) });
       input.onchange = () => set(field.key, input.value.trim());
-      box.append(h('label', {}, field.label, input));
+      // Suggestions (a lock's keys), still free to type another.
+      if (field.options?.length) {
+        const list = h('datalist', { id: `place-${f.id}-${field.key}` }, ...field.options.map((o) => h('option', { value: o.value }, o.label)));
+        input.setAttribute('list', list.id);
+        box.append(h('label', {}, field.label, input), list);
+      } else {
+        box.append(h('label', {}, field.label, input));
+      }
     } else {
       const input = h('input', { type: 'number', inputmode: 'numeric', min: field.min ?? 0, max: field.max ?? 9999, step: 1, value: Number(props[field.key] ?? field.default) });
       input.onchange = () => {
@@ -158,6 +170,21 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
       };
       box.append(h('label', {}, field.label, input));
     }
+  }
+  if (f.type === 'lever') {
+    // The gate it opens, on this map: picked by tapping it.
+    const tx = Number(props.toX);
+    const ty = Number(props.toY);
+    const gate = tx >= 0 && ty >= 0 && tx < map.width && ty < map.height && map.layers.object[ty * map.width + tx] === O.GATE;
+    box.append(
+      h('p', { class: 'hint' }, gate ? `Opens the gate at (${tx}, ${ty}) (the line on the map).` : `⚠ (${tx}, ${ty}) isn't a gate: pick the gate this lever opens.`),
+      h(
+        'div',
+        { class: 'btn-row' },
+        h('button', { class: 'primary', title: 'Tap the gate this lever opens', onclick: () => app.startGatePick(map, f) }, '🎯 Pick the gate'),
+        gate ? h('button', { onclick: () => app.focusCell(map.id, tx, ty) }, 'Go to the gate') : '',
+      ),
+    );
   }
   if (f.type === 'link') {
     const target = findGameMap(app.project, props.toMap);
@@ -184,6 +211,27 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
     );
   }
   return box;
+}
+
+/**
+ * What the status bar says about a gate, lever or locked door at (x, y) on a game map: how many
+ * levers open a gate, which gates a lever opens, which key a door wants. Null for anything else.
+ */
+export function puzzleStatus(map: WorldMap, x: number, y: number): string | null {
+  const o = map.layers.object[y * map.width + x];
+  if (o === O.GATE) {
+    const n = leverWires(map).filter((l) => l.toX === x && l.toY === y).length;
+    return n ? `opened by ${n} lever${n === 1 ? '' : 's'}` : 'no lever opens it';
+  }
+  if (o === O.LEVER) {
+    const gates = leverWires(map).filter((l) => l.x === x && l.y === y).map((l) => `(${l.toX}, ${l.toY})`);
+    return gates.length ? `opens the gate at ${gates.join(', ')}` : 'wired to no gate';
+  }
+  if (o === O.LOCKED_DOOR) {
+    const lock = doorLocks(map).find((l) => l.x === x && l.y === y);
+    return lock ? `key: ${lock.key || 'none'}` : 'no lock';
+  }
+  return null;
 }
 
 /** The RPG-DC section of the Map panel: game id, zones and their rules, checks and export. */

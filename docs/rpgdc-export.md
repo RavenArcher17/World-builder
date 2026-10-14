@@ -40,7 +40,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zone": null,
   "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks", "sand", "mud", "bog", "snow", "stone", "ice"],
   "ground": [0, 0, 1, ...],
-  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin"],
+  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin", "gate", "lever", "locked_door"],
   "objects": [0, 4, 0, ...],
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
@@ -61,14 +61,14 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
 | `kind` | `"overworld"` \| `"dungeon"` \| `"interior"` | One overworld. Dungeon floors are dark (braziers light them); interiors are a building's inside, lit. Both use one zone for the whole map. In World Builder an interior is a dungeon-kind map with `settings.rpgdcKind` `"interior"`. |
 | `width`, `height` | integers | Size in tiles. The game takes any square overworld from 128 to 1024 tiles a side (its own is 768×768, a continent in the ocean), 16 to 64 a side for dungeon floors and 4 to 32 for insides. |
 | `zone` | string \| `null` | Dungeons and insides: the whole map's zone key from `zoneLegend`. Overworld: `null`. |
-| `theme` | string, optional | Dungeon floors only: how the floor looks in the game. `crypt` (dressed stone), `sewer` (damp stone; water is sewer water) or `cave` (rough rock; water is lava). Without it, a floor with water looks like the sewers, otherwise the crypt. In World Builder: `settings.rpgdcTheme`, set with **Looks like** in the Map panel; written only when chosen. |
+| `theme` | string, optional | Dungeon floors only: how the floor looks in the game. `crypt` (dressed stone), `sewer` (damp stone; water is sewer water), `cave` (rough rock; water is lava) or `frost` (the Frozen Peaks: ice walls over snow and ice; water is thin ice). Without it, a floor with water looks like the sewers, otherwise the crypt. In World Builder: `settings.rpgdcTheme`, set with **Looks like** in the Map panel; written only when chosen. |
 | `groundLegend` | string[] | Ground kinds; `ground` values index into it. Always all thirteen, even if unused. (The game's own file lists just the ones each map uses, in any order; both read the same.) |
 | `ground` | integer[] (`width*height`) | Ground per tile. |
-| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `ruin` (68 entries). |
+| `objectLegend` | string[] | Objects; `objects` values index into it. Index 0 (`""`) means nothing. Always the whole list below, `""` to `locked_door` (71 entries). |
 | `objects` | integer[] (`width*height`) | What stands on each tile. |
 | `zoneLegend` | string[] | Zone keys; `zones` values index into it. Always all four. |
 | `zones` | integer[] (`width*height`) \| `null` | Overworld: zone per tile. Dungeons: `null` (use `zone`). |
-| `places` | array | Typed places (below), spawn point first, then links, bosses, monster spawns, braziers, buildings, townspeople, forts, the merchant's spot and landmarks. |
+| `places` | array | Typed places (below), spawn point first, then links, bosses, monster spawns, braziers, buildings, townspeople, forts, the merchant's spot, landmarks, levers and locks. |
 
 ### Ground
 
@@ -103,9 +103,10 @@ warns when a map has any.
 
 ### Objects
 
-Any object blocks walking, except the `thicket`, which players push through. Stations, fishing
-spots, herbs, altars, waystones, caches, doors, stairs, the grate and the crypt entrance are used
-from a neighbouring tile (any of the 8 around it).
+Any object blocks walking, except the `thicket`, which players push through; a `gate` or
+`locked_door` opens only for the players who open it (monsters never pass one). Stations, fishing
+spots, herbs, altars, waystones, caches, levers, doors, stairs, the grate and the crypt entrance
+are used from a neighbouring tile (any of the 8 around it).
 
 | Index | Key | Notes |
 |---|---|---|
@@ -132,9 +133,12 @@ from a neighbouring tile (any of the 8 around it).
 | 59, 60 | `fishing_eel`, `fishing_lobster` | Fishing spots: eels in the swamp, lobsters off the coast. |
 | 61–63 | `herb_duneflower`, `herb_bogmyrtle`, `herb_frostcap` | The new lands' herb patches, each on its own land's ground anywhere out of town: duneflower on sand, bog myrtle in the mud, frostcap on snow. |
 | 64 | `waystone` | Fast travel: a standing stone with glowing runes, used from any of the 8 tiles around it to travel to the waystone of any landmark the player has found. On the overworld only, inside a `landmark` place (below), one to a landmark, and not in the Deep. Free in town and the Frontier; travelling to one in the Wilderness costs coins. |
-| 65 | `cache` | A secret: a hidden cache under a cairn of stones, used from any of the 8 tiles around it like a station. Each player can search each cache once, for coins and something useful, more the further out it is (by its zone). On any map: the overworld (off the paths, in hidden glades), dungeon floors and insides. The game draws it as a cairn (the `cairn` frame of the world, dungeon or cave sheet), and its minimap as the ground under it. |
+| 65 | `cache` | A secret: a hidden cache under a cairn of stones, used from any of the 8 tiles around it like a station. Each player can search each cache once, for coins and something useful, more the further out it is (by its zone). On any map: the overworld (off the paths, in hidden glades), dungeon floors and insides. The game draws it as a cairn (the `cairn` frame of the world, dungeon, cave or frost sheet), and its minimap as the ground under it. |
 | 66 | `thicket` | A secret: a thicket that looks like the trees round it (the game draws it as the first tree west, north, east or south of it, a shade darker), but which players walk through: the way into a hidden glade. The one object that doesn't block walking: its cell is walkable whatever the ground under it. |
 | 67 | `ruin` | Old stonework, the walls of a ruined chapel: in the way like a boulder, and joined up like the fence (towards a ruin to the north and to the west, or a lone pillar). |
+| 68 | `gate` | A dungeon puzzle: an iron portcullis, shut until every lever wired to it (by `lever` places) is pulled. It then stays open for whoever pulled them, and their party on that floor, until they leave the floor; for everyone else it's shut until they pull the levers too. Monsters never pass it. Every gate needs a lever. |
+| 69 | `lever` | A dungeon puzzle: pulled from any of the 8 tiles around it, like a station, to open the gates it's wired to (by `lever` places). Every lever is wired to a gate. |
+| 70 | `locked_door` | A dungeon puzzle: an iron-bound door, shut until a player brings its key (named by a `lock` place). The key is used up, and the door stays unlocked for that player for good (saved). Every locked door needs a lock. |
 
 ### Zones
 
@@ -160,6 +164,8 @@ An overworld tile without a zone exports as `deep` (index 3); the check reports 
 | `fort` | `x`, `y`, `id`, `name` | A guild fort, on its banner's tile (the overworld, in the Deep). Guilds take it by standing in its yard, 4 tiles round the banner; its chest stands just east of the banner, and its holders open it once a day. `id` is lower-case letters, digits and `_` (holders are saved by it, so keep it once players use the fort); `name` reads in a sentence ("has taken the Deep Keep"). The game draws the banner and chest; the palisade is fences round the yard, 5 tiles out, with a 3-tile gate in the middle of each side. |
 | `merchant` | `x`, `y` | Where the travelling merchant stands when she visits town: one, on the overworld, on open Safe ground players can walk up to. |
 | `landmark` | `x`, `y`, `id`, `name`, `radius` (optional) | A named place on the overworld, on its middle: the town, a lake, the crypt, a keep. Walking within `radius` tiles of (`x`, `y`) (a straight line: a circle, not a square) shows its `name`, and the first time counts as finding it. `id` is lower-case letters, digits and `_`, 2 to 31 of them, starting with a letter (players' finds are saved by it, so keep it once players have found the landmark), and unique; `name` is 1 to 40 letters ("Moira's Lake", "the Oasis"); `radius` is a whole number from 2 to 40, 10 when it's left out (World Builder always writes it). Its waystone is the `waystone` object that stands in it: within its radius, or, where landmarks overlap, in the one with the nearest middle. |
+| `lever` | `x`, `y`, `toX`, `toY` | On a `lever` object: wires it to the `gate` at (`toX`, `toY`) on the same map. A gate opens (for whoever pulled them, and their party on that floor) once every lever wired to it is pulled. One place per lever and gate: a lever wired to two gates has two places, and a gate with two levers needs both pulled. |
+| `lock` | `x`, `y`, `key` | On a `locked_door` object: `key` is the item that unlocks it, by the game's item id (`frost_key`). The key is used up and the door stays unlocked for that player. One lock to a door; the game refuses a key that isn't one of its items. |
 | `npc` | `x`, `y`, `role` | A townsperson standing there all day: `banker`, a shopkeeper (`general`, `smith`, `mage`, `alchemist`, `tailor`, `fletcher`, `inn`), or someone who just talks: `mayor` (tips for new players), `captain` (the laws, and a warning for criminals), `villager` (gossip), and outside town `hermit` (Old Ansel), `fisher` (Fisher Moira), `farmer` (Farmer Giles), `trapper` (Rook the trapper), `miner` (Dobbs, in the caverns) and `miller` (Hob the miller, in the windmill); or `slayer`, the Slayer master, who gives Slayer tasks. The talkers give quests: villagers by the map they're in (`home1` to `home4`, so keep those map ids), the rest by their role (so keep one of each). A door's sign shows the trade of the first townsperson inside (talkers have no sign). |
 
 Building colours. The game draws the roof, and the walls (the plaster of a timber house, the stone of
@@ -173,7 +179,9 @@ Monster kinds, with their normal range in tiles: `rat` 6, `goblin` 7, `wolf` 8, 
 `troll` 7, `skeleton` 8, `giant_spider` 8, `ghoul` 8, `bone_king` 7, `sewer_rat` 6, `slime` 5,
 `beetle` 7, `rat_king` 6, `fire_ant` 7, `hobgoblin` 8, `fire_wyvern` 8, `cinder_wyrm` 7; the new
 lands' `scarab` 7, `mummy` 7 and `antlion` 6 (the desert), `bog_goblin` 7, `drowned` 7 and
-`swamp_wyvern` 8 (the swamp), `frost_ant` 7, `yeti` 8 and `ice_wyvern` 8 (the mountains); and the
+`swamp_wyvern` 8 (the swamp), `frost_ant` 7, `yeti` 8 and `ice_wyvern` 8 (the mountains); the
+Frozen Peaks' `ice_warden` 6 (it carries the key to the peaks' locked door), `frost_wraith` 8 (drawn
+see-through) and `frost_giant` 7 (their boss); and the
 Slayer monsters, which only players with the Slayer level can hurt: `cave_crawler` 6 (Slayer 10),
 `banshee` 7 (25), `basilisk` 7 (45), `gargoyle` 6 (65). The game uses the normal range for a
 `monster_spawn` that has no `radius`.
@@ -210,6 +218,17 @@ from the trees.
 Ruined walls are under **Ruins**. A tower whose sign says "Mill" (any case) is a windmill: the game
 turns four sails on its east wall, which World Builder's art preview shows too.
 
+Dungeon puzzles. The Frozen Peaks (dungeon floors with the `frost` look) have the first: gates
+opened by levers, and a locked door. In World Builder the `gate`, `lever` and `locked_door` are
+under **Dungeon puzzles** in the object palette, drawn with the game's art (the dungeon sheet's
+`gate-x` or `gate-y`, `lockdoor-x` or `lockdoor-y` and `lever` frames, shut and not pulled, in
+dungeons of any look and in insides; `-x` when the tile west or east of it is a wall, as the game
+picks them), as a portcullis, an iron-bound door and a lever on a block without it, and in 3D.
+The game draws none of them on the overworld. A **Lever → gate** place goes on a lever: a new one
+is wired to the nearest gate, **🎯 Pick the gate** then a tap on a gate rewires it, and while it's
+selected a line joins the lever to its gate (and dashed lines the gate's other levers); tapping a
+gate shows its levers' lines too. A **Lock** place goes on a locked door and names its key.
+
 Links come in pairs: going down from map A to B (a link on A's entrance, stairs down or grate) is
 matched by a link on one of B's stairs up back to A, and a door into B by a door on B back to A. Going down, the arrival tile is normally
 just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs down.
@@ -219,9 +238,10 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 **Check for game** reports each problem with its map and tile (tap one to jump there):
 
 - exactly one spawn point, on the overworld, on walkable ground in the Safe zone;
-- every station, altar, waystone, cache and fishing spot has a walkable neighbour reachable on foot from the spawn point
+- every station, altar, waystone, cache, lever and fishing spot has a walkable neighbour reachable on foot from the spawn point
   (on dungeon floors: from where links arrive), moving in 8 directions without cutting corners
-  past blocked tiles (thickets are walked through, so a glade behind one counts);
+  past blocked tiles (thickets are walked through, so a glade behind one counts, and gates and
+  locked doors count as open, since players open them);
 - every entrance, staircase, door and grate has a link to an existing map and a walkable target
   tile, and links come in pairs;
 - no stairs on a dungeon floor with a wall just east, south or south-east of them: the game draws
@@ -236,7 +256,7 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
   tile, or within 2 tiles of a tree (which hides them in the game); and a reminder that the game
   then stops scattering its own;
 - tiles using ground or objects the game doesn't have (a warning);
-- a look (theme) only on dungeon floors, and one of `crypt`, `sewer` or `cave`;
+- a look (theme) only on dungeon floors, and one of `crypt`, `sewer`, `cave` or `frost`;
 - a Safe zone with no gate, so no town guards (a warning);
 - altars and essence rocks (warnings): an altar in the Safe zone, or either within 2 tiles of a
   tree (or a thicket, which the game draws as one), which can hide it and take the taps meant for
@@ -249,7 +269,12 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
   landmark, a name of 1 to 40 letters, and a radius from 2 to 40 (the game refuses a file without);
 - waystones: on the overworld, each in a landmark (within its radius of the middle; where several
   hold it, the one with the nearest middle), at most one in a landmark, and not in the Deep;
-- thickets (a warning): one on water or a wall, which players could then walk across.
+- thickets (a warning): one on water or a wall, which players could then walk across;
+- gates, levers and locked doors: every lever place on a lever and wired to a gate on its map (not
+  twice to the same one), every gate wired to a lever, every lever object to a gate, every locked
+  door with a lock, and every lock on a locked door (one to a door) with a key: an item id (the
+  game refuses a key that isn't one of its items; a key World Builder doesn't know, which is any
+  but `frost_key`, is a warning).
 
 ## Opening the game's maps
 

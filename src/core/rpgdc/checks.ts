@@ -18,7 +18,11 @@ import {
   landmarks,
   GROUND_LEGEND,
   GROUND_TILES,
+  ITEM_ID,
+  KEY_ITEMS,
+  doorLocks,
   fortChest,
+  leverWires,
   BUILDING_STYLES,
   DUNGEON_THEMES,
   mapTheme,
@@ -44,6 +48,7 @@ import {
   isWalkableAt,
   mapZone,
   placeProps,
+  passableTiles,
   reachable,
   stairsDirection,
   zoneAt,
@@ -86,7 +91,7 @@ const HERBS: Record<number, { name: string; ground: number; zones: string[] }> =
 };
 /** What the game draws as a tree (a thicket looks like the trees round it), which can hide what's near it. */
 const TREES = new Set<number>([O.TREE, O.OAK, O.WILLOW, O.YEW, O.THICKET]);
-/** Objects used from a tile beside them, which must be one players can walk to. */
+/** Objects used from a tile beside them, which must be one players can walk to (and caches and levers, below). */
 const USED_FROM_BESIDE = new Set(['station', 'fishing', 'altar', 'travel']);
 const groundName = (t: number) => tile(t).name.toLowerCase();
 
@@ -194,15 +199,16 @@ export function checkGameMaps(project: Project): GameIssue[] {
       }
     }
 
-    // Stations, altars, waystones, caches and fishing spots must be usable from a tile you can walk
-    // to (thickets are walked through, so a glade behind one is reachable).
+    // Stations, altars, waystones, caches, levers and fishing spots must be usable from a tile you
+    // can walk to (thickets are walked through, so a glade behind one is reachable; players open
+    // gates and locked doors, so they count as open too, as in the game's checks).
     const starts = m === overworld ? owSpawns.map((s) => ({ x: s.f.c, y: s.f.r })) : arrivals.get(m) ?? [];
     const walk = walkableTiles(m);
     const walkAt = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < m.height && walk[y * w + x] === 1;
-    const reached = reachable(m, starts, walk);
+    const reached = reachable(m, starts, passableTiles(m, walk));
     for (const i of things) {
       const d = objectDef(L.object[i]);
-      if (!d || (!USED_FROM_BESIDE.has(d.group) && L.object[i] !== O.CACHE)) continue;
+      if (!d || (!USED_FROM_BESIDE.has(d.group) && L.object[i] !== O.CACHE && L.object[i] !== O.LEVER)) continue;
       const x = i % w;
       const y = Math.floor(i / w);
       const usable = NEIGHBOURS.some(([dx, dy]) => {
@@ -311,6 +317,37 @@ export function checkGameMaps(project: Project): GameIssue[] {
       else if (first) add('error', m, x, y, `A second waystone in ${name} (${x}, ${y}): the first is at (${first.x}, ${first.y}).`);
       else if (zoneAt(m, i)?.key === 'deep') add('error', m, x, y, `The waystone in ${name} (${x}, ${y}) is in the Deep, where waystones don't work.`);
       if (l && !first) stones.set(l.id, { x, y });
+    }
+
+    // Gates and levers (the game's gates.ts): every lever place on a lever, wired to a gate on this
+    // map (once); every gate wired to a lever, and every lever to a gate. Locked doors: each has a
+    // lock naming its key (an item; the game refuses a lock with any other), and locks are on locked
+    // doors.
+    const wires = leverWires(m);
+    const objectOn = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < m.height ? L.object[y * w + x] : 0);
+    wires.forEach((l, k) => {
+      if (objectOn(l.x, l.y) !== O.LEVER) add('error', m, l.x, l.y, `The lever place (${l.x}, ${l.y}) isn't on a lever: put it on a Lever object.`);
+      if (objectOn(l.toX, l.toY) !== O.GATE) add('error', m, l.x, l.y, `The lever (${l.x}, ${l.y}) is wired to (${l.toX}, ${l.toY}), which isn't a gate: pick the gate it opens.`);
+      else if (wires.slice(0, k).some((o) => o.x === l.x && o.y === l.y && o.toX === l.toX && o.toY === l.toY)) add('error', m, l.x, l.y, `The lever (${l.x}, ${l.y}) is wired to the gate at (${l.toX}, ${l.toY}) twice: keep one of the two places.`);
+    });
+    const locks = doorLocks(m);
+    locks.forEach((l, k) => {
+      const label = `The lock (${l.x}, ${l.y})`;
+      if (objectOn(l.x, l.y) !== O.LOCKED_DOOR) add('error', m, l.x, l.y, `${label} isn't on a locked door: put it on a Locked door object.`);
+      else if (locks.slice(0, k).some((o) => o.x === l.x && o.y === l.y)) add('error', m, l.x, l.y, `${label}: there's already a lock on this door.`);
+      if (!ITEM_ID.test(l.key)) add('error', m, l.x, l.y, `${label} needs a key: the id of an item in the game, like ${KEY_ITEMS[0].value}.`);
+      else if (!KEY_ITEMS.some((key) => key.value === l.key)) {
+        add('warning', m, l.x, l.y, `${label} wants "${l.key}", which isn't a key World Builder knows (${KEY_ITEMS.map((key) => key.value).join(', ')}): the game won't load a lock whose key isn't one of its items, so check it has one called that.`);
+      }
+    });
+    for (const i of things) {
+      const o = L.object[i];
+      if (o !== O.GATE && o !== O.LEVER && o !== O.LOCKED_DOOR) continue;
+      const x = i % w;
+      const y = Math.floor(i / w);
+      if (o === O.GATE && !wires.some((l) => l.toX === x && l.toY === y)) add('error', m, x, y, `Gate (${x}, ${y}) has no lever to open it: put a lever place on a Lever and point it at this gate.`);
+      if (o === O.LEVER && !wires.some((l) => l.x === x && l.y === y)) add('error', m, x, y, `Lever (${x}, ${y}) isn't wired to a gate: put a lever place on it and point it at the gate it opens.`);
+      if (o === O.LOCKED_DOOR && !locks.some((l) => l.x === x && l.y === y)) add('error', m, x, y, `Locked door (${x}, ${y}) has no lock: put a lock place on it, naming the key that opens it.`);
     }
 
     // Thickets (a warning): the game lets players push through one wherever it stands, so one on

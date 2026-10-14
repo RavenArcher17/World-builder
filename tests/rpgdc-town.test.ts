@@ -7,6 +7,8 @@ import { createProject } from '../src/core/project';
 import {
   buildingMask,
   buildings,
+  doorFacing,
+  doorLocks,
   dungeonTheme,
   gameKind,
   GROUND_LEGEND,
@@ -17,12 +19,14 @@ import {
   isWalkableAt,
   landmarkAt,
   landmarks,
+  leverWires,
   mapTheme,
   MONSTER_KINDS,
   normalRange,
   newPlaceProps,
   NPC_ROLES,
   OBJECT_LEGEND,
+  passableTiles,
   reachable,
   walkableTiles,
   withProp,
@@ -31,8 +35,8 @@ import {
 import { isWater, T } from '../src/core/tiles';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import { emptyLayers, type Feature, type Project, type WorldMap } from '../src/core/types';
-import { cacheFit, cacheRegion, MAX_CACHE_PIXELS } from '../src/ui/render';
-import { isWindmill, ruinPieces, thicketLooksLike } from '../src/ui/gameArt';
+import { cacheFit, cacheRegion, MAX_CACHE_PIXELS, wiresShown } from '../src/ui/render';
+import { caveGround, caveTheme, icePatch, isWindmill, puzzleFrame, ruinPieces, thicketLooksLike } from '../src/ui/gameArt';
 
 /** The game's own map file (shared/maps/rpg-dc.maps.json in RPG-DC), with the town, its insides and the sewers. */
 const FILE = readFileSync(new URL('./fixtures/rpg-dc.maps.json', import.meta.url), 'utf8');
@@ -100,7 +104,7 @@ describe('opening the game’s map file', () => {
       'gold_rock', 'mithril_rock', 'adamant_rock', 'runite_rock',
       'essence_rock', 'air_altar', 'mind_altar', 'water_altar', 'earth_altar', 'fire_altar', 'chaos_altar', 'law_altar',
       'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
-      'waystone', 'cache', 'thicket', 'ruin',
+      'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door',
     ]);
   });
 
@@ -437,7 +441,7 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
     const yew = world.layers.object.indexOf(O.YEW);
     expect(isWalkableAt(world, yew % world.width, Math.floor(yew / world.width))).toBe(false);
     const out = toRpgdcMaps(project()).maps.find((m) => m.id === 'overworld')!;
-    expect(out.objectLegend.slice(56)).toEqual(['cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap', 'waystone', 'cache', 'thicket', 'ruin']);
+    expect(out.objectLegend.slice(56)).toEqual(['cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap', 'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door']);
   });
 
   it('needs eel and lobster spots reachable, like every fishing spot', () => {
@@ -541,8 +545,8 @@ describe('landmarks and waystones (fast travel)', () => {
     const p = project();
     const world = byGameId(p, 'overworld');
     const marks = world.features.filter((f) => f.type === 'landmark');
-    // Sixteen, and the ruined chapel and the smugglers' cove (which have no waystone).
-    expect(marks).toHaveLength(18);
+    // Sixteen, and the ruined chapel, the smugglers' cove and the Frozen Peaks (which have no waystone).
+    expect(marks).toHaveLength(19);
     const town = marks.find((f) => f.props?.id === 'town')!;
     expect([town.c, town.r, town.name, town.props]).toEqual([384, 384, 'the Town', { id: 'town', name: 'the Town', radius: 22 }]);
     expect(marks.find((f) => f.props?.id === 'fisher_lake')!.name).toBe("Moira's Lake");
@@ -728,7 +732,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
         expect(cellsOf(again.maps.find((m) => m.id === id)!, key)).toEqual(before);
       }
     }
-    expect(out.maps[0].objectLegend.slice(64)).toEqual(['waystone', 'cache', 'thicket', 'ruin']);
+    expect(out.maps[0].objectLegend.slice(64)).toEqual(['waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door']);
   });
 
   it('opens the places outside town: the windmill and its miller, the chapel’s cellar, the smugglers’ cove', () => {
@@ -884,5 +888,296 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
     const world = byGameId(project(), 'overworld');
     const posts = cellsOf(gameMap('overworld'), 'ruin').filter(([x, y]) => ruinPieces(world, x, y)[0] === 'ruin-post');
     expect(posts).toEqual([[256, 404], [261, 404], [267, 405], [256, 408], [267, 409], [260, 410], [264, 410]]);
+  });
+});
+
+/** The game's icePatch at (0, 0), (4, 0) and (6, 9), worked out with its own code (client/src/scenes/WorldScene.ts). */
+const ICE_PATCH = ['0.294150', '0.074974', '0.365695'];
+
+describe('the Frozen Peaks: gates, levers, locked doors and the frost look', () => {
+  const gameMap = (id: string) => file().maps.find((m) => m.id === id)!;
+  const cellsOf = (m: RpgdcMapsFile['maps'][number], key: string) => {
+    const k = m.objectLegend.indexOf(key);
+    return k < 0 ? [] : m.objects.flatMap((v, i) => (v === k ? [[i % m.width, Math.floor(i / m.width)]] : []));
+  };
+  const count = (m: WorldMap, id: number) => m.layers.object.filter((o) => o === id).length;
+  const PEAKS = ['frozen1', 'frozen2', 'frozen3'];
+
+  it('opens the three floors of the Frozen Peaks, their puzzles, monsters and boss, and exports them as they were', () => {
+    const p = project();
+    for (const id of PEAKS) {
+      const m = byGameId(p, id);
+      expect([gameKind(m), mapTheme(m), dungeonTheme(m), caveTheme(m), m.settings.rpgdcZone]).toEqual(['dungeon', 'frost', 'frost', 'frost', 'deep']);
+    }
+    // A gate and its levers on each floor, and the locked door on the second.
+    expect(PEAKS.map((id) => [O.GATE, O.LEVER, O.LOCKED_DOOR].map((o) => count(byGameId(p, id), o)))).toEqual([[1, 2, 0], [1, 1, 1], [1, 2, 0]]);
+    const first = byGameId(p, 'frozen1');
+    expect(leverWires(first).map((l) => [l.x, l.y, l.toX, l.toY])).toEqual([[5, 32, 36, 29], [42, 7, 36, 29]]);
+    expect(first.features.find((f) => f.type === 'lever')!.name).toBe('Lever → gate');
+    expect(doorLocks(byGameId(p, 'frozen2')).map((l) => [l.x, l.y, l.key])).toEqual([[30, 29, 'frost_key']]);
+    // The Ice Warden with the key, the frost wraiths and the Frost Giant on the top floor.
+    const kinds = new Set(PEAKS.flatMap((id) => byGameId(p, id).features.filter((f) => f.type === 'monster_spawn').map((f) => f.props?.kind)));
+    expect([...kinds].filter((k) => ['ice_warden', 'frost_wraith'].includes(String(k))).sort()).toEqual(['frost_wraith', 'ice_warden']);
+    expect(byGameId(p, 'frozen3').features.find((f) => f.type === 'boss')!.props?.kind).toBe('frost_giant');
+    expect(['ice_warden', 'frost_wraith', 'frost_giant'].map(normalRange)).toEqual([6, 8, 7]);
+    expect(MONSTER_KINDS.filter((k) => k.key.startsWith('frost_') || k.key === 'ice_warden').map((k) => k.key)).toEqual(['frost_ant', 'ice_warden', 'frost_wraith', 'frost_giant']);
+    // A gate, lever and locked door stand in the way, like any object, for monsters and players alike.
+    const [gx, gy] = cellsOf(gameMap('frozen1'), 'gate')[0];
+    expect(isWalkableAt(first, gx, gy)).toBe(false);
+    // Exported, and opened from that export, the same again: objects, levers, lock and look.
+    const out = toRpgdcMaps(p);
+    const again = toRpgdcMaps(fromRpgdcMaps(out));
+    for (const id of PEAKS) {
+      const before = gameMap(id);
+      for (const file of [out, again]) {
+        const m = file.maps.find((x) => x.id === id)!;
+        expect(m.theme).toBe('frost');
+        for (const key of ['gate', 'lever', 'locked_door']) expect(cellsOf(m, key)).toEqual(cellsOf(before, key));
+        const puzzles = (places: typeof m.places) => places.filter((pl) => pl.type === 'lever' || pl.type === 'lock').map(placeKey).sort();
+        expect(puzzles(m.places)).toEqual(puzzles(before.places));
+      }
+    }
+    expect(out.maps.find((m) => m.id === 'frozen2')!.places).toContainEqual({ type: 'lock', x: 30, y: 29, key: 'frost_key' });
+    expect(out.maps.find((m) => m.id === 'frozen3')!.places.filter((pl) => pl.type === 'lever')).toEqual([
+      { type: 'lever', x: 10, y: 5, toX: 22, toY: 13 },
+      { type: 'lever', x: 34, y: 5, toX: 22, toY: 13 },
+    ]);
+  });
+
+  /** A 20×20 dungeon floor of crypt floor, its stairs up at (2, 2) with players arriving at (3, 2), under a bare overworld. */
+  const floor = () => {
+    const p = createProject('puzzles');
+    const w = 128;
+    const L = emptyLayers(w * w);
+    L.terrain.fill(T.GRASS);
+    for (let i = 0; i < w * w; i++) L.zone[i] = 1;
+    const world: WorldMap = {
+      id: 'ow', name: 'World', kind: 'overland', scaleId: 'local', grid: 'iso', width: w, height: w, seed: 1,
+      settings: { rpgdcMapId: 'overworld' }, layers: L, children: [],
+      features: [
+        { id: 's', type: 'spawn_point', c: 3, r: 3, name: 'start' },
+        { id: 'down', type: 'link', c: 10, r: 10, name: 'down', props: { toMap: 'peak', toX: 3, toY: 2 } },
+      ],
+    };
+    L.object[10 * w + 10] = O.CRYPT_ENTRANCE;
+    for (let i = 0; i < w * w; i++) if (i % w >= 20 || Math.floor(i / w) >= 20) L.zone[i] = 2;
+    const D = emptyLayers(20 * 20);
+    D.terrain.fill(T.CRYPT_FLOOR);
+    const map: WorldMap = {
+      id: 'peak', name: 'Peak', kind: 'dungeon', scaleId: 'dungeon', grid: 'iso', width: 20, height: 20, seed: 1,
+      settings: { rpgdcMapId: 'peak', rpgdcZone: 'deep', rpgdcTheme: 'frost' }, layers: D, children: [],
+      features: [{ id: 'up', type: 'link', c: 2, r: 2, name: 'up', props: { toMap: 'overworld', toX: 11, toY: 10 } }],
+    };
+    D.object[2 * 20 + 2] = O.STAIRS_UP;
+    p.maps[world.id] = world;
+    p.maps[map.id] = map;
+    return { p, map };
+  };
+  const put = (map: WorldMap, x: number, y: number, o: number) => (map.layers.object[y * map.width + x] = o);
+  const wall = (map: WorldMap, x: number, y: number) => (map.layers.terrain[y * map.width + x] = T.CRYPT_WALL);
+  const lever = (x: number, y: number, toX: number, toY: number, id = `lv-${x}-${y}-${toX}-${toY}`): Feature => ({ id, type: 'lever', c: x, r: y, name: 'Lever → gate', props: { toX, toY } });
+  const lock = (x: number, y: number, key: string, id = `lk-${x}-${y}-${key}`): Feature => ({ id, type: 'lock', c: x, r: y, name: 'Lock', props: { key } });
+  const issues = (p: Project) => checkGameMaps(p).map((i) => [i.severity, i.message]);
+  /** A wall across the floor at row 10, with a gate in it at (10, 10) and a locked door at (14, 10). */
+  const walledOff = () => {
+    const { p, map } = floor();
+    for (let x = 0; x < 20; x++) wall(map, x, 10);
+    put(map, 10, 10, O.GATE);
+    put(map, 14, 10, O.LOCKED_DOOR);
+    put(map, 5, 5, O.LEVER);
+    map.features.push(lever(5, 5, 10, 10), lock(14, 10, 'frost_key'));
+    return { p, map };
+  };
+
+  it('passes a gate with its lever and a locked door with its lock, and exports and opens them', () => {
+    const { p, map } = walledOff();
+    expect(issues(p)).toEqual([]);
+    const out = toRpgdcMaps(p).maps.find((m) => m.id === 'peak')!;
+    expect(out.theme).toBe('frost');
+    expect(['gate', 'lever', 'locked_door'].map((k) => out.objectLegend.indexOf(k))).toEqual([68, 69, 70]);
+    expect([out.objects[10 * 20 + 10], out.objects[5 * 20 + 5], out.objects[10 * 20 + 14]]).toEqual([68, 69, 70]);
+    expect(out.places.slice(-2)).toEqual([
+      { type: 'lever', x: 5, y: 5, toX: 10, toY: 10 },
+      { type: 'lock', x: 14, y: 10, key: 'frost_key' },
+    ]);
+    const back = Object.values(fromRpgdcMaps(toRpgdcMaps(p)).maps).find((m) => m.settings.rpgdcMapId === 'peak')!;
+    expect([back.layers.object[10 * 20 + 10], back.layers.object[5 * 20 + 5], back.layers.object[10 * 20 + 14]]).toEqual([O.GATE, O.LEVER, O.LOCKED_DOOR]);
+    expect(leverWires(back).map((l) => [l.x, l.y, l.toX, l.toY])).toEqual([[5, 5, 10, 10]]);
+    expect(doorLocks(back).map((l) => [l.x, l.y, l.key])).toEqual([[14, 10, 'frost_key']]);
+    expect(back.settings.rpgdcTheme).toBe('frost');
+    expect(map.features.filter((f) => f.type === 'lever' || f.type === 'lock')).toHaveLength(2);
+  });
+
+  it('counts gates and locked doors as open for players, as the game’s checks do, but not for monsters', () => {
+    const { p, map } = walledOff();
+    // A cache and a lever beyond the wall: reached through the gate or the door.
+    put(map, 4, 15, O.CACHE);
+    put(map, 16, 15, O.LEVER);
+    map.features.push(lever(16, 15, 10, 10));
+    expect(issues(p)).toEqual([]);
+    const walk = walkableTiles(map);
+    expect([walk[10 * 20 + 10], walk[10 * 20 + 14]]).toEqual([0, 0]);
+    expect([passableTiles(map, walk)[10 * 20 + 10], passableTiles(map, walk)[10 * 20 + 14]]).toEqual([1, 1]);
+    expect(reachable(map, [{ x: 3, y: 2 }])[15 * 20 + 5]).toBe(1);
+    expect(reachable(map, [{ x: 3, y: 2 }], walk)[15 * 20 + 5]).toBe(0);
+    // Only the door now: still reached.
+    put(map, 10, 10, 0);
+    wall(map, 10, 10);
+    map.features = map.features.filter((f) => f.type !== 'lever');
+    put(map, 5, 5, 0);
+    put(map, 16, 15, 0);
+    expect(issues(p)).toEqual([]);
+    // Nor through a boulder: the cache and the lever behind the wall can't be reached.
+    put(map, 14, 10, O.BOULDER);
+    map.features = map.features.filter((f) => f.type !== 'lock');
+    put(map, 16, 15, O.LEVER);
+    put(map, 10, 3, O.GATE);
+    map.features.push(lever(16, 15, 10, 3));
+    expect(issues(p)).toEqual([
+      ['error', 'Hidden cache (4, 15) has no walkable neighbour that can be reached from where players arrive.'],
+      ['error', 'Lever (16, 15) has no walkable neighbour that can be reached from where players arrive.'],
+    ]);
+    // A monster can't stand on a gate.
+    map.features.push({ id: 'm', type: 'monster_spawn', c: 10, r: 3, name: 'yeti', props: { kind: 'yeti', count: 1, radius: 4 } });
+    expect(issues(p).some(([, m]) => m === 'Monster spawn (10, 3) is on a tile you can\'t walk on.')).toBe(true);
+  });
+
+  it('catches every broken gate, lever and lock, as the game does', () => {
+    const broken = (fn: (map: WorldMap) => void) => {
+      const { p, map } = walledOff();
+      fn(map);
+      return issues(p);
+    };
+    // A lever place off its lever, and the lever left unwired.
+    expect(broken((m) => { m.features[1].c = 6; })).toEqual([
+      ['error', "The lever place (6, 5) isn't on a lever: put it on a Lever object."],
+      ['error', "Lever (5, 5) isn't wired to a gate: put a lever place on it and point it at the gate it opens."],
+    ]);
+    // Wired to a tile that isn't a gate: the gate then has no lever.
+    expect(broken((m) => { m.features[1].props!.toX = 11; })).toEqual([
+      ['error', "The lever (5, 5) is wired to (11, 10), which isn't a gate: pick the gate it opens."],
+      ['error', 'Gate (10, 10) has no lever to open it: put a lever place on a Lever and point it at this gate.'],
+    ]);
+    // Wired twice to the same gate (the game won't load that).
+    expect(broken((m) => { m.features.push(lever(5, 5, 10, 10, 'again')); })).toEqual([
+      ['error', 'The lever (5, 5) is wired to the gate at (10, 10) twice: keep one of the two places.'],
+    ]);
+    // A second lever with no gate, and a second gate with no lever (in rows from the top).
+    expect(broken((m) => { put(m, 12, 10, O.GATE); put(m, 8, 5, O.LEVER); })).toEqual([
+      ['error', "Lever (8, 5) isn't wired to a gate: put a lever place on it and point it at the gate it opens."],
+      ['error', 'Gate (12, 10) has no lever to open it: put a lever place on a Lever and point it at this gate.'],
+    ]);
+    // One lever can open two gates, and a gate can need two levers.
+    expect(broken((m) => { put(m, 12, 10, O.GATE); put(m, 8, 5, O.LEVER); m.features.push(lever(5, 5, 12, 10), lever(8, 5, 12, 10)); })).toEqual([]);
+    // A locked door with no lock; a lock that isn't on a locked door.
+    expect(broken((m) => { m.features[2].c = 13; })).toEqual([
+      ['error', "The lock (13, 10) isn't on a locked door: put it on a Locked door object."],
+      ['error', 'Locked door (14, 10) has no lock: put a lock place on it, naming the key that opens it.'],
+    ]);
+    // Two locks on one door.
+    expect(broken((m) => { m.features.push(lock(14, 10, 'frost_key', 'second')); })).toEqual([
+      ['error', "The lock (14, 10): there's already a lock on this door."],
+    ]);
+    // A lock with no key, or not an item id; one World Builder doesn't know is a warning.
+    expect(broken((m) => { m.features[2].props!.key = ''; })).toEqual([['error', 'The lock (14, 10) needs a key: the id of an item in the game, like frost_key.']]);
+    expect(broken((m) => { m.features[2].props!.key = 'Frost Key'; })).toEqual([['error', 'The lock (14, 10) needs a key: the id of an item in the game, like frost_key.']]);
+    expect(broken((m) => { m.features[2].props!.key = 'ember_heart'; })).toEqual([
+      ['warning', 'The lock (14, 10) wants "ember_heart", which isn\'t a key World Builder knows (frost_key): the game won\'t load a lock whose key isn\'t one of its items, so check it has one called that.'],
+    ]);
+  });
+
+  it('wires a new lever place to the nearest gate, and gives a new lock the frost key', () => {
+    const { map } = walledOff();
+    expect(newPlaceProps(map, 'lever', { x: 3, y: 3 })).toEqual({ toX: 10, toY: 10 });
+    put(map, 2, 12, O.GATE);
+    expect(newPlaceProps(map, 'lever', { x: 3, y: 9 })).toEqual({ toX: 2, toY: 12 });
+    expect(newPlaceProps(map, 'lever', { x: 9, y: 9 })).toEqual({ toX: 10, toY: 10 });
+    expect(newPlaceProps(floor().map, 'lever', { x: 3, y: 3 })).toEqual({ toX: 0, toY: 0 });
+    expect(newPlaceProps(map, 'lock', { x: 14, y: 10 })).toEqual({ key: 'frost_key' });
+  });
+
+  it('shows the wires of a selected lever, or of a tapped gate, and no others', () => {
+    const first = byGameId(project(), 'frozen1');
+    const [a, b] = first.features.filter((f) => f.type === 'lever');
+    const at = (x: number, y: number) => y * first.width + x;
+    const shown = (sel: string | null, focus?: number) => wiresShown(first, sel, focus).map((l) => [l.x, l.y]);
+    expect(shown(null)).toEqual([]);
+    // A lever selected: its gate's wires (the other lever too, which that gate also needs).
+    expect(shown(a.id)).toEqual([[5, 32], [42, 7]]);
+    // The gate tapped, or a lever.
+    expect(shown(null, at(36, 29))).toEqual([[5, 32], [42, 7]]);
+    expect(shown(null, at(42, 7))).toEqual([[5, 32], [42, 7]]);
+    expect(shown(null, at(20, 20))).toEqual([]);
+    // Two gates: only the wires of the gate in question.
+    first.layers.object[at(40, 40)] = O.GATE;
+    b.props = { toX: 40, toY: 40 };
+    expect(shown(a.id)).toEqual([[5, 32]]);
+    expect(shown(null, at(40, 40))).toEqual([[42, 7]]);
+  });
+
+  it('turns gates and doors the game’s way: along x between walls to the west or east, else along y', () => {
+    const p = project();
+    // The game's own: the gates on the first and third floors and the locked door run along x,
+    // between walls; the second floor's gate runs along y, between walls north and south.
+    expect(doorFacing(byGameId(p, 'frozen1'), 36, 29)).toBe('x');
+    expect(doorFacing(byGameId(p, 'frozen3'), 22, 13)).toBe('x');
+    expect(doorFacing(byGameId(p, 'frozen2'), 36, 17)).toBe('y');
+    expect(doorFacing(byGameId(p, 'frozen2'), 30, 29)).toBe('x');
+    expect([puzzleFrame(byGameId(p, 'frozen1'), 36, 29), puzzleFrame(byGameId(p, 'frozen2'), 36, 17), puzzleFrame(byGameId(p, 'frozen2'), 30, 29), puzzleFrame(byGameId(p, 'frozen1'), 5, 32)])
+      .toEqual(['gate-x', 'gate-y', 'lockdoor-x', 'lever']);
+    expect(puzzleFrame(byGameId(p, 'frozen1'), 8, 5)).toBeNull();
+    const { map } = floor();
+    put(map, 5, 5, O.GATE);
+    expect(doorFacing(map, 5, 5)).toBe('y');
+    wall(map, 5, 4);
+    expect(doorFacing(map, 5, 5)).toBe('y');
+    wall(map, 6, 5);
+    expect(doorFacing(map, 5, 5)).toBe('x');
+    // A wall with something standing on it isn't a wall to the game; nor is the edge of the map.
+    put(map, 6, 5, O.BOULDER);
+    expect(doorFacing(map, 5, 5)).toBe('y');
+    put(map, 0, 7, O.LOCKED_DOOR);
+    expect(doorFacing(map, 0, 7)).toBe('y');
+    wall(map, 1, 7);
+    expect(puzzleFrame(map, 0, 7)).toBe('lockdoor-x');
+  });
+
+  it('draws the Frozen Peaks like the caverns, from the frost sheet: snow with patches of ice, thin ice for water', () => {
+    const p = project();
+    expect(['frozen1', 'caves1', 'smugglers_cove', 'crypt1', 'sewer1', 'bank', 'overworld'].map((id) => caveTheme(byGameId(p, id)))).toEqual(['frost', 'cave', 'cave', null, null, null, null]);
+    // A frost theme on an inside isn't drawn as one (insides have no look).
+    const bank = byGameId(p, 'bank');
+    bank.settings.rpgdcTheme = 'frost';
+    expect(caveTheme(bank)).toBeNull();
+    // Water: thin ice in the peaks, lava in the caverns.
+    expect(caveGround('frost', true, 7, 3)).toEqual({ what: 'ice', salt: 0 });
+    expect(caveGround('cave', true, 7, 3)).toEqual({ what: 'lava', salt: 0 });
+    // Floors: snow, or glassy ice where the smooth patches run high; never rubble. The caverns: dirt
+    // and rubble, never ice.
+    const m = byGameId(p, 'frozen1');
+    const peaks = new Map<string, number>();
+    const caves = new Set<string>();
+    for (let y = 0; y < m.height; y++) {
+      for (let x = 0; x < m.width; x++) {
+        const f = caveGround('frost', false, x, y);
+        expect(f).toEqual(icePatch(x, y) > 0.7 ? { what: 'ice', salt: 4 } : { what: 'floor', salt: 2 });
+        peaks.set(f.what, (peaks.get(f.what) ?? 0) + 1);
+        caves.add(caveGround('cave', false, x, y).what);
+      }
+    }
+    expect([...peaks.keys()].sort()).toEqual(['floor', 'ice']);
+    expect(peaks.get('ice')! / (m.width * m.height)).toBeGreaterThan(0.03);
+    expect(peaks.get('ice')!).toBeLessThan(peaks.get('floor')!);
+    expect([...caves].sort()).toEqual(['floor', 'rubble']);
+    // The patches are smooth: within 0 and 1, and next-door tiles close in value.
+    for (let y = 0; y < 40; y++) {
+      for (let x = 0; x < 40; x++) {
+        expect(icePatch(x, y)).toBeGreaterThanOrEqual(0);
+        expect(icePatch(x, y)).toBeLessThanOrEqual(1);
+        expect(Math.abs(icePatch(x + 1, y) - icePatch(x, y))).toBeLessThan(0.4);
+      }
+    }
+    // As the game has them (its icePatch, on the same tile hash).
+    expect([icePatch(0, 0), icePatch(4, 0), icePatch(6, 9)].map((v) => v.toFixed(6))).toEqual(ICE_PATCH);
   });
 });
