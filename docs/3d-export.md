@@ -96,7 +96,7 @@ Empty nodes under `Markers` mark:
 - every place on the map (an RPG-DC plot of land's marker sits on its north-west corner, and its
   `props` give its `id` and `size`: its tiles are columns `col` to `col + size - 1` and rows `row`
   to `row + size - 1`);
-- every object a game interacts with: stations and workbenches (the sawbench too), fishing spots,
+- every object a game interacts with: stations (the guild chest too) and workbenches (the sawbench too), fishing spots,
   stairs and entrances, doors, herbs, altars, waystones, boats, caches, gates, levers, locked doors
   and Farming's patches;
 - every light, loot and danger prop;

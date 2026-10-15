@@ -117,7 +117,7 @@ describe('opening the game’s map file', () => {
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door',
       'boat', 'palm', 'wreck', 'fishing_swordfish',
       'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones',
-      'sawbench', 'limestone_rock',
+      'sawbench', 'limestone_rock', 'guild_chest',
     ]);
   });
 
@@ -460,7 +460,7 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
     expect(out.objectLegend.slice(56)).toEqual([
       'cactus', 'dead_tree', 'yew', 'fishing_eel', 'fishing_lobster', 'herb_duneflower', 'herb_bogmyrtle', 'herb_frostcap',
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish',
-      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones', 'sawbench', 'limestone_rock',
+      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones', 'sawbench', 'limestone_rock', 'guild_chest',
     ]);
   });
 
@@ -755,7 +755,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
     }
     expect(out.maps[0].objectLegend.slice(64)).toEqual([
       'waystone', 'cache', 'thicket', 'ruin', 'gate', 'lever', 'locked_door', 'boat', 'palm', 'wreck', 'fishing_swordfish',
-      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones', 'sawbench', 'limestone_rock',
+      'patch_allotment', 'patch_herb', 'patch_tree', 'spinning_wheel', 'millstones', 'sawbench', 'limestone_rock', 'guild_chest',
     ]);
   });
 
@@ -1583,7 +1583,7 @@ describe('Land and houses: plots of land, the land agents, the sawbench and lime
   it('opens the plots, the land agents, the sawbench and the limestone, and exports them as they were', () => {
     const p = project();
     const world = byGameId(p, 'overworld');
-    expect(OBJECT_LEGEND.slice(80)).toEqual(['sawbench', 'limestone_rock']);
+    expect(OBJECT_LEGEND.slice(80, 82)).toEqual(['sawbench', 'limestone_rock']);
     expect([O.SAWBENCH, O.LIMESTONE_ROCK]).toEqual([80, 81]);
     const at = (x: number, y: number) => world.layers.object[y * world.width + x];
     // The sawbench in the carpenter's yard, the limestone in the Old Quarry: both in the way.
@@ -1739,7 +1739,7 @@ describe('Land and houses: plots of land, the land agents, the sawbench and lime
       ['sawbench', 'Sawbench', 'station', true, true],
       ['limestone_rock', 'Limestone rock', 'ore', true, false],
     ]);
-    expect(GAME_OBJECTS.at(-1)?.key).toBe('limestone_rock');
+    expect(GAME_OBJECTS.slice(-2).map((d) => d.key)).toEqual(['limestone_rock', 'guild_chest']);
   });
 
   it('draws them with the game’s frames: the sawbench from the indoor sheet, limestone from the world sheet', () => {
@@ -1748,6 +1748,36 @@ describe('Land and houses: plots of land, the land agents, the sawbench and lime
       { sheet: 'world', frame: 'ore-limestone' },
     ]);
     expect([O.SPINNING_WHEEL, O.COPPER_ROCK, 0].map(constructionFrame)).toEqual([null, null, null]);
+  });
+
+  it('opens the guild chest beside the bank chest in each bank, and exports it as it was', () => {
+    const p = project();
+    expect(OBJECT_LEGEND[82]).toBe('guild_chest');
+    expect(O.GUILD_CHEST).toBe(82);
+    for (const [id, bank, guild] of [['bank', [1, 4], [9, 4]], ['port_bank', [1, 4], [7, 4]]] as const) {
+      const m = byGameId(p, id);
+      expect(m.layers.object[bank[1] * m.width + bank[0]], id).toBe(O.BANK);
+      expect(m.layers.object[guild[1] * m.width + guild[0]], id).toBe(O.GUILD_CHEST);
+      expect(isWalkableAt(m, guild[0], guild[1]), id).toBe(false);
+      expect(cellsOf(gameMap(id), 'guild_chest'), id).toEqual([[...guild]]);
+    }
+    const out = toRpgdcMaps(p);
+    for (const id of ['bank', 'port_bank']) {
+      const m = out.maps.find((q) => q.id === id)!;
+      expect(cellsOf(m, 'guild_chest'), id).toEqual(cellsOf(gameMap(id), 'guild_chest'));
+      expect(cellsOf(m, 'bank'), id).toEqual(cellsOf(gameMap(id), 'bank'));
+    }
+    expect(errors(p)).toEqual([]);
+  });
+
+  it('lists the guild chest with the stations, used from beside it, and draws it as the game does', () => {
+    expect([OBJECTS[O.GUILD_CHEST]].map((d) => [d.key, d.name, d.group, d.blocks, d.useFromNeighbour])).toEqual([['guild_chest', 'Guild chest', 'station', true, true]]);
+    expect(constructionFrame(O.GUILD_CHEST)).toEqual({ sheet: 'indoor', frame: 'guild_chest' });
+    const { p, map } = bareWorld();
+    map.layers.object[50 * map.width + 50] = O.GUILD_CHEST;
+    expect(errs(p)).toEqual([]);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) map.layers.object[(50 + dy) * map.width + 50 + dx] = O.BOULDER;
+    expect(errs(p)).toEqual(['Guild chest (50, 50) has no walkable neighbour that can be reached from the spawn point.']);
   });
 
   /** A plot place: its north-west corner, id and size. */

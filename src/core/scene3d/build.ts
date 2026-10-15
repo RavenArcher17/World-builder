@@ -1315,6 +1315,14 @@ function objectModel(
       out.box(bx - sa * 0.3, y + 1.04, bz + ca * 0.3, 0.12, 0.14, 0.05, shade(wood, 0.7), facing + Math.PI / 2);
       return;
     }
+    case 'guild_chest': {
+      // A dark wooden chest with a rounded lid and three gold bands over it.
+      const [ca, sa] = [Math.cos(facing), Math.sin(facing)];
+      out.box(x, y, z, 1.0, 0.55, 0.62, rgba('#5a3a22'), facing);
+      out.box(x, y + 0.55, z, 1.0, 0.2, 0.56, rgba('#6a4628'), facing);
+      for (const k of [-1, 0, 1]) out.box(x + ca * 0.36 * k, y, z + sa * 0.36 * k, 0.09, 0.78, 0.66, c, facing);
+      return;
+    }
     case 'millstones':
       // Two round stones, one on the other, on a wooden spindle, with a hopper for the grain over them.
       out.cylinder(x, y, z, 0.7, 0.7, 0.32, 12, shade(c, 0.9));

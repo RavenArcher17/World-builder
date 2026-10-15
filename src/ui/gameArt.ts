@@ -249,6 +249,8 @@ const INDOOR_ART: Partial<Record<number, string>> = {
   [O.MILLSTONES]: 'millstones',
   // Construction's workbench, in the carpenter's yard in town.
   [O.SAWBENCH]: 'sawbench',
+  // The guild chest beside the bank chest in each bank, drawn as a guild's hall's guild chest.
+  [O.GUILD_CHEST]: 'guild_chest',
 };
 /** Farming's patches, from the world sheet: bare tilled beds, drawn flat on the ground (players walk over them). */
 const PATCH_ART: Partial<Record<number, string>> = {
@@ -269,11 +271,11 @@ export function farmFrame(o: number): { sheet: 'world' | 'indoor'; frame: string
 }
 /**
  * The sheet and frame the game draws Construction's objects with, or null for anything else: the
- * sawbench from the indoor sheet like the other workbenches, limestone from the world sheet like
- * the ore rocks.
+ * sawbench and the guild chest (built in guilds' halls, and standing in the banks) from the indoor
+ * sheet like the other workbenches, limestone from the world sheet like the ore rocks.
  */
 export function constructionFrame(o: number): { sheet: 'world' | 'indoor'; frame: string } | null {
-  if (o === O.SAWBENCH) return { sheet: 'indoor', frame: INDOOR_ART[o]! };
+  if (o === O.SAWBENCH || o === O.GUILD_CHEST) return { sheet: 'indoor', frame: INDOOR_ART[o]! };
   if (o === O.LIMESTONE_ROCK) return { sheet: 'world', frame: ORE_ART[o]! };
   return null;
 }

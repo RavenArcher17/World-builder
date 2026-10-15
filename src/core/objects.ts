@@ -141,6 +141,9 @@ export const OBJECTS: ObjectDef[] = [
   // limestone into stone blocks), and limestone, mined like ore (Mining 20) in the Old Quarry.
   o(80, 'sawbench', 'Sawbench', '#b08850', '🪚', 'icon', 'station', true),
   o(81, 'limestone_rock', 'Limestone rock', '#e8e0c8', '⬜', 'ore', 'ore'),
+  // RPG-DC's guild halls: a guild chest, used from beside it like a bank chest, which opens the bank
+  // of the guild you're in (one stands beside the bank chest in each of the game's banks).
+  o(82, 'guild_chest', 'Guild chest', '#c8902a', '🛡️', 'icon', 'station', true),
 ];
 
 export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCase(), d.id])) as Record<
@@ -224,7 +227,8 @@ export const O = Object.fromEntries(OBJECTS.slice(1).map((d) => [d.key.toUpperCa
   | 'SPINNING_WHEEL'
   | 'MILLSTONES'
   | 'SAWBENCH'
-  | 'LIMESTONE_ROCK',
+  | 'LIMESTONE_ROCK'
+  | 'GUILD_CHEST',
   number
 >;
 

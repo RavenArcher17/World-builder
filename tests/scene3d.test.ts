@@ -350,6 +350,13 @@ describe('3D scene', () => {
     expect(height(build(O.SAWBENCH))).toBeGreaterThan(0.9);
     expect(height(build(O.SAWBENCH))).toBeLessThan(1.5);
     expect(height(build(O.LIMESTONE_ROCK))).toBeLessThan(1.2);
+    // The guild chest: a chest with gold bands, knee-high, and marked like the stations.
+    const chest = build(O.GUILD_CHEST);
+    expect(meshProblems(chest)).toEqual([]);
+    expect(windingProblems(chest)).toBe(0);
+    expect(chest.markers.filter((k) => k.data.kind === 'object').map((k) => k.data.key)).toEqual(['guild_chest']);
+    expect(height(chest)).toBeGreaterThan(0.6);
+    expect(height(chest)).toBeLessThan(1);
   });
 
   it("gives an RPG-DC plot of land just its signpost, in the middle of its south edge, and a marker on its corner", () => {

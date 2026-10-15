@@ -40,7 +40,7 @@ row-major: the value for tile (x, y) is at index `y * width + x`.
   "zone": null,
   "groundLegend": ["grass", "path", "water", "town_floor", "crypt_floor", "crypt_wall", "planks", "sand", "mud", "bog", "snow", "stone", "ice"],
   "ground": [0, 0, 1, ...],
-  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin", "gate", "lever", "locked_door", "boat", "palm", "wreck", "fishing_swordfish", "patch_allotment", "patch_herb", "patch_tree", "spinning_wheel", "millstones", "sawbench", "limestone_rock"],
+  "objectLegend": ["", "tree", "oak", "willow", "boulder", "fence", "copper_rock", "tin_rock", "iron_rock", "bank", "shop", "furnace", "anvil", "cooking_fire", "fishing_shrimp", "fishing_trout", "fishing_salmon", "crypt_entrance", "stairs_down", "stairs_up", "herb_sunleaf", "herb_silverweed", "herb_thornberry", "herb_nightshade", "herb_emberbloom", "door", "sewer_grate", "alchemy_table", "sewing_table", "fletching_bench", "counter", "bookshelf", "table", "bed", "barrel", "crate", "lectern", "well", "lamp_post", "market_stall", "flower_bed", "bench", "signpost", "notice_board", "gold_rock", "mithril_rock", "adamant_rock", "runite_rock", "essence_rock", "air_altar", "mind_altar", "water_altar", "earth_altar", "fire_altar", "chaos_altar", "law_altar", "cactus", "dead_tree", "yew", "fishing_eel", "fishing_lobster", "herb_duneflower", "herb_bogmyrtle", "herb_frostcap", "waystone", "cache", "thicket", "ruin", "gate", "lever", "locked_door", "boat", "palm", "wreck", "fishing_swordfish", "patch_allotment", "patch_herb", "patch_tree", "spinning_wheel", "millstones", "sawbench", "limestone_rock", "guild_chest"],
   "objects": [0, 4, 0, ...],
   "zoneLegend": ["safe", "frontier", "wilderness", "deep"],
   "zones": [0, 1, 1, ...],
@@ -109,7 +109,7 @@ warns when a map has any.
 Any object blocks walking, except the `thicket`, which players push through, and Farming's
 patches (`patch_allotment`, `patch_herb`, `patch_tree`), which lie flat on the ground: a patch's
 tile walks like the ground under it. A `gate` or `locked_door` opens only for the players who open
-it (monsters never pass one). Stations, workbenches (the sawbench too), fishing spots, herbs,
+it (monsters never pass one). Stations (the guild chest too), workbenches (the sawbench too), fishing spots, herbs,
 altars, waystones, boats, caches, levers, Farming's patches, doors, stairs, the grate and the crypt
 entrance are used from a neighbouring tile (any of the 8 around it).
 
@@ -151,6 +151,7 @@ entrance are used from a neighbouring tile (any of the 8 around it).
 | 78, 79 | `spinning_wheel`, `millstones` | Farming's workbenches, used from any of the 8 tiles around them like the other workbenches: the spinning wheel spins flax into cloth (the game has one in the farmhouse and one at the Tailor's), the millstones grind wheat into flour (in the windmill). Not walkable. Drawn from the indoor sheet's `spinning_wheel` and `millstones` frames. |
 | 80 | `sawbench` | Construction's workbench, used from any of the 8 tiles around it like the other workbenches: players saw logs into planks and limestone into stone blocks there, to build their houses with (the game's is in the carpenter's yard in town, east of the main street). Not walkable. Drawn from the indoor sheet's `sawbench` frame. |
 | 81 | `limestone_rock` | Limestone, mined like ore (Mining 20) for the stone blocks houses are built of: the game's are in the Old Quarry. In the way like the ore rocks. Drawn from the world sheet's `ore-limestone` frame. |
+| 82 | `guild_chest` | A guild chest, used from any of the 8 tiles around it like a bank chest: it opens the bank of the guild the player's in (anyone in the guild puts things in, its leader and officers take them out). The game has one beside the bank chest in each bank, in town and in Gullhaven; it makes a bank chest's tile, so swapping one for the other doesn't change a map's layout. Not walkable. Drawn from the indoor sheet's `guild_chest` frame (the guild chest in a guild's hall). |
 
 ### Zones
 
@@ -293,6 +294,12 @@ a game server without that art. In 3D: a sawhorse with a log and a saw (marked, 
 workbenches), a low heap of pale slabs, and a plot's signpost (its marker sits on its north-west
 corner, with its `id` and `size`).
 
+Guild halls (Phase 14d) are made by the game on guilds' plots, not in the map file; but the guild
+bank has a `guild_chest` in each bank, beside the bank chest (town's Bank at (9, 4), the Gullhaven
+bank at (7, 4)). It's with the stations under **Town** in the object palette, drawn from the indoor
+sheet's `guild_chest` frame (its plain symbol, a shield, on a game server without that art); in 3D,
+a dark wooden chest with three gold bands, marked like the stations.
+
 Links come in pairs: going down from map A to B (a link on A's entrance, stairs down or grate) is
 matched by a link on one of B's stairs up back to A, and a door into B by a door on B back to A. Going down, the arrival tile is normally
 just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs down.
@@ -302,7 +309,7 @@ just east (x + 1) of the stairs up; going up, a walkable tile beside the stairs 
 **Check for game** reports each problem with its map and tile (tap one to jump there):
 
 - exactly one spawn point, on the overworld, on walkable ground in the Safe zone;
-- every station and workbench (the spinning wheel, the millstones and the sawbench too), altar, waystone, boat,
+- every station and workbench (the guild chest, the spinning wheel, the millstones and the sawbench too), altar, waystone, boat,
   cache, lever, fishing spot and Farming patch has a walkable neighbour reachable on foot from the spawn point
   (on dungeon floors: from where links arrive), moving in 8 directions without cutting corners
   past blocked tiles (thickets are walked through, so a glade behind one counts, as are patches on
