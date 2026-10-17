@@ -451,6 +451,9 @@ const NPC_OUTFITS: Record<string, Record<string, [string, string?]>> = {
   seeds: { head: ['leather_hood', '#f0d890'], chest: ['cloth_shirt', '#9ac070'], hands: ['default_hands'], legs: ['cloth_pants', '#7a6a48'], feet: ['leather_boots', '#6a5038'] },
   // Pemberton, the land agent, in a dark green coat and grey trousers: a man of business.
   land_agent: { head: ['head_short'], chest: ['mage_vest_alt1', '#4a6a40'], hands: ['mage_sleeves_alt1', '#4a6a40'], legs: ['cloth_pants', '#6a6a70'], feet: ['leather_boots', '#3a3430'] },
+  // Brann the stablemaster in a brown coat, buff breeches and tall dark riding boots. (The horses
+  // in his paddock wear no clothes: they're drawn with the horse's own art, below.)
+  stablemaster: { head: ['head_short'], chest: ['mage_vest_alt1', '#8a5a34'], hands: ['mage_sleeves_alt1', '#8a5a34'], legs: ['cloth_pants', '#d8c8a0'], feet: ['leather_boots', '#2e221a'] },
   // Gullhaven's harbourmaster in a navy coat and cap; the castaway on Wrecker's Isle in sun-faded rags.
   harbourmaster: { head: ['leather_hood', '#34466a'], chest: ['leather_chest', '#3a5480'], hands: ['default_hands'], legs: ['cloth_pants', '#e0d8c4'], feet: ['leather_boots', '#3a3430'] },
   castaway: { head: ['head_short'], chest: ['cloth_shirt', '#e0d0a8'], hands: ['default_hands'], legs: ['cloth_pants', '#9a8a68'], feet: ['cloth_sandals'] },
@@ -477,6 +480,23 @@ function npcLayers(role: string, variant: number): Record<string, Layer> | null 
     if (variant % 2) layers.head = { sheet: 'hero/head_bald' };
   }
   return layers;
+}
+
+/** The horse's art (the game's HORSE_SHEET), which the paddock's horses are drawn with. */
+const HORSE_SHEET = 'mon/horse';
+/** A brown deer stands in for the horse on a game server without its art, as in the game. */
+const HORSE_STAND_IN: Layer = { sheet: 'mon/deer', tint: '#a0704a' };
+
+/**
+ * What a townsperson is drawn with, as the game draws them: a hero in their work clothes
+ * (villagers vary by `variant`), or, for a horse in the stable's paddock, the horse's own art, one
+ * sheet like a monster's (the deer while the game server hasn't the horse). Null for a role the
+ * game hasn't.
+ */
+export function npcArt(role: string, variant: number, haveHorse = true): { layers: Record<string, Layer>; hero: boolean } | null {
+  if (role === 'paddock_horse') return { layers: { body: haveHorse ? { sheet: HORSE_SHEET } : HORSE_STAND_IN }, hero: false };
+  const layers = npcLayers(role, variant);
+  return layers && { layers, hero: true };
 }
 
 /** Flare's eight facings as map steps: SW, W, NW, N, NE, E, SE, S. */
@@ -1019,8 +1039,8 @@ interface Character {
 /**
  * Who stands where on a map, as the game draws them: the first monster of each spawn (on the
  * spawn's tile) and each boss, townspeople in their work clothes (turned to the counter in front
- * of them), the travelling merchant, and the guards the game posts (at the town's gates, and
- * indoors with the mayor).
+ * of them), the horses in the stable's paddock, the travelling merchant, and the guards the game
+ * posts (at the town's gates, and indoors with the mayor).
  */
 function charactersOf(map: WorldMap, stamp?: number): Map<number, Character> {
   const out = new Map<number, Character>();
@@ -1029,6 +1049,8 @@ function charactersOf(map: WorldMap, stamp?: number): Map<number, Character> {
   const hero = (layers: Record<string, Layer>, x: number, y: number, dir = FACING_SE) => {
     if (inside(x, y)) out.set(y * w + x, { layers, hero: true, dir, alpha: 1 });
   };
+  const haveHorse = Boolean(loaded?.sheets[HORSE_SHEET]);
+  let horses = 0;
   for (const p of townGuards(map, stamp).posts) hero(GUARD, p.x, p.y);
   for (const f of map.features) {
     if (!inside(f.c, f.r)) continue;
@@ -1038,13 +1060,19 @@ function charactersOf(map: WorldMap, stamp?: number): Map<number, Character> {
       out.set(f.r * w + f.c, { layers: { body: { sheet, tint } }, hero: false, dir: FACING_SE, alpha: GHOSTLY.has(kind) ? 0.6 : 1 });
     } else if (f.type === 'npc' || f.type === 'merchant') {
       const role = f.type === 'merchant' ? 'merchant' : String(placeProps(f).role);
-      const layers = npcLayers(role, Math.floor(tileHash(f.c, f.r, 21) * VILLAGER_CLOTHES.length));
-      if (!layers) continue;
+      const look = npcArt(role, Math.floor(tileHash(f.c, f.r, 21) * VILLAGER_CLOTHES.length), haveHorse);
+      if (!look) continue;
+      if (!look.hero) {
+        // The paddock's horses stand side-on, facing west or east by turns (the game goes by their
+        // number, which the map hasn't, so here by their order on it).
+        out.set(f.r * w + f.c, { layers: look.layers, hero: false, dir: horses++ % 2 ? 5 : 1, alpha: 1 });
+        continue;
+      }
       // Shopkeepers and bankers face the counter in front of them.
       const counter = [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]].find(
         ([dx, dy]) => inside(f.c + dx, f.r + dy) && map.layers.object[(f.r + dy) * w + f.c + dx] === O.COUNTER,
       );
-      hero(layers, f.c, f.r, counter ? FACINGS.findIndex(([dx, dy]) => dx === counter[0] && dy === counter[1]) : FACING_SE);
+      hero(look.layers, f.c, f.r, counter ? FACINGS.findIndex(([dx, dy]) => dx === counter[0] && dy === counter[1]) : FACING_SE);
     }
   }
   return out;

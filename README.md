@@ -92,8 +92,8 @@ game mode; every other map behaves as above.
   it on the target map), buildings (style, size, name, roof and wall colours) and townspeople
   (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk,
   and the hermit, fisher, farmer, trapper, miner and miller out of town, Martha who sells seeds at
-  Giles's Farm, Pemberton the land agent, Gullhaven's harbourmaster and the castaway on Wrecker's
-  Isle), guild forts (id and name), the
+  Giles's Farm, Pemberton the land agent, Brann the stablemaster and the horses in his paddock,
+  Gullhaven's harbourmaster and the castaway on Wrecker's Isle), guild forts (id and name), the
   travelling merchant's spot, landmarks (id, name and radius): named places whose name shows as
   players arrive, drawn with their name and a faint circle for their radius; a waystone in one
   (one at most) is a stop for fast travel; levers (on a lever, wired to the gate it opens: a new
@@ -127,7 +127,7 @@ game mode; every other map behaves as above.
   lying along its jetty; Farming's patches flat on the ground, the spinning wheel and the millstones;
   the sawbench, the quarry's limestone and each plot's signpost (each shown as its plain symbol
   until the live game has its art); and the
-  monsters, townspeople (in their work clothes) and guards where they stand. **Looks like** (Map panel) sets a dungeon floor's look: crypt,
+  monsters, townspeople (in their work clothes, and the paddock's horses as the game's horse) and guards where they stand. **Looks like** (Map panel) sets a dungeon floor's look: crypt,
   sewers, caverns or the Frozen Peaks.
 
 Projects from the game's exporter are converted to this form when opened. Everything works by

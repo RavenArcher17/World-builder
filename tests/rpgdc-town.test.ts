@@ -45,7 +45,7 @@ import { isWater, T } from '../src/core/tiles';
 import { fromRpgdcMaps, isRpgdcMapsFile } from '../src/core/rpgdc/import';
 import { emptyLayers, type Feature, type Project, type WorldMap } from '../src/core/types';
 import { cacheFit, cacheRegion, ferriesShown, MAX_CACHE_PIXELS, plotAreas, wiresShown } from '../src/ui/render';
-import { caveGround, caveTheme, constructionFrame, farmFrame, icePatch, isWindmill, puzzleFrame, ruinPieces, seaFrame, thicketLooksLike } from '../src/ui/gameArt';
+import { caveGround, caveTheme, constructionFrame, farmFrame, icePatch, isWindmill, npcArt, puzzleFrame, ruinPieces, seaFrame, thicketLooksLike } from '../src/ui/gameArt';
 import { plotStatus } from '../src/ui/gameUi';
 
 /** The game's own map file (shared/maps/rpg-dc.maps.json in RPG-DC), with the town, its insides and the sewers. */
@@ -83,13 +83,15 @@ describe('opening the game’s map file', () => {
     const bank = byGameId(p, 'bank');
     expect(bank.features.filter((f) => f.type === 'npc').map((f) => f.props?.role)).toEqual(['banker', 'banker']);
     const world = byGameId(p, 'overworld');
-    // The town's 18, the windmill by Giles's Farm, Gullhaven's five and the hut on Wrecker's Isle.
-    expect(world.features.filter((f) => f.type === 'building').length).toBe(25);
+    // The town's 18, the windmill by Giles's Farm, the stable east of town, Gullhaven's five and the
+    // hut on Wrecker's Isle.
+    expect(world.features.filter((f) => f.type === 'building').length).toBe(26);
   });
 
   it('passes every game check, with no warnings', () => {
     // The game's tool keeps quarry rocks 2 tiles clear of trees now, so the essence rock that stood
-    // beside an oak has gone too.
+    // beside an oak has gone too; and the two oaks beside the air altar, moved into the Old Quarry,
+    // were cleared with it (the game checks every altar is in the open).
     expect(checkGameMaps(project()).map((i) => i.message)).toEqual([]);
   });
 
@@ -270,12 +272,29 @@ describe('the rarer ores and Runecrafting', () => {
   it('opens the rocks and altars the game placed', () => {
     const p = project();
     const world = byGameId(p, 'overworld');
-    expect(count(world, O.ESSENCE_ROCK)).toBe(4);
+    // Four in the Old Quarry and three by each altar but the air altar, which is in the quarry.
+    expect(count(world, O.ESSENCE_ROCK)).toBe(22);
     for (const a of ALTARS) expect(count(world, a)).toBe(1);
     expect(count(world, O.RUNITE_ROCK)).toBe(10);
     expect(count(byGameId(p, 'caves1'), O.GOLD_ROCK)).toBe(4);
     expect(count(byGameId(p, 'caves2'), O.MITHRIL_ROCK)).toBe(4);
     expect(count(byGameId(p, 'caves3'), O.ADAMANT_ROCK)).toBe(3);
+  });
+
+  it('has essence a short walk from every altar, in its zone: the quarry’s by the air altar, three by each other', () => {
+    const world = byGameId(project(), 'overworld');
+    const w = world.width;
+    const rocks = world.layers.object.flatMap((o, i) => (o === O.ESSENCE_ROCK ? [i] : []));
+    const near = ALTARS.map((a) => {
+      const altar = where(world, a);
+      const by = rocks.filter((i) => Math.max(Math.abs((i % w) - altar.x), Math.abs(Math.floor(i / w) - altar.y)) <= 40);
+      expect(by.every((i) => world.layers.zone[i] === world.layers.zone[altar.i]), OBJECTS[a].key).toBe(true);
+      return by.length;
+    });
+    expect(near).toEqual([4, 3, 3, 3, 3, 3, 3]);
+    // The air altar is in the Old Quarry itself now, by the path into it.
+    expect([where(world, O.AIR_ALTAR).x, where(world, O.AIR_ALTAR).y]).toEqual([334, 374]);
+    expect(landmarkAt(landmarks(world), 334, 374)?.name).toBe('the Old Quarry');
   });
 
   it('catches stairs hidden behind a wall', () => {
@@ -292,11 +311,16 @@ describe('the rarer ores and Runecrafting', () => {
       const world = byGameId(p, 'overworld');
       const air = where(world, O.AIR_ALTAR);
       world.layers.zone[air.i] = ZONES.find((z) => z.key === 'safe')!.id;
-      world.layers.object[(air.y + 2) * world.width + air.x] = O.TREE;
-      world.layers.object[where(world, O.ESSENCE_ROCK).i] = O.RUNITE_ROCK;
+      // The air altar has oaks by it already (see above): plant a tree by the mind altar instead.
+      const mind = where(world, O.MIND_ALTAR);
+      world.layers.object[(mind.y + 2) * world.width + mind.x] = O.TREE;
+      // One of the Old Quarry's essence rocks, in the Frontier by the air altar.
+      const quarry = 372 * world.width + 327;
+      expect(world.layers.object[quarry]).toBe(O.ESSENCE_ROCK);
+      world.layers.object[quarry] = O.RUNITE_ROCK;
     }).filter((i) => i.severity === 'warning').map((i) => i.message);
     expect(warnings.some((m) => /Altar: air .* is in the Safe zone/.test(m))).toBe(true);
-    expect(warnings.some((m) => /Altar: air .* is within 2 tiles of a tree/.test(m))).toBe(true);
+    expect(warnings.some((m) => /Altar: mind .* is within 2 tiles of a tree/.test(m))).toBe(true);
     expect(warnings.some((m) => /Runite rock .* is in the frontier zone; the game keeps runite in the Deep/.test(m))).toBe(true);
   });
 
@@ -785,7 +809,7 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
     expect(out.maps.find((m) => m.id === 'windmill')!.places).toContainEqual({ type: 'npc', x: 3, y: 3, role: 'miller' });
     expect(out.maps.find((m) => m.id === 'overworld')!.places).toContainEqual({ type: 'building', x: 341, y: 396, w: 3, h: 3, style: 'tower', sign: 'Mill', roof: 'brown', walls: 'cream' });
     expect(out.maps.find((m) => m.id === 'smugglers_cove')!.theme).toBe('cave');
-    expect(NPC_ROLES.map((r) => r.value).slice(-10, -4)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
+    expect(NPC_ROLES.map((r) => r.value).slice(12, 18)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
   });
 
   it('knows a windmill: a tower whose sign says mill', () => {
@@ -1236,7 +1260,7 @@ describe('the sea: Gullhaven, Wrecker’s Isle and the ferry between them', () =
     ]);
     // The harbourmaster by the jetty, and the castaway in her hut.
     const npc = (m: WorldMap) => m.features.filter((f) => f.type === 'npc').map((f) => [f.c, f.r, f.props?.role, f.name]);
-    expect(npc(world).filter(([, , role]) => role !== 'seeds' && role !== 'land_agent')).toEqual([[40, 357, 'harbourmaster', 'Harbourmaster (Bligh, by the ferry)']]);
+    expect(npc(world).filter(([, , role]) => !['seeds', 'land_agent', 'paddock_horse'].includes(String(role)))).toEqual([[40, 357, 'harbourmaster', 'Harbourmaster (Bligh, by the ferry)']]);
     expect(npc(byGameId(p, 'isle_hut'))).toEqual([[3, 2, 'castaway', 'Castaway (Marooned Meg)']]);
     // Crabs, pirates and their captain, each roaming its normal range (the file gives them no radius).
     const spawns = world.features.filter((f) => f.type === 'monster_spawn' && ['giant_crab', 'pirate', 'pirate_captain'].includes(String(f.props?.kind)));
@@ -1469,7 +1493,7 @@ describe('Farming: the patches at Giles’s Farm, Martha, the spinning wheels an
     // Martha, who sells seeds, just outside the field's gate.
     const martha = world.features.find((f) => f.type === 'npc' && f.props?.role === 'seeds')!;
     expect([martha.c, martha.r, martha.name]).toEqual([349, 404, "Seed seller (Martha, at Giles's Farm)"]);
-    expect(NPC_ROLES.at(-2)).toEqual({ value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" });
+    expect(NPC_ROLES[20]).toEqual({ value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" });
     // Exported, and opened from that export, the same again.
     const out = toRpgdcMaps(p);
     const again = toRpgdcMaps(fromRpgdcMaps(out));
@@ -1610,7 +1634,7 @@ describe('Land and houses: plots of land, the land agents, the sawbench and lime
       [380, 381, 'Land agent (Pemberton, sells plots of land)'],
       [58, 357, 'Land agent (Pemberton, sells plots of land)'],
     ]);
-    expect(NPC_ROLES.at(-1)).toEqual({ value: 'land_agent', label: 'Land agent (Pemberton, sells plots of land)' });
+    expect(NPC_ROLES[21]).toEqual({ value: 'land_agent', label: 'Land agent (Pemberton, sells plots of land)' });
     // Exported, and opened from that export, the same again.
     const out = toRpgdcMaps(p);
     const again = toRpgdcMaps(fromRpgdcMaps(out));
@@ -1802,4 +1826,114 @@ describe('Land and houses: plots of land, the land agents, the sawbench and lime
   function errs(p: Project) {
     return errors(p).map((i) => i.message);
   }
+});
+
+describe('Horses: the stable, Brann and the horses in his paddock', () => {
+  const gameMap = (id: string) => file().maps.find((m) => m.id === id)!;
+  /** Where a map in the file has an object, [x, y] in row order (none if its legend hasn't it). */
+  const cellsOf = (m: RpgdcMapsFile['maps'][number], key: string) => {
+    const k = m.objectLegend.indexOf(key);
+    return k < 0 ? [] : m.objects.flatMap((v, i) => (v === k ? [[i % m.width, Math.floor(i / m.width)]] : []));
+  };
+  /** The stable's ground east of town, where nothing else goes (the game's tools/maps/stable.mjs). */
+  const inArea = ([x, y]: number[]) => x >= 406 && x <= 428 && y >= 374 && y <= 382;
+  /** The paddock's fence runs round these, with a gap for its gate. */
+  const PADDOCK = { x0: 416, y0: 374, x1: 426, y1: 381 };
+  const GATE = [416, 378];
+  const HORSES = [[420, 377], [423, 379]];
+
+  it('opens the stable, Brann inside it and the horses in his paddock, and exports them as they were', () => {
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    const at = (m: WorldMap, x: number, y: number) => m.layers.object[y * m.width + x];
+    // The stable: a timber house with a brown roof, its door in its south wall leading inside.
+    const stable = buildings(world).find((b) => b.x === 408 && b.y === 375)!;
+    expect([stable.w, stable.h, stable.style, stable.roof, stable.sign]).toEqual([6, 4, 'timber', 'brown', '']);
+    expect(at(world, 410, 378)).toBe(O.DOOR);
+    expect(world.features.find((f) => f.type === 'link' && f.c === 410 && f.r === 378)?.props).toEqual({ toMap: 'stable', toX: 4, toY: 4 });
+    // Inside: Brann at (4, 2), hay in barrels and crates along the walls, the way out in the south wall.
+    const inside = byGameId(p, 'stable');
+    expect([gameKind(inside), inside.settings.rpgdcZone, inside.width, inside.height, inside.name]).toEqual(['interior', 'frontier', 9, 6, 'the stable']);
+    expect(inside.features.filter((f) => f.type === 'npc').map((f) => [f.c, f.r, f.props?.role, f.name])).toEqual([[4, 2, 'stablemaster', 'Stablemaster (Brann, sells horses)']]);
+    expect(inside.features.find((f) => f.type === 'link')?.props).toEqual({ toMap: 'overworld', toX: 410, toY: 379 });
+    expect([at(inside, 4, 5), at(inside, 1, 1), at(inside, 2, 1), at(inside, 1, 4)]).toEqual([O.DOOR, O.BARREL, O.CRATE, O.CRATE]);
+    expect(isWalkableAt(inside, 4, 3)).toBe(true);
+    // The paddock: fenced all round but its gate, open grass inside, and two horses standing in it.
+    for (let y = PADDOCK.y0; y <= PADDOCK.y1; y++) {
+      for (let x = PADDOCK.x0; x <= PADDOCK.x1; x++) {
+        const edge = x === PADDOCK.x0 || x === PADDOCK.x1 || y === PADDOCK.y0 || y === PADDOCK.y1;
+        const gate = x === GATE[0] && y === GATE[1];
+        expect(at(world, x, y), `${x}, ${y}`).toBe(edge && !gate ? O.FENCE : 0);
+        if (!edge) expect(world.layers.terrain[y * world.width + x], `${x}, ${y}`).toBe(T.GRASS);
+      }
+    }
+    const horses = world.features.filter((f) => f.type === 'npc' && f.props?.role === 'paddock_horse');
+    expect(horses.map((f) => [f.c, f.r, f.name])).toEqual(HORSES.map(([x, y]) => [x, y, "Paddock horse (a horse in the stable's paddock, to pat)"]));
+    expect(NPC_ROLES.slice(-2)).toEqual([
+      { value: 'stablemaster', label: 'Stablemaster (Brann, sells horses)' },
+      { value: 'paddock_horse', label: "Paddock horse (a horse in the stable's paddock, to pat)" },
+    ]);
+    // The three monster spawns that stood there have moved out, south-east.
+    const spawns = world.features.filter((f) => f.type === 'monster_spawn');
+    expect(spawns.filter((f) => inArea([f.c, f.r]))).toEqual([]);
+    for (const [kind, x, y] of [['rat', 426, 383], ['goblin', 421, 385], ['rat', 431, 384]] as const) {
+      expect(spawns.some((f) => f.props?.kind === kind && f.c === x && f.r === y), `${kind} ${x}, ${y}`).toBe(true);
+    }
+    expect(errors(p)).toEqual([]);
+    // Exported, and opened from that export, the same again.
+    const out = toRpgdcMaps(p);
+    const again = toRpgdcMaps(fromRpgdcMaps(out));
+    const ours = (places: RpgdcMapsFile['maps'][number]['places']) =>
+      places
+        .filter((pl) => (pl.type === 'npc' && (pl.role === 'stablemaster' || pl.role === 'paddock_horse')) || pl.type === 'monster_spawn' || ((pl.type === 'building' || pl.type === 'link') && inArea([pl.x, pl.y])))
+        .map(placeKey)
+        .sort();
+    for (const f of [out, again]) {
+      const ow = f.maps.find((m) => m.id === 'overworld')!;
+      const st = f.maps.find((m) => m.id === 'stable')!;
+      expect([st.name, st.kind, st.zone, st.width, st.height]).toEqual(['the stable', 'interior', 'frontier', 9, 6]);
+      expect(decoded(st)).toEqual(decoded(gameMap('stable')));
+      expect(st.places.map(placeKey).sort()).toEqual(gameMap('stable').places.map(placeKey).sort());
+      expect(ours(ow.places)).toEqual(ours(gameMap('overworld').places));
+      for (const key of ['fence', 'door']) expect(cellsOf(ow, key).filter(inArea), key).toEqual(cellsOf(gameMap('overworld'), key).filter(inArea));
+    }
+    expect(out.maps.find((m) => m.id === 'stable')!.places).toContainEqual({ type: 'npc', x: 4, y: 2, role: 'stablemaster' });
+    expect(out.maps[0].places).toContainEqual({ type: 'npc', x: 420, y: 377, role: 'paddock_horse' });
+    expect(out.maps[0].places).toContainEqual({ type: 'building', x: 408, y: 375, w: 6, h: 4, style: 'timber', roof: 'brown' });
+  });
+
+  it('reaches Brann through the stable’s door and the horses through the paddock’s gate', () => {
+    expect(errors(project())).toEqual([]);
+    // Fence the gate shut: nobody can get in to pat the horses.
+    const p = project();
+    const world = byGameId(p, 'overworld');
+    world.layers.object[GATE[1] * world.width + GATE[0]] = O.FENCE;
+    expect(errors(p).map((i) => i.message)).toEqual(HORSES.map(([x, y]) => `Players can't reach townsperson (${x}, ${y}) from the spawn point, or talk to them across a counter.`));
+    // A wall across the stable, between the door and Brann: nobody can get to him to buy a horse.
+    const q = project();
+    const inside = byGameId(q, 'stable');
+    for (let x = 1; x <= 7; x++) inside.layers.terrain[3 * inside.width + x] = T.CRYPT_WALL;
+    expect(errors(q).map((i) => i.message)).toEqual(["Players can't reach townsperson (4, 2) from where they arrive, or talk to them across a counter."]);
+  });
+
+  it('draws Brann in his riding clothes, and a paddock horse as the game’s horse, not a townsperson', () => {
+    expect(npcArt('stablemaster', 0)).toEqual({
+      hero: true,
+      layers: {
+        head: { sheet: 'hero/head_short' },
+        chest: { sheet: 'hero/mage_vest_alt1', tint: '#8a5a34' },
+        hands: { sheet: 'hero/mage_sleeves_alt1', tint: '#8a5a34' },
+        legs: { sheet: 'hero/cloth_pants', tint: '#d8c8a0' },
+        feet: { sheet: 'hero/leather_boots', tint: '#2e221a' },
+      },
+    });
+    // A horse is one sheet, like a monster: the horse's own, whatever the variant.
+    expect(npcArt('paddock_horse', 0)).toEqual({ hero: false, layers: { body: { sheet: 'mon/horse' } } });
+    expect(npcArt('paddock_horse', 3)).toEqual(npcArt('paddock_horse', 0));
+    // On a game server without the horse's art, a brown deer stands in, as in the game.
+    expect(npcArt('paddock_horse', 0, false)).toEqual({ hero: false, layers: { body: { sheet: 'mon/deer', tint: '#a0704a' } } });
+    // Every role the game has is drawn; the others are heroes in their clothes. A role it hasn't, nobody.
+    for (const r of NPC_ROLES) expect(npcArt(r.value, 0)?.hero, r.value).toBe(r.value !== 'paddock_horse');
+    expect(npcArt('nobody', 0)).toBeNull();
+  });
 });
