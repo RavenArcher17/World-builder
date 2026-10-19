@@ -247,7 +247,6 @@ export const NPC_ROLES = [
   { value: 'mayor', label: 'Mayor' },
   { value: 'captain', label: 'Guard captain' },
   { value: 'villager', label: 'Villager' },
-  { value: 'slayer', label: 'Slayer master' },
   // The people outside town, who just talk (and give quests).
   { value: 'hermit', label: 'Hermit (Old Ansel)' },
   { value: 'fisher', label: 'Fisher (Moira)' },
@@ -266,6 +265,13 @@ export const NPC_ROLES = [
   { value: 'stablemaster', label: 'Stablemaster (Brann, sells horses)' },
   { value: 'paddock_horse', label: "Paddock horse (a horse in the stable's paddock, to pat)" },
 ];
+/**
+ * Roles the game has dropped: no longer offered, but an old map's townsperson keeps theirs (shown,
+ * and flagged by Check for game) rather than quietly becoming someone else. The Slayer master went
+ * when the game took Slayer out (October 2026).
+ */
+export const RETIRED_NPC_ROLES = [{ value: 'slayer', label: 'Slayer master' }];
+
 /** Townspeople worth robbing, who keep a guard indoors with them (the game's `guarded` in thieving.ts). */
 export const GUARDED_ROLES = new Set(['mayor']);
 
@@ -546,11 +552,11 @@ export const MONSTER_KINDS: { key: string; name: string; range: number }[] = [
   { key: 'giant_crab', name: "Giant crab (Wrecker's Isle)", range: 5 },
   { key: 'pirate', name: "Pirate (Wrecker's Isle)", range: 8 },
   { key: 'pirate_captain', name: 'Captain Redhook (pirate boss)', range: 7 },
-  // Only players with the Slayer level can hurt these.
-  { key: 'cave_crawler', name: 'Cave crawler (Slayer 10)', range: 6 },
-  { key: 'banshee', name: 'Banshee (Slayer 25)', range: 7 },
-  { key: 'basilisk', name: 'Basilisk (Slayer 45)', range: 7 },
-  { key: 'gargoyle', name: 'Gargoyle (Slayer 65)', range: 6 },
+  // Once Slayer's (only those with the Slayer level could hurt them); anyone can fight them now.
+  { key: 'cave_crawler', name: 'Cave crawler', range: 6 },
+  { key: 'banshee', name: 'Banshee', range: 7 },
+  { key: 'basilisk', name: 'Basilisk', range: 7 },
+  { key: 'gargoyle', name: 'Gargoyle', range: 6 },
 ];
 
 /** A monster's normal roaming range in tiles: the radius a new spawn of it starts with. */
@@ -958,7 +964,7 @@ export const PLACE_HELP: Record<string, string> = {
   lock: "On a Locked door object: the item that unlocks it (the game's item id, like frost_key). A player who brings the key uses it up, and the door stays unlocked for them for good.",
   ferry: `On a Ferry boat object, moored by a jetty: players beside the boat tap it to sail to the landing tile on this map (tap 🎯 Pick the landing, then the tile) for its fare, ${FERRY_FARE.min} to ${FERRY_FARE.max} coins (0 is free). Its name is where it goes, shown to players ("the ferry to Wrecker's Isle"). One ferry per boat: for the way back, moor a boat by the landing with a ferry of its own. What players can reach from the landing counts as reached from beside the boat.`,
   plot: "A plot of land players buy from the land agent and build a house on: this tile is its north-west (top) corner, and it's 12 × 12 tiles, or 20 × 20 for a large one (the line on the map). On the overworld, out of the Safe zone, and all open ground players can walk to: nothing standing on it (no objects at all), no doors or stairs, townspeople, monster spawns, forts or the merchant, and not overlapping another plot. Its sign stands in the middle of its south edge, its front; the house goes up at the back. Keep its id once players own it.",
-  npc: "A townsperson who stands here all day: tap them in the game to bank or trade (Martha, the seed seller, sells seeds and compost by the farm's field; Pemberton, the land agent, sells plots of land; Brann, the stablemaster, sells horses in the stable east of town). A paddock horse stands in his paddock, drawn as a horse, and players tap it for a pat. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller), Gullhaven's harbourmaster and the castaway on Wrecker's Isle; the Slayer master gives Slayer tasks. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
+  npc: "A townsperson who stands here all day: tap them in the game to bank or trade (Martha, the seed seller, sells seeds and compost by the farm's field; Pemberton, the land agent, sells plots of land; Brann, the stablemaster, sells horses in the stable east of town). A paddock horse stands in his paddock, drawn as a horse, and players tap it for a pat. The mayor (tips for new players), guard captain (the laws) and villagers (gossip) just talk, as do the people outside town (the hermit, fisher, farmer, trapper, miner and miller), Gullhaven's harbourmaster and the castaway on Wrecker's Isle. Talkers give quests: villagers by the map they're in (home1 to home4), the rest by their role, so keep those map ids and one of each role. Put a Counter in front of a banker or shopkeeper; players talk across it.",
 };
 
 /**

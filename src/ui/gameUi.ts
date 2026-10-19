@@ -32,6 +32,7 @@ import {
   plotSign,
   plotSizeOk,
   plots,
+  RETIRED_NPC_ROLES,
   withProp,
   zoneByKey,
 } from '../core/rpgdc/game';
@@ -156,7 +157,14 @@ export function gameFeatureFields(app: App, map: WorldMap, f: Feature): HTMLElem
       const options =
         field.type === 'map'
           ? [{ value: '', label: '— choose a map —' }, ...gameMaps(app.project).map((m) => ({ value: gameMapId(m), label: `${m.name} (${gameMapId(m)})` }))]
-          : field.options ?? [];
+          : [...(field.options ?? [])];
+      // A choice the game no longer has (an old map's Slayer master) still shows as it is, so
+      // opening the place doesn't quietly change it; Check for game says what to do.
+      const current = String(props[field.key] ?? '');
+      if (current && !options.some((o) => o.value === current)) {
+        const retired = RETIRED_NPC_ROLES.find((r) => r.value === current)?.label ?? current;
+        options.push({ value: current, label: `${retired} (gone from the game)` });
+      }
       for (const o of options) sel.append(h('option', { value: o.value }, o.label));
       sel.value = String(props[field.key] ?? '');
       // A choice of numbers (a plot's size) is kept as a number.

@@ -132,10 +132,12 @@ describe('opening the game’s map file', () => {
     expect(world.layers.object.filter((o) => o === O.WELL).length).toBe(2);
     // Townspeople who just talk.
     const roles = Object.values(project().maps).flatMap((m) => m.features.filter((f) => f.type === 'npc').map((f) => f.props?.role));
-    expect(roles).toEqual(expect.arrayContaining(['mayor', 'captain', 'villager', 'slayer']));
+    expect(roles).toEqual(expect.arrayContaining(['mayor', 'captain', 'villager']));
+    // The Slayer master has gone from the game.
+    expect(roles).not.toContain('slayer');
   });
 
-  it('keeps the Slayer monsters’ lairs, with their counts and radii', () => {
+  it('keeps the four monsters that were Slayer’s, with their counts and radii', () => {
     const p = project();
     const lairs = Object.values(p.maps).flatMap((m) => m.features.filter((f) => f.type === 'monster_spawn' && ['cave_crawler', 'banshee', 'basilisk', 'gargoyle'].includes(String(f.props?.kind))));
     expect(lairs.map((f) => f.props?.kind).sort()).toEqual(['banshee', 'basilisk', 'cave_crawler', 'gargoyle']);
@@ -548,6 +550,21 @@ describe('the new lands: a 768-tile world, its grounds, objects, monsters and pe
     expect(errors(p).map((i) => i.message)).toContain('Townsperson (3, 2) has an unknown role "wizard".');
   });
 
+  it('no longer offers the Slayer master, but keeps one on an old map and flags it', () => {
+    expect(NPC_ROLES.some((r) => r.value === 'slayer')).toBe(false);
+    const p = project();
+    const hut = byGameId(p, 'hermit_hut');
+    hut.features.find((f) => f.type === 'npc')!.props = { role: 'slayer' };
+    const messages = errors(p).map((i) => i.message);
+    expect(messages).toContain('Townsperson (3, 2) is the Slayer master, who has gone from the game: remove them, or choose who they are now.');
+    expect(messages.some((m) => m.includes('unknown role'))).toBe(false);
+    // Read back from the game's file, an old one keeps its role and its name.
+    const old = toRpgdcMaps(p);
+    const back = fromRpgdcMaps(old);
+    const npc = byGameId(back, 'hermit_hut').features.find((f) => f.type === 'npc')!;
+    expect([npc.props?.role, npc.name]).toEqual(['slayer', 'Slayer master']);
+  });
+
   it('keeps just the part of a big map around the view rendered, at a size phones can hold', () => {
     const map = bareWorld(256).map;
     // Zoomed in on the middle: only around the view (a quarter of a screen more each way), a
@@ -809,7 +826,8 @@ describe('secrets and the places outside town: caches, thickets, ruins and the w
     expect(out.maps.find((m) => m.id === 'windmill')!.places).toContainEqual({ type: 'npc', x: 3, y: 3, role: 'miller' });
     expect(out.maps.find((m) => m.id === 'overworld')!.places).toContainEqual({ type: 'building', x: 341, y: 396, w: 3, h: 3, style: 'tower', sign: 'Mill', roof: 'brown', walls: 'cream' });
     expect(out.maps.find((m) => m.id === 'smugglers_cove')!.theme).toBe('cave');
-    expect(NPC_ROLES.map((r) => r.value).slice(12, 18)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
+    const values = NPC_ROLES.map((r) => r.value);
+    expect(values.slice(values.indexOf('hermit'), values.indexOf('hermit') + 6)).toEqual(['hermit', 'fisher', 'farmer', 'trapper', 'miner', 'miller']);
   });
 
   it('knows a windmill: a tower whose sign says mill', () => {
@@ -1493,7 +1511,7 @@ describe('Farming: the patches at Giles’s Farm, Martha, the spinning wheels an
     // Martha, who sells seeds, just outside the field's gate.
     const martha = world.features.find((f) => f.type === 'npc' && f.props?.role === 'seeds')!;
     expect([martha.c, martha.r, martha.name]).toEqual([349, 404, "Seed seller (Martha, at Giles's Farm)"]);
-    expect(NPC_ROLES[20]).toEqual({ value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" });
+    expect(NPC_ROLES.find((r) => r.value === 'seeds')).toEqual({ value: 'seeds', label: "Seed seller (Martha, at Giles's Farm)" });
     // Exported, and opened from that export, the same again.
     const out = toRpgdcMaps(p);
     const again = toRpgdcMaps(fromRpgdcMaps(out));
@@ -1634,7 +1652,7 @@ describe('Land and houses: plots of land, the land agents, the sawbench and lime
       [380, 381, 'Land agent (Pemberton, sells plots of land)'],
       [58, 357, 'Land agent (Pemberton, sells plots of land)'],
     ]);
-    expect(NPC_ROLES[21]).toEqual({ value: 'land_agent', label: 'Land agent (Pemberton, sells plots of land)' });
+    expect(NPC_ROLES.find((r) => r.value === 'land_agent')).toEqual({ value: 'land_agent', label: 'Land agent (Pemberton, sells plots of land)' });
     // Exported, and opened from that export, the same again.
     const out = toRpgdcMaps(p);
     const again = toRpgdcMaps(fromRpgdcMaps(out));

@@ -90,7 +90,7 @@ game mode; every other map behaves as above.
 - **Places with fields:** spawn point, monster spawns (kind, count, radius), bosses, braziers,
   links on stairs, doors and grates that name the target map and the exact tile you arrive on (tap
   it on the target map), buildings (style, size, name, roof and wall colours) and townspeople
-  (banker, shopkeeper, the Slayer master, or the mayor, guard captain and villagers who just talk,
+  (banker, shopkeeper, or the mayor, guard captain and villagers who just talk,
   and the hermit, fisher, farmer, trapper, miner and miller out of town, Martha who sells seeds at
   Giles's Farm, Pemberton the land agent, Brann the stablemaster and the horses in his paddock,
   Gullhaven's harbourmaster and the castaway on Wrecker's Isle), guild forts (id and name), the

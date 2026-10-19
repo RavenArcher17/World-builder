@@ -32,6 +32,7 @@ import {
   MONSTER_KINDS,
   NEIGHBOURS,
   NPC_ROLES,
+  RETIRED_NPC_ROLES,
   PLOT_ID,
   PLOT_SIZES,
   ROOF_COLOURS,
@@ -240,7 +241,9 @@ export function checkGameMaps(project: Project): GameIssue[] {
     for (const f of m.features) {
       if (f.type !== 'npc') continue;
       const role = String(placeProps(f).role);
-      if (!NPC_ROLES.some((r) => r.value === role)) add('error', m, f.c, f.r, `Townsperson ${at(f)} has an unknown role "${role}".`);
+      const retired = RETIRED_NPC_ROLES.find((r) => r.value === role);
+      if (retired) add('error', m, f.c, f.r, `Townsperson ${at(f)} is the ${retired.label}, who has gone from the game: remove them, or choose who they are now.`);
+      else if (!NPC_ROLES.some((r) => r.value === role)) add('error', m, f.c, f.r, `Townsperson ${at(f)} has an unknown role "${role}".`);
       if (!isWalkableAt(m, f.c, f.r)) add('error', m, f.c, f.r, `Townsperson ${at(f)} stands on a tile you can't walk on.`);
       else if (!talkSpots(m, f.c, f.r).some((t) => reached[t.y * w + t.x])) {
         add('error', m, f.c, f.r, `Players can't reach townsperson ${at(f)} from ${m === overworld ? 'the spawn point' : 'where they arrive'}, or talk to them across a counter.`);
